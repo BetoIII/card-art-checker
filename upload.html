@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Art Submission</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f6f8;
+      color: #1a1a2e;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #1a1a2e;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #c4c8d4;
+      border-radius: 12px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: #fff;
+      position: relative;
+    }
+    .drop-zone.dragover {
+      border-color: #4f46e5;
+      background: #eef2ff;
+    }
+    .drop-zone.has-file {
+      border-color: #22c55e;
+      background: #f0fdf4;
+      border-style: solid;
+    }
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .drop-zone-icon {
+      font-size: 36px;
+      margin-bottom: 8px;
+      color: #94a3b8;
+    }
+    .drop-zone-text {
+      font-size: 14px;
+      color: #64748b;
+    }
+    .drop-zone-text strong {
+      color: #4f46e5;
+    }
+
+    /* Preview */
+    .preview-section {
+      display: none;
+      margin-top: 16px;
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+    }
+    .preview-section.visible { display: block; }
+    .preview-img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    .preview-meta {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #64748b;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* Validation checks */
+    .validation-checks {
+      display: none;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    .validation-checks.visible { display: block; }
+    .val-check {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+    }
+    .val-check .icon { width: 16px; text-align: center; }
+    .val-check.pass .icon { color: #22c55e; }
+    .val-check.fail .icon { color: #ef4444; }
+
+    /* Submit */
+    .submit-btn {
+      margin-top: 20px;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #4f46e5;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .submit-btn:hover { background: #4338ca; }
+    .submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Progress feed */
+    .progress-section {
+      display: none;
+      margin-top: 24px;
+    }
+    .progress-section.visible { display: block; }
+
+    .progress-steps {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      padding: 16px;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      font-size: 14px;
+      color: #64748b;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .step:last-child { border-bottom: none; }
+    .step.done { color: #1a1a2e; }
+    .step.error { color: #ef4444; }
+    .step .step-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    .step.pending .step-icon { color: #94a3b8; }
+    .step.done .step-icon { color: #22c55e; }
+    .step.error .step-icon { color: #ef4444; }
+
+    /* Spinner */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #c4c8d4;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* Agent output */
+    .agent-output {
+      display: none;
+      margin-top: 16px;
+      background: #1e1e2e;
+      border-radius: 12px;
+      padding: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #cdd6f4;
+    }
+    .agent-output.visible { display: block; }
+    .agent-output .tool-badge {
+      display: inline-block;
+      background: #313244;
+      color: #a6adc8;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin: 4px 0;
+    }
+
+    /* Result */
+    .result-section {
+      display: none;
+      margin-top: 24px;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    .result-section.visible { display: block; }
+    .result-section.pass {
+      background: #f0fdf4;
+      border: 2px solid #22c55e;
+    }
+    .result-section.fail {
+      background: #fef2f2;
+      border: 2px solid #ef4444;
+    }
+    .result-status {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .result-section.pass .result-status { color: #16a34a; }
+    .result-section.fail .result-status { color: #dc2626; }
+    .result-summary {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .pdf-link {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #4f46e5;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .pdf-link:hover { background: #4338ca; }
+
+    /* Error banner */
+    .error-banner {
+      display: none;
+      margin-top: 16px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+      padding: 16px;
+      color: #dc2626;
+      font-size: 14px;
+    }
+    .error-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Submit Card Art for Review</h1>
+
+    <form id="upload-form">
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept="image/png">
+        <div class="drop-zone-icon">&#128444;</div>
+        <div class="drop-zone-text">
+          Drag & drop your card art PNG here<br>
+          or <strong>click to browse</strong>
+        </div>
+      </div>
+
+      <div class="preview-section" id="preview-section">
+        <img class="preview-img" id="preview-img" alt="Card art preview">
+        <div class="preview-meta" id="preview-meta"></div>
+        <div class="validation-checks" id="validation-checks"></div>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submit-btn" disabled>
+        Submit Card Art for Review
+      </button>
+    </form>
+
+    <div class="progress-section" id="progress-section">
+      <div class="progress-steps" id="progress-steps"></div>
+      <div class="agent-output" id="agent-output"></div>
+    </div>
+
+    <div class="result-section" id="result-section">
+      <div class="result-status" id="result-status"></div>
+      <div class="result-summary" id="result-summary"></div>
+      <a class="pdf-link" id="pdf-link" href="#" target="_blank">Download PDF Report</a>
+    </div>
+
+    <div class="error-banner" id="error-banner"></div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const previewSection = document.getElementById('preview-section');
+    const previewImg = document.getElementById('preview-img');
+    const previewMeta = document.getElementById('preview-meta');
+    const validationChecks = document.getElementById('validation-checks');
+    const submitBtn = document.getElementById('submit-btn');
+    const form = document.getElementById('upload-form');
+    const progressSection = document.getElementById('progress-section');
+    const progressSteps = document.getElementById('progress-steps');
+    const agentOutput = document.getElementById('agent-output');
+    const resultSection = document.getElementById('result-section');
+    const errorBanner = document.getElementById('error-banner');
+
+    let selectedFile = null;
+    let isValid = false;
+
+    // Get projectId from URL
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('projectId') || params.get('project_id');
+
+    // Drag and drop
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    function handleFile(file) {
+      selectedFile = file;
+      const url = URL.createObjectURL(file);
+      previewImg.src = url;
+      previewSection.classList.add('visible');
+
+      // Load image to get dimensions
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+
+        previewMeta.innerHTML = `
+          <span>${w} x ${h} px</span>
+          <span>${sizeMB} MB</span>
+          <span>${file.type}</span>
+        `;
+
+        // Validate
+        const checks = [
+          { label: 'PNG format', pass: file.type === 'image/png' },
+          { label: 'Dimensions 1536 x 969', pass: w === 1536 && h === 969 },
+          { label: 'File size under 10 MB', pass: file.size < 10 * 1024 * 1024 },
+        ];
+
+        validationChecks.innerHTML = checks.map(c => `
+          <div class="val-check ${c.pass ? 'pass' : 'fail'}">
+            <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
+            <span>${c.label}</span>
+          </div>
+        `).join('');
+        validationChecks.classList.add('visible');
+
+        isValid = checks.every(c => c.pass);
+        submitBtn.disabled = !isValid;
+        dropZone.classList.toggle('has-file', isValid);
+      };
+      img.src = url;
+    }
+
+    // Submit
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!selectedFile || !isValid) return;
+
+      if (!projectId) {
+        showError('Missing projectId in URL. This page must be accessed from the Rocketlane portal.');
+        return;
+      }
+
+      // Lock UI
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Analyzing...';
+      progressSection.classList.add('visible');
+      errorBanner.classList.remove('visible');
+      resultSection.classList.remove('visible');
+      progressSteps.innerHTML = '';
+      agentOutput.innerHTML = '';
+      agentOutput.classList.remove('visible');
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('projectId', projectId);
+
+      try {
+        const response = await fetch('/api/card-check', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `Server error: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split('\n\n');
+          buffer = chunks.pop(); // keep incomplete chunk
+
+          for (const chunk of chunks) {
+            const match = chunk.match(/^event: (\w+)\ndata: (.+)$/s);
+            if (!match) continue;
+            const [, eventType, data] = match;
+            try {
+              const payload = JSON.parse(data);
+              handleEvent(eventType, payload);
+            } catch { /* skip malformed */ }
+          }
+        }
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    function handleEvent(type, payload) {
+      switch (type) {
+        case 'progress':
+          upsertStep(payload.step, payload.message, payload.status);
+          break;
+        case 'agent_delta':
+          agentOutput.classList.add('visible');
+          agentOutput.insertAdjacentText('beforeend', payload.text);
+          agentOutput.scrollTop = agentOutput.scrollHeight;
+          break;
+        case 'agent_tool':
+          agentOutput.classList.add('visible');
+          const badge = document.createElement('div');
+          badge.innerHTML = `<span class="tool-badge">${payload.tool}${payload.command ? ': ' + escapeHtml(payload.command) : ''}</span>`;
+          agentOutput.appendChild(badge);
+          agentOutput.scrollTop = agentOutput.scrollHeight;
+          break;
+        case 'complete':
+          showResult(payload.status, payload.summary, payload.pdfUrl);
+          break;
+        case 'error':
+          showError(payload.message);
+          break;
+      }
+    }
+
+    const stepElements = {};
+    function upsertStep(stepId, message, status) {
+      if (stepElements[stepId]) {
+        const el = stepElements[stepId];
+        el.className = `step ${status}`;
+        el.querySelector('.step-msg').textContent = message;
+        el.querySelector('.step-icon').innerHTML = iconFor(status);
+      } else {
+        const el = document.createElement('div');
+        el.className = `step ${status}`;
+        el.innerHTML = `
+          <span class="step-icon">${iconFor(status)}</span>
+          <span class="step-msg">${escapeHtml(message)}</span>
+        `;
+        progressSteps.appendChild(el);
+        stepElements[stepId] = el;
+      }
+    }
+
+    function iconFor(status) {
+      if (status === 'done') return '&#10003;';
+      if (status === 'error') return '&#10007;';
+      return '<span class="spinner"></span>';
+    }
+
+    function showResult(status, summary, pdfUrl) {
+      resultSection.className = `result-section visible ${status}`;
+      document.getElementById('result-status').textContent =
+        status === 'pass' ? 'APPROVED' : 'REQUIRES CHANGES';
+      document.getElementById('result-summary').textContent = summary;
+      document.getElementById('pdf-link').href = pdfUrl;
+      submitBtn.textContent = 'Submit Card Art for Review';
+      submitBtn.disabled = false;
+    }
+
+    function showError(msg) {
+      errorBanner.textContent = msg;
+      errorBanner.classList.add('visible');
+      submitBtn.textContent = 'Submit Card Art for Review';
+      submitBtn.disabled = false;
+    }
+
+    function escapeHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>

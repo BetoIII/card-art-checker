@@ -1,0 +1,19 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors 'self' *.rocketlane.com" }
+      ]
+    }
+  ],
+  "functions": {
+    "api/card-check.js": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    { "source": "/upload", "destination": "/upload.html" }
+  ]
+}
