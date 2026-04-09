@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iframe Diagnostic</title>
+  <style>
+    body { font-family: monospace; padding: 24px; background: #f8f9fa; color: #1a1a1a; }
+    h2 { margin-top: 0; }
+    pre { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px; overflow-x: auto; }
+    .section { margin-bottom: 20px; }
+    .label { font-weight: bold; color: #555; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <h2>Rocketlane Iframe Diagnostic</h2>
+  <div class="section">
+    <div class="label">Full URL:</div>
+    <pre id="url"></pre>
+  </div>
+  <div class="section">
+    <div class="label">Query Parameters:</div>
+    <pre id="params"></pre>
+  </div>
+  <div class="section">
+    <div class="label">Referrer:</div>
+    <pre id="referrer"></pre>
+  </div>
+  <div class="section">
+    <div class="label">Embedded in iframe:</div>
+    <pre id="iframe"></pre>
+  </div>
+  <script>
+    document.getElementById('url').textContent = location.href;
+    document.getElementById('params').textContent = JSON.stringify(
+      Object.fromEntries(new URLSearchParams(location.search)), null, 2
+    );
+    document.getElementById('referrer').textContent = document.referrer || '(empty)';
+    document.getElementById('iframe').textContent = String(window.self !== window.top);
+  </script>
+</body>
+</html>
