@@ -3,40 +3,484 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Iframe Diagnostic</title>
+  <title>Card Art Upload</title>
   <style>
-    body { font-family: monospace; padding: 24px; background: #f8f9fa; color: #1a1a1a; }
-    h2 { margin-top: 0; }
-    pre { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px; overflow-x: auto; }
-    .section { margin-bottom: 20px; }
-    .label { font-weight: bold; color: #555; margin-bottom: 4px; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f7f8fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .container { width: 100%; max-width: 540px; }
+
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 14px; color: #6b7280; margin-bottom: 24px; }
+
+    /* ── Drop Zone ─────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed #d1d5db;
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: #fff;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #6366f1;
+      background: #f5f3ff;
+    }
+    .drop-zone.has-file { display: none; }
+
+    .drop-icon {
+      display: block;
+      margin: 0 auto 12px;
+      width: 48px; height: 48px;
+      fill: none;
+      stroke: #9ca3af;
+      stroke-width: 1.5;
+    }
+    .drop-text { font-size: 15px; color: #374151; margin-bottom: 4px; }
+    .drop-hint { font-size: 13px; color: #9ca3af; }
+
+    .file-input { display: none; }
+
+    /* ── Preview Card ──────────────────────────── */
+    .preview {
+      display: none;
+      margin-top: 16px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .preview.visible { display: block; }
+
+    .preview-img {
+      width: 100%;
+      display: block;
+      /* checkerboard for transparency */
+      background: repeating-conic-gradient(#f3f4f6 0% 25%, #fff 0% 50%) 50% / 16px 16px;
+    }
+
+    .preview-bar {
+      padding: 12px 16px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .preview-name { color: #374151; font-weight: 500; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-meta { color: #9ca3af; }
+    .preview-remove {
+      color: #ef4444; background: none; border: none;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      padding: 4px 8px; border-radius: 6px;
+    }
+    .preview-remove:hover { background: #fef2f2; }
+
+    /* ── Validation Checks ─────────────────────── */
+    .checks {
+      display: none;
+      margin-top: 12px;
+      padding: 12px 16px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      font-size: 13px;
+    }
+    .checks.visible { display: block; }
+
+    .check { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+    .check-icon { flex-shrink: 0; width: 16px; height: 16px; }
+    .check-pass .check-icon { color: #059669; }
+    .check-fail .check-icon { color: #dc2626; }
+    .check-warn .check-icon { color: #d97706; }
+
+    /* ── Submit Button ─────────────────────────── */
+    .submit-btn {
+      display: none;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .submit-btn.visible { display: block; }
+    .submit-btn:hover:not(:disabled) { background: #4338ca; }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Progress Bar ──────────────────────────── */
+    .progress { display: none; margin-top: 20px; }
+    .progress.visible { display: block; }
+
+    .progress-track {
+      height: 6px; background: #e5e7eb;
+      border-radius: 3px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; background: #4f46e5;
+      border-radius: 3px; transition: width 0.3s;
+      width: 0%;
+    }
+    .progress-label {
+      margin-top: 8px; font-size: 13px;
+      color: #6b7280; text-align: center;
+    }
+
+    /* ── Status Messages ───────────────────────── */
+    .status-msg {
+      display: none;
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+    .status-msg.visible { display: block; }
+
+    .status-msg.success {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+    .status-msg.error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+
+    .status-icon { font-size: 28px; margin-bottom: 8px; }
+    .status-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .status-detail { font-size: 13px; opacity: 0.85; }
+
+    .retry-btn {
+      margin-top: 12px;
+      padding: 8px 20px;
+      background: none;
+      border: 1px solid #dc2626;
+      color: #dc2626;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .retry-btn:hover { background: #fef2f2; }
+
+    /* ── Missing Project ID Warning ────────────── */
+    .no-project {
+      display: none;
+      text-align: center;
+      padding: 40px 20px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 12px;
+      color: #92400e;
+    }
+    .no-project.visible { display: block; }
+    .no-project-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    .no-project-text { font-size: 14px; }
   </style>
 </head>
 <body>
-  <h2>Rocketlane Iframe Diagnostic</h2>
-  <div class="section">
-    <div class="label">Full URL:</div>
-    <pre id="url"></pre>
+
+<div class="container">
+  <!-- No projectId warning -->
+  <div class="no-project" id="noProject">
+    <div class="no-project-title">Missing Project Context</div>
+    <div class="no-project-text">
+      This page should be accessed through the Rocketlane customer portal.<br>
+      Please navigate to your project portal to upload card art.
+    </div>
   </div>
-  <div class="section">
-    <div class="label">Query Parameters:</div>
-    <pre id="params"></pre>
+
+  <!-- Main upload UI -->
+  <div id="uploadUI" style="display:none;">
+    <h1>Upload Card Art</h1>
+    <p class="subtitle">Submit your virtual card design for compliance review.</p>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dropZone">
+      <svg class="drop-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path d="M24 32V16m0 0l-7 7m7-7l7 7" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 32v4a4 4 0 004 4h24a4 4 0 004-4v-4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="drop-text">Drag &amp; drop your card art PNG</div>
+      <div class="drop-hint">or click to browse &middot; PNG only &middot; max 10 MB</div>
+    </div>
+    <input type="file" class="file-input" id="fileInput" accept="image/png">
+
+    <!-- Image preview -->
+    <div class="preview" id="preview">
+      <img class="preview-img" id="previewImg" alt="Card art preview">
+      <div class="preview-bar">
+        <span class="preview-name" id="previewName"></span>
+        <span class="preview-meta" id="previewMeta"></span>
+        <button class="preview-remove" id="removeBtn">Remove</button>
+      </div>
+    </div>
+
+    <!-- Validation checks -->
+    <div class="checks" id="checks"></div>
+
+    <!-- Submit -->
+    <button class="submit-btn" id="submitBtn" disabled>Submit Card Art</button>
+
+    <!-- Upload progress -->
+    <div class="progress" id="progress">
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-label" id="progressLabel">Uploading...</div>
+    </div>
+
+    <!-- Success / Error -->
+    <div class="status-msg success" id="successMsg">
+      <div class="status-icon">&#10003;</div>
+      <div class="status-title">Card Art Submitted</div>
+      <div class="status-detail">Your design is being reviewed. Results will be posted to your Slack channel shortly.</div>
+    </div>
+
+    <div class="status-msg error" id="errorMsg">
+      <div class="status-icon">!</div>
+      <div class="status-title" id="errorTitle">Upload Failed</div>
+      <div class="status-detail" id="errorDetail">Something went wrong. Please try again.</div>
+      <button class="retry-btn" id="retryBtn">Try Again</button>
+    </div>
   </div>
-  <div class="section">
-    <div class="label">Referrer:</div>
-    <pre id="referrer"></pre>
-  </div>
-  <div class="section">
-    <div class="label">Embedded in iframe:</div>
-    <pre id="iframe"></pre>
-  </div>
-  <script>
-    document.getElementById('url').textContent = location.href;
-    document.getElementById('params').textContent = JSON.stringify(
-      Object.fromEntries(new URLSearchParams(location.search)), null, 2
-    );
-    document.getElementById('referrer').textContent = document.referrer || '(empty)';
-    document.getElementById('iframe').textContent = String(window.self !== window.top);
-  </script>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Read projectId from URL ────────────────────
+  var params = new URLSearchParams(window.location.search);
+  var projectId = params.get('projectId');
+
+  if (!projectId) {
+    document.getElementById('noProject').classList.add('visible');
+    return;
+  }
+
+  document.getElementById('uploadUI').style.display = '';
+
+  // ── DOM refs ───────────────────────────────────
+  var dropZone    = document.getElementById('dropZone');
+  var fileInput   = document.getElementById('fileInput');
+  var preview     = document.getElementById('preview');
+  var previewImg  = document.getElementById('previewImg');
+  var previewName = document.getElementById('previewName');
+  var previewMeta = document.getElementById('previewMeta');
+  var removeBtn   = document.getElementById('removeBtn');
+  var checksEl    = document.getElementById('checks');
+  var submitBtn   = document.getElementById('submitBtn');
+  var progressEl  = document.getElementById('progress');
+  var progressFill = document.getElementById('progressFill');
+  var progressLabel = document.getElementById('progressLabel');
+  var successMsg  = document.getElementById('successMsg');
+  var errorMsg    = document.getElementById('errorMsg');
+  var errorTitle  = document.getElementById('errorTitle');
+  var errorDetail = document.getElementById('errorDetail');
+  var retryBtn    = document.getElementById('retryBtn');
+
+  var selectedFile = null;
+  var imageWidth = 0;
+  var imageHeight = 0;
+
+  // ── Spec constants ─────────────────────────────
+  var REQUIRED_W = 1536;
+  var REQUIRED_H = 969;
+  var MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+  var MIN_DPI = 72;
+  var PRINT_WIDTH_INCHES = 3.375;
+
+  // ── Drag & drop ────────────────────────────────
+  dropZone.addEventListener('click', function () { fileInput.click(); });
+  fileInput.addEventListener('change', function () {
+    if (fileInput.files.length) handleFile(fileInput.files[0]);
+  });
+
+  dropZone.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+  dropZone.addEventListener('dragleave', function () {
+    dropZone.classList.remove('dragover');
+  });
+  dropZone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+
+  // ── File handling ──────────────────────────────
+  function handleFile(file) {
+    resetState();
+    selectedFile = file;
+
+    // Show preview
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      previewImg.src = e.target.result;
+
+      // Load image to get dimensions
+      var img = new Image();
+      img.onload = function () {
+        imageWidth = img.naturalWidth;
+        imageHeight = img.naturalHeight;
+        previewMeta.textContent = imageWidth + ' x ' + imageHeight + ' px';
+        runChecks();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+
+    previewName.textContent = file.name;
+    dropZone.classList.add('has-file');
+    preview.classList.add('visible');
+  }
+
+  function resetState() {
+    selectedFile = null;
+    imageWidth = 0;
+    imageHeight = 0;
+    dropZone.classList.remove('has-file');
+    preview.classList.remove('visible');
+    checksEl.classList.remove('visible');
+    checksEl.innerHTML = '';
+    submitBtn.classList.remove('visible');
+    submitBtn.disabled = true;
+    progressEl.classList.remove('visible');
+    successMsg.classList.remove('visible');
+    errorMsg.classList.remove('visible');
+    fileInput.value = '';
+  }
+
+  removeBtn.addEventListener('click', resetState);
+  retryBtn.addEventListener('click', resetState);
+
+  // ── Validation ─────────────────────────────────
+  function runChecks() {
+    var results = [];
+    var allPass = true;
+
+    // 1. Format
+    var isPng = selectedFile.type === 'image/png';
+    results.push({ label: 'Format: PNG', pass: isPng, detail: isPng ? 'PNG' : selectedFile.type });
+    if (!isPng) allPass = false;
+
+    // 2. File size
+    var sizeOk = selectedFile.size <= MAX_SIZE;
+    var sizeMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
+    results.push({ label: 'File size: under 10 MB', pass: sizeOk, detail: sizeMb + ' MB' });
+    if (!sizeOk) allPass = false;
+
+    // 3. Dimensions
+    var dimsOk = (imageWidth === REQUIRED_W && imageHeight === REQUIRED_H);
+    results.push({
+      label: 'Dimensions: ' + REQUIRED_W + ' x ' + REQUIRED_H + ' px',
+      pass: dimsOk,
+      detail: imageWidth + ' x ' + imageHeight
+    });
+    if (!dimsOk) allPass = false;
+
+    // 4. DPI estimate
+    var dpi = Math.round(imageWidth / PRINT_WIDTH_INCHES);
+    var dpiOk = dpi >= MIN_DPI;
+    results.push({ label: 'DPI: >= ' + MIN_DPI, pass: dpiOk, detail: dpi + ' DPI' });
+    if (!dpiOk) allPass = false;
+
+    // Render checks
+    checksEl.innerHTML = '';
+    results.forEach(function (r) {
+      var cls = r.pass ? 'check-pass' : 'check-fail';
+      var icon = r.pass
+        ? '<svg class="check-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm3.354 4.646a.5.5 0 00-.708 0L7 9.293 5.354 7.646a.5.5 0 10-.708.708l2 2a.5.5 0 00.708 0l4-4a.5.5 0 000-.708z"/></svg>'
+        : '<svg class="check-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm-.5 3.5v5a.5.5 0 001 0v-5a.5.5 0 00-1 0zm.5 8a.75.75 0 100-1.5.75.75 0 000 1.5z"/></svg>';
+      var div = document.createElement('div');
+      div.className = 'check ' + cls;
+      div.innerHTML = icon + '<span>' + r.label + ' &mdash; ' + r.detail + '</span>';
+      checksEl.appendChild(div);
+    });
+    checksEl.classList.add('visible');
+
+    submitBtn.classList.add('visible');
+    submitBtn.disabled = !allPass;
+  }
+
+  // ── Submit ─────────────────────────────────────
+  submitBtn.addEventListener('click', function () {
+    if (!selectedFile || submitBtn.disabled) return;
+    uploadFile();
+  });
+
+  function uploadFile() {
+    submitBtn.classList.remove('visible');
+    progressEl.classList.add('visible');
+    progressFill.style.width = '0%';
+    progressLabel.textContent = 'Uploading...';
+
+    var formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('projectId', projectId);
+
+    var xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', function (e) {
+      if (e.lengthComputable) {
+        var pct = Math.round((e.loaded / e.total) * 100);
+        progressFill.style.width = pct + '%';
+        progressLabel.textContent = 'Uploading... ' + pct + '%';
+      }
+    });
+
+    xhr.addEventListener('load', function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        progressFill.style.width = '100%';
+        progressLabel.textContent = 'Upload complete';
+        setTimeout(function () {
+          progressEl.classList.remove('visible');
+          successMsg.classList.add('visible');
+        }, 600);
+      } else {
+        var msg = 'Upload failed';
+        try {
+          var body = JSON.parse(xhr.responseText);
+          if (body.error) msg = body.error;
+        } catch (e) { /* ignore */ }
+        showError('Upload Failed', msg);
+      }
+    });
+
+    xhr.addEventListener('error', function () {
+      showError('Connection Error', 'Could not reach the server. Please check your connection and try again.');
+    });
+
+    xhr.open('POST', '/api/upload');
+    xhr.send(formData);
+  }
+
+  function showError(title, detail) {
+    progressEl.classList.remove('visible');
+    errorTitle.textContent = title;
+    errorDetail.textContent = detail;
+    errorMsg.classList.add('visible');
+  }
+})();
+</script>
 </body>
 </html>
