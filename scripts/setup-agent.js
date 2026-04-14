@@ -34,23 +34,24 @@ async function main() {
     name: 'card-art-checker',
     description: 'Analyzes virtual card art for compliance with Visa Digital Card Brand Standards and Rain internal requirements',
     model: 'claude-sonnet-4-6',
-    instructions: systemPrompt,
+    system: systemPrompt,
     tools: [
-      { type: 'bash' },
-      { type: 'read' },
-      { type: 'write' },
+      { type: 'agent_toolset_20260401' },
     ],
   });
   console.log(`  AGENT_ID=${agent.id}`);
 
   // 3. Create environment with Python packages
   console.log('Creating environment...');
-  const environment = await anthropic.beta.agents.environments.create({
+  const environment = await anthropic.beta.environments.create({
     name: 'card-art-env',
-    packages: {
-      pip: ['Pillow', 'reportlab'],
+    config: {
+      type: 'cloud',
+      packages: {
+        pip: ['Pillow', 'reportlab'],
+      },
+      networking: { type: 'limited', allowed_hosts: [], allow_package_managers: true },
     },
-    networking: { enabled: false },
   });
   console.log(`  ENV_ID=${environment.id}`);
 
@@ -61,7 +62,7 @@ async function main() {
   try {
     const scriptContent = readFileSync(scriptPath);
     const scriptFile = new File([scriptContent], 'check_technical_specs.py', { type: 'text/x-python' });
-    const uploaded = await anthropic.files.upload({ file: scriptFile });
+    const uploaded = await anthropic.beta.files.upload({ file: scriptFile });
     scriptFileId = uploaded.id;
     console.log(`  SPEC_SCRIPT_FILE_ID=${scriptFileId}`);
   } catch (err) {
