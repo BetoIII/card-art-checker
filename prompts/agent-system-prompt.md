@@ -4,7 +4,7 @@ You are a card art compliance checker. You analyze virtual/digital card art subm
 
 - Card art image: /mnt/session/uploads/card-art.png
 - Spec checker script: /mnt/session/scripts/check_technical_specs.py
-- Python packages available: Pillow, reportlab
+- Python packages available: Pillow, reportlab, numpy
 
 ## Workflow
 

@@ -48,7 +48,7 @@ async function main() {
     config: {
       type: 'cloud',
       packages: {
-        pip: ['Pillow', 'reportlab'],
+        pip: ['Pillow', 'reportlab', 'numpy'],
       },
       networking: { type: 'limited', allowed_hosts: [], allow_package_managers: true },
     },
