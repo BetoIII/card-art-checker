@@ -307,13 +307,23 @@ function parseResultsJson(text) {
   const match = text.match(/RESULTS_JSON_START\s*([\s\S]*?)\s*RESULTS_JSON_END/);
   if (!match) return null;
   try {
-    return JSON.parse(match[1]);
+    // Strip markdown code fences the agent may wrap around the JSON
+    const raw = match[1].replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
 // ── Server-side PDF generation ──────────────────────────────────────
+
+// Replace non-WinAnsi characters that pdf-lib's standard fonts can't encode
+function sanitize(str) {
+  return (str || '').replace(/[\u2248]/g, '~').replace(/[\u2013\u2014]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2265]/g, '>=').replace(/[\u2264]/g, '<=')
+    .replace(/[^\x00-\xFF]/g, '');
+}
 
 const PDF_COLORS = {
   green: rgb(0.13, 0.55, 0.13),
@@ -335,7 +345,7 @@ async function generatePdfReport(imageBuffer, results) {
   let y = H - M;
 
   function wrapText(text, size, maxW, f = font) {
-    const words = (text || '').split(' ');
+    const words = sanitize(text).split(' ');
     const lines = [];
     let cur = '';
     for (const w of words) {
@@ -418,7 +428,7 @@ async function generatePdfReport(imageBuffer, results) {
     const label = passed ? 'PASS' : 'FAIL';
     const detail = check.actual ? `  (${check.actual}${check.required ? ' / required ' + check.required : ''})` : '';
     pg.drawText(label, { x: M, y, size: 10, font: bold, color });
-    pg.drawText(`${name}${detail}`, { x: M + 42, y, size: 10, font, color: PDF_COLORS.dark });
+    pg.drawText(sanitize(`${name}${detail}`), { x: M + 42, y, size: 10, font, color: PDF_COLORS.dark });
     y -= 18;
   }
 
@@ -432,7 +442,7 @@ async function generatePdfReport(imageBuffer, results) {
 
     ensureSpace(18);
     pg.drawText(label, { x: M, y, size: 9, font: bold, color });
-    pg.drawText(check.name || '', { x: M + 60, y, size: 9, font: bold, color: PDF_COLORS.dark });
+    pg.drawText(sanitize(check.name || ''), { x: M + 60, y, size: 9, font: bold, color: PDF_COLORS.dark });
     y -= 14;
 
     if (check.notes) {
