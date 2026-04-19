@@ -561,7 +561,8 @@
     }
 
     async function triggerDelivery(delivery) {
-      upsertStep('delivery', 'Delivering to Slack & Rocketlane...', 'pending');
+      upsertStep('slack_deliver', 'Posting to Slack...', 'pending');
+      upsertStep('rocketlane_deliver', 'Uploading to Rocketlane...', 'pending');
       try {
         const res = await fetch('/api/card-deliver', {
           method: 'POST',
@@ -570,21 +571,25 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Delivery failed');
-        const parts = [];
-        if (data.results.slack === 'ok') parts.push('Slack');
-        if (data.results.rocketlane === 'ok') parts.push('Rocketlane');
-        const failed = [];
-        if (data.results.slack?.startsWith('failed')) failed.push('Slack');
-        if (data.results.rocketlane?.startsWith('failed')) failed.push('Rocketlane');
-        if (failed.length) {
-          upsertStep('delivery', `Delivered to ${parts.join(' & ') || 'none'}. Failed: ${failed.join(', ')}`, 'warn');
-        } else if (parts.length) {
-          upsertStep('delivery', `Delivered to ${parts.join(' & ')}`, 'done');
+
+        // Slack result
+        if (data.results.slack === 'ok') {
+          upsertStep('slack_deliver', 'Posted to Slack', 'done');
+        } else if (data.results.slack === 'skipped') {
+          upsertStep('slack_deliver', 'Slack not configured — skipping', 'done');
         } else {
-          upsertStep('delivery', 'Delivery skipped (not configured)', 'done');
+          upsertStep('slack_deliver', data.results.slack, 'warn');
+        }
+
+        // Rocketlane result
+        if (data.results.rocketlane === 'ok') {
+          upsertStep('rocketlane_deliver', 'Uploaded to Rocketlane', 'done');
+        } else {
+          upsertStep('rocketlane_deliver', data.results.rocketlane, 'warn');
         }
       } catch (err) {
-        upsertStep('delivery', `Delivery error: ${err.message}`, 'warn');
+        upsertStep('slack_deliver', `Delivery error: ${err.message}`, 'warn');
+        upsertStep('rocketlane_deliver', `Delivery error: ${err.message}`, 'warn');
       }
     }
 
