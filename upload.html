@@ -523,6 +523,10 @@
           break;
         case 'complete':
           showResult(payload.status, payload.summary, payload.pdfUrl);
+          // Fire delivery (Slack + Rocketlane) in the background
+          if (payload.delivery) {
+            triggerDelivery(payload.delivery);
+          }
           break;
         case 'error':
           showError(payload.message);
@@ -551,8 +555,37 @@
 
     function iconFor(status) {
       if (status === 'done') return '&#10003;';
+      if (status === 'warn') return '&#9888;';
       if (status === 'error') return '&#10007;';
       return '<span class="spinner"></span>';
+    }
+
+    async function triggerDelivery(delivery) {
+      upsertStep('delivery', 'Delivering to Slack & Rocketlane...', 'pending');
+      try {
+        const res = await fetch('/api/card-deliver', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(delivery),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Delivery failed');
+        const parts = [];
+        if (data.results.slack === 'ok') parts.push('Slack');
+        if (data.results.rocketlane === 'ok') parts.push('Rocketlane');
+        const failed = [];
+        if (data.results.slack?.startsWith('failed')) failed.push('Slack');
+        if (data.results.rocketlane?.startsWith('failed')) failed.push('Rocketlane');
+        if (failed.length) {
+          upsertStep('delivery', `Delivered to ${parts.join(' & ') || 'none'}. Failed: ${failed.join(', ')}`, 'warn');
+        } else if (parts.length) {
+          upsertStep('delivery', `Delivered to ${parts.join(' & ')}`, 'done');
+        } else {
+          upsertStep('delivery', 'Delivery skipped (not configured)', 'done');
+        }
+      } catch (err) {
+        upsertStep('delivery', `Delivery error: ${err.message}`, 'warn');
+      }
     }
 
     function showResult(status, summary, pdfUrl) {

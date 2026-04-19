@@ -1,5 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { WebClient } from '@slack/web-api';
 import { put } from '@vercel/blob';
 import Busboy from 'busboy';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
@@ -17,31 +16,29 @@ function getAnthropic() {
   return _anthropic;
 }
 
-let _slack;
-function getSlack() {
-  if (_slack === undefined) {
-    _slack = process.env.SLACK_BOT_TOKEN
-      ? new WebClient(process.env.SLACK_BOT_TOKEN)
-      : null;
-  }
-  return _slack;
-}
-
 const ROCKETLANE_BASE = 'https://api.rocketlane.com/api/1.0';
 
-// ── Analysis prompt sent to the agent each session ───────────────────
+// ── Analysis prompts ────────────────────────────────────────────────
+// Turn 1: quick tool-use turn to run the Python spec checker
+const TECH_SPEC_PROMPT = `Run the technical spec checker on the card art image and output ONLY the raw JSON result. No commentary.
 
-const ANALYSIS_PROMPT = `Analyze the card art image at /mnt/session/uploads/card-art.png for compliance with Visa Digital Card Brand Standards (September 2025) and Rain's internal requirements.
-
-## Workflow
-
-### Step 1: Run Technical Spec Checks
 \`\`\`bash
 python3 /mnt/session/scripts/check_technical_specs.py /mnt/session/uploads/card-art.png
 \`\`\`
-Parse the JSON output. Save the full JSON (checks + colors) for Step 3.
 
-### Step 2: Visual Inspection (14 checks)
+Output the complete JSON from the script — nothing else.`;
+
+// Turn 2: visual-only inspection (no tool use needed → much faster)
+function buildVisualPrompt(techJson) {
+  return `Analyze the card art image at /mnt/session/uploads/card-art.png for compliance with Visa Digital Card Brand Standards (September 2025) and Rain's internal requirements.
+
+The technical spec checks have ALREADY been run. Here are the results — do NOT re-run the script:
+
+TECH_SPEC_RESULTS:
+${JSON.stringify(techJson, null, 2)}
+
+## Your Task: Visual Inspection ONLY (14 checks)
+
 Examine the card art image visually and evaluate:
 
 Required Elements:
@@ -69,7 +66,7 @@ Layout & Quality:
 
 For EACH check, determine: pass | fail | warning
 
-### Step 3: Output Structured Results JSON
+## Output Structured Results JSON
 
 CRITICAL: You MUST output a JSON block between these exact markers. The system parses this to generate the PDF report. Without it, no report is created.
 
@@ -77,7 +74,7 @@ RESULTS_JSON_START
 {
   "status": "APPROVED or REQUIRES CHANGES or APPROVED WITH NOTES",
   "summary": "1-2 sentence overall assessment",
-  "tech_checks": <the "checks" object from Step 1 Python output>,
+  "tech_checks": ${JSON.stringify(techJson.checks || techJson, null, 2)},
   "visual_checks": [
     { "name": "Visa Brand Mark present", "result": "pass or fail or warning", "notes": "details" },
     { "name": "Visa Brand Mark position", "result": "...", "notes": "..." },
@@ -94,11 +91,11 @@ RESULTS_JSON_START
     { "name": "No physical card effects", "result": "...", "notes": "..." },
     { "name": "Lower-left PAN area clear", "result": "...", "notes": "..." }
   ],
-  "colors": <the "colors" object from Step 1 Python output>
+  "colors": ${JSON.stringify(techJson.colors || {}, null, 2)}
 }
 RESULTS_JSON_END
 
-### Step 4: Output Human-Readable Summary
+## Output Human-Readable Summary
 
 STATUS: APPROVED | REQUIRES CHANGES
 SUMMARY: <1-2 sentence overview>
@@ -116,6 +113,7 @@ RGB FALLBACK COLORS:
 - Background: #XXXXXX (R, G, B)
 - Foreground: #XXXXXX (R, G, B)
 - Label: #XXXXXX (R, G, B)`;
+}
 
 // ── Multipart parser ─────────────────────────────────────────────────
 
@@ -177,118 +175,6 @@ async function getProject(projectId) {
   if (!res.ok) throw Object.assign(new Error(`Rocketlane project lookup failed: ${res.status}`), { step: 'rocketlane' });
   const data = await res.json();
   return { name: data.name || data.projectName, id: projectId };
-}
-
-async function getSpaceId(projectId) {
-  const res = await fetch(`${ROCKETLANE_BASE}/spaces?projectId=${projectId}`, {
-    headers: { 'api-key': process.env.ROCKETLANE_API_KEY },
-  });
-  if (!res.ok) throw Object.assign(new Error(`Rocketlane space lookup failed: ${res.status}`), { step: 'rocketlane_doc' });
-  const data = await res.json();
-  if (!data.results?.length) throw Object.assign(new Error(`No space found for project ${projectId}`), { step: 'rocketlane_doc' });
-  return data.results[0].id;
-}
-
-async function uploadToRocketlaneSpace(projectId, pdfUrl, projectName) {
-  const spaceId = await getSpaceId(projectId);
-  const timestamp = new Date().toISOString().split('T')[0];
-
-  const res = await fetch(`${ROCKETLANE_BASE}/space-documents`, {
-    method: 'POST',
-    headers: {
-      'api-key': process.env.ROCKETLANE_API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      spaceDocumentName: `Card Art Report — ${projectName} — ${timestamp}`,
-      space: { id: spaceId },
-      spaceDocumentType: 'EMBEDDED_DOCUMENT',
-      url: pdfUrl,
-    }),
-  });
-  if (!res.ok) throw Object.assign(new Error(`Rocketlane space document creation failed: ${res.status}`), { step: 'rocketlane_doc' });
-}
-
-// ── Slack channel resolution ─────────────────────────────────────────
-
-async function findSlackChannel(projectName) {
-  // Paginate through all public channels
-  let channels = [];
-  let cursor;
-  do {
-    const result = await getSlack().conversations.list({
-      types: 'public_channel',
-      exclude_archived: true,
-      limit: 200,
-      cursor,
-    });
-    channels.push(...(result.channels ?? []));
-    cursor = result.response_metadata?.next_cursor;
-  } while (cursor);
-
-  // Step 1: Exact match — ext-{normalizedName}-rain
-  const normalized = projectName.toLowerCase().replace(/\s+/g, '');
-  const expectedChannel = `ext-${normalized}-rain`;
-
-  const exact = channels.find(c => c.name === expectedChannel);
-  if (exact) return { id: exact.id, name: exact.name };
-
-  // Step 2: Fuzzy — ext-*-rain containing all keywords run together
-  const keywords = projectName.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const fuzzy = channels.find(c =>
-    c.name?.startsWith('ext-') &&
-    c.name?.endsWith('-rain') &&
-    c.name?.replace(/-/g, '').includes(keywords)
-  );
-  if (fuzzy) return { id: fuzzy.id, name: fuzzy.name };
-
-  // Step 3: Broader — first significant word (6+ chars)
-  const firstWord = projectName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6);
-  const broader = channels.find(c =>
-    c.name?.startsWith('ext-') &&
-    c.name?.endsWith('-rain') &&
-    c.name?.includes(firstWord)
-  );
-  if (broader) return { id: broader.id, name: broader.name };
-
-  throw Object.assign(
-    new Error(`Could not find Slack channel for "${projectName}" (expected: #${expectedChannel})`),
-    { step: 'slack_search' }
-  );
-}
-
-// ── Slack posting ────────────────────────────────────────────────────
-
-async function postToSlack(channelId, pdfBuffer, status, summary, projectName, pdfUrl, projectId) {
-  // Upload PDF file
-  await getSlack().files.uploadV2({
-    channel_id: channelId,
-    file: pdfBuffer,
-    filename: `card-art-report-${projectId}.pdf`,
-    title: 'Card Art Compliance Report',
-  });
-
-  // Post formatted summary
-  const statusEmoji = status === 'pass' ? ':white_check_mark:' : ':x:';
-  const statusLabel = status === 'pass' ? 'APPROVED' : 'REQUIRES CHANGES';
-
-  await getSlack().chat.postMessage({
-    channel: channelId,
-    blocks: [
-      {
-        type: 'header',
-        text: { type: 'plain_text', text: `${statusLabel} — Card Art Review` },
-      },
-      {
-        type: 'section',
-        text: { type: 'mrkdwn', text: `${statusEmoji} *${projectName}*\n\n${summary}` },
-      },
-      {
-        type: 'section',
-        text: { type: 'mrkdwn', text: `<${pdfUrl}|View Full PDF Report>` },
-      },
-    ],
-  });
 }
 
 // ── Agent response parser ────────────────────────────────────────────
@@ -500,20 +386,7 @@ export async function POST(request) {
         const project = await getProject(projectId);
         send('progress', { step: 'rocketlane', message: `Project: ${project.name}`, status: 'done' });
 
-        let channel = null;
-        if (getSlack()) {
-          send('progress', { step: 'slack_search', message: 'Finding Slack channel...', status: 'pending' });
-          channel = await findSlackChannel(project.name);
-          send('progress', { step: 'slack_search', message: `Found channel: #${channel.name}`, status: 'done' });
-
-          send('progress', { step: 'slack_join', message: 'Joining channel...', status: 'pending' });
-          await getSlack().conversations.join({ channel: channel.id });
-          send('progress', { step: 'slack_join', message: 'Bot joined channel', status: 'done' });
-        } else {
-          send('progress', { step: 'slack_search', message: 'Slack not configured — skipping', status: 'done' });
-        }
-
-        // ── Phase 2: Agent Execution ───────────────────────────
+        // ── Phase 2: Agent Execution (two turns) ─────────────
         send('progress', { step: 'agent_init', message: 'Uploading image for analysis...', status: 'pending' });
 
         // Upload card art PNG to Anthropic Files API
@@ -536,44 +409,69 @@ export async function POST(request) {
           resources,
         });
 
-        // Send analysis instructions
+        // ── Turn 1: Run tech spec script (quick — just tool use) ──
+        send('progress', { step: 'tech_specs', message: 'Running technical spec checks...', status: 'pending' });
         await getAnthropic().beta.sessions.events.send(session.id, {
           events: [{
             type: 'user.message',
-            content: [{ type: 'text', text: ANALYSIS_PROMPT }],
+            content: [{ type: 'text', text: TECH_SPEC_PROMPT }],
           }],
         });
 
-        // Stream agent events → proxy to client as SSE
-        send('progress', { step: 'agent_run', message: 'Running card art analysis...', status: 'pending' });
-        const agentStream = await getAnthropic().beta.sessions.events.stream(session.id);
+        let techSpecText = '';
+        const techStream = await getAnthropic().beta.sessions.events.stream(session.id);
+        for await (const event of techStream) {
+          if (event.type === 'agent.message') {
+            const text = event.content?.map(b => b.text).join('') || '';
+            techSpecText += text;
+          }
+          if (event.type === 'agent.tool_use') {
+            send('agent_tool', { tool: event.name || 'tool', command: event.input?.command, status: 'running' });
+          }
+          if (event.type === 'session.status_idle') break;
+        }
+
+        // Parse the tech spec JSON from the agent's output
+        let techJson;
+        try {
+          const jsonMatch = techSpecText.match(/\{[\s\S]*\}/);
+          techJson = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        } catch { techJson = null; }
+        if (!techJson) throw Object.assign(new Error('Tech spec script did not return valid JSON'), { step: 'tech_specs' });
+        send('progress', { step: 'tech_specs', message: 'Technical specs complete', status: 'done' });
+
+        // ── Turn 2: Visual inspection only (no tool use → fast) ──
+        send('progress', { step: 'agent_run', message: 'Running visual inspection...', status: 'pending' });
+        await getAnthropic().beta.sessions.events.send(session.id, {
+          events: [{
+            type: 'user.message',
+            content: [{ type: 'text', text: buildVisualPrompt(techJson) }],
+          }],
+        });
+
+        const visualStream = await getAnthropic().beta.sessions.events.stream(session.id);
         let agentTextResponse = '';
 
-        for await (const event of agentStream) {
+        for await (const event of visualStream) {
           if (event.type === 'agent.message') {
             const text = event.content?.map(b => b.text).join('') || '';
             agentTextResponse += text;
             if (text) send('agent_delta', { text });
           }
           if (event.type === 'agent.tool_use') {
-            send('agent_tool', {
-              tool: event.name || 'tool',
-              command: event.input?.command,
-              status: 'running',
-            });
+            send('agent_tool', { tool: event.name || 'tool', command: event.input?.command, status: 'running' });
           }
           if (event.type === 'session.status_idle') break;
         }
         send('progress', { step: 'agent_run', message: 'Analysis complete', status: 'done' });
 
-        // Generate PDF server-side from agent's structured results
+        // ── Phase 3: PDF + Storage ─────────────────────────────
         send('progress', { step: 'pdf_generate', message: 'Generating report...', status: 'pending' });
         const results = parseResultsJson(agentTextResponse);
         if (!results) throw Object.assign(new Error('Agent did not output structured results (RESULTS_JSON_START/END block missing)'), { step: 'pdf_generate' });
         const pdfBuffer = await generatePdfReport(file, results);
         send('progress', { step: 'pdf_generate', message: 'Report generated', status: 'done' });
 
-        // ── Phase 3: Delivery ──────────────────────────────────
         send('progress', { step: 'blob_upload', message: 'Storing report...', status: 'pending' });
         const blob = await put(`reports/${projectId}/${Date.now()}-report.pdf`, pdfBuffer, {
           access: 'public',
@@ -583,19 +481,20 @@ export async function POST(request) {
 
         const { status, summary } = parseAgentResponse(agentTextResponse);
 
-        if (getSlack() && channel) {
-          send('progress', { step: 'slack_post', message: 'Posting to Slack...', status: 'pending' });
-          await postToSlack(channel.id, pdfBuffer, status, summary, project.name, blob.url, projectId);
-          send('progress', { step: 'slack_post', message: 'Posted to Slack', status: 'done' });
-        } else {
-          send('progress', { step: 'slack_post', message: 'Slack not configured — skipping', status: 'done' });
-        }
-
-        send('progress', { step: 'rocketlane_doc', message: 'Uploading to Rocketlane...', status: 'pending' });
-        await uploadToRocketlaneSpace(projectId, blob.url, project.name);
-        send('progress', { step: 'rocketlane_doc', message: 'Uploaded to Rocketlane', status: 'done' });
-
-        send('complete', { status, summary, pdfUrl: blob.url });
+        // Send complete — delivery (Slack/Rocketlane) handled by /api/card-deliver
+        send('complete', {
+          status,
+          summary,
+          pdfUrl: blob.url,
+          // Delivery context for the client to forward to /api/card-deliver
+          delivery: {
+            projectId,
+            projectName: project.name,
+            pdfUrl: blob.url,
+            status,
+            summary,
+          },
+        });
       } catch (err) {
         send('error', { message: err.message || 'An unexpected error occurred', step: err.step });
       } finally {
