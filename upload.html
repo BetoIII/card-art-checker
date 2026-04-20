@@ -108,9 +108,12 @@
       cursor: pointer;
     }
     .drop-zone-icon {
-      font-size: 36px;
-      margin-bottom: 8px;
-      color: var(--rain-light-gray);
+      display: block;
+      height: 52px;
+      width: auto;
+      margin: 0 auto 12px;
+      border-radius: 4px;
+      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.08));
     }
     .drop-zone-text {
       font-size: 14px;
@@ -330,7 +333,7 @@
     <form id="upload-form">
       <div class="drop-zone" id="drop-zone">
         <input type="file" id="file-input" accept="image/png">
-        <div class="drop-zone-icon">&#128444;</div>
+        <img class="drop-zone-icon" src="/assets/visa-corporate-card.png" alt="Visa card">
         <div class="drop-zone-text">
           Drag & drop your card art PNG here<br>
           or <strong>click to browse</strong>
