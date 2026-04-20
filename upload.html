@@ -390,7 +390,7 @@
           <button type="button" data-value="virtual" class="active" role="tab">Virtual</button>
           <button type="button" data-value="physical" role="tab">Physical</button>
         </div>
-        <div class="field-hint">Virtual = 1536&times;969 PNG digital art. Physical = .ai/.eps vector art for CR80 plastic cards.</div>
+        <div class="field-hint">Virtual = 1536&times;969 PNG digital art. Physical = .ai, .eps, or 1536&times;969 PNG artwork for CR80 plastic cards.</div>
       </div>
 
       <div class="drop-zone" id="drop-zone">
@@ -411,9 +411,9 @@
       <div class="field-block" id="back-file-field" style="display: none; margin-top: 16px;">
         <label class="field-label">Back of card <span style="font-weight: 400; color: var(--rain-dark-gray);">(optional)</span></label>
         <div class="drop-zone" id="back-drop-zone">
-          <input type="file" id="back-file-input" accept=".ai,.eps,application/postscript,application/illustrator">
+          <input type="file" id="back-file-input" accept=".ai,.eps,.png,application/postscript,application/illustrator,image/png">
           <div class="drop-zone-text" id="back-drop-zone-text">
-            Drag &amp; drop back-of-card .ai or .eps<br>
+            Drag &amp; drop back-of-card .ai, .eps, or .png<br>
             or <strong>click to browse</strong>
           </div>
         </div>
@@ -471,7 +471,7 @@
     let isBackValid = true; // true when no back file or back is valid; false only on bad back ext
     let cardType = 'virtual';
 
-    const PHYSICAL_EXT_RE = /\.(ai|eps)$/i;
+    const PHYSICAL_EXT_RE = /\.(ai|eps|png)$/i;
 
     // Get projectId from URL
     const params = new URLSearchParams(window.location.search);
@@ -486,8 +486,8 @@
       }
 
       if (cardType === 'physical') {
-        fileInput.setAttribute('accept', '.ai,.eps,application/postscript,application/illustrator');
-        dropZoneText.innerHTML = 'Drag &amp; drop front card art (.ai or .eps)<br>or <strong>click to browse</strong>';
+        fileInput.setAttribute('accept', '.ai,.eps,.png,application/postscript,application/illustrator,image/png');
+        dropZoneText.innerHTML = 'Drag &amp; drop front card art (.ai, .eps, or .png)<br>or <strong>click to browse</strong>';
         backFileField.style.display = '';
       } else {
         fileInput.setAttribute('accept', 'image/png');
@@ -531,20 +531,52 @@
       previewSection.classList.add('visible');
 
       if (cardType === 'physical') {
-        // Vector files can't be decoded in-browser. Validate extension + size only.
         const extOk = PHYSICAL_EXT_RE.test(file.name || '');
         const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
         const sizeOk = file.size < 25 * 1024 * 1024;
+        const isPng = /\.png$/i.test(file.name || '') || file.type === 'image/png';
+        const checks = [
+          { label: 'File extension is .ai, .eps, or .png', pass: extOk },
+          { label: 'File size under 25 MB', pass: sizeOk },
+        ];
+
+        if (isPng && extOk) {
+          // PNG physical submissions can be decoded in-browser — show preview + dimensions.
+          previewImg.style.display = '';
+          const url = URL.createObjectURL(file);
+          previewImg.src = url;
+          const img = new Image();
+          img.onload = () => {
+            const w = img.naturalWidth;
+            const h = img.naturalHeight;
+            previewMeta.innerHTML = `
+              <span>${escapeHtml(file.name)}</span>
+              <span>${w} x ${h} px</span>
+              <span>${sizeMB} MB</span>
+            `;
+            checks.push({ label: 'PNG dimensions 1536 x 969', pass: w === 1536 && h === 969 });
+            validationChecks.innerHTML = checks.map(c => `
+              <div class="val-check ${c.pass ? 'pass' : 'fail'}">
+                <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
+                <span>${c.label}</span>
+              </div>
+            `).join('');
+            validationChecks.classList.add('visible');
+            isFileValid = checks.every(c => c.pass);
+            dropZone.classList.toggle('has-file', isFileValid);
+            updateSubmitState();
+          };
+          img.src = url;
+          return;
+        }
+
+        // Vector (.ai/.eps) files can't be decoded in-browser. Extension + size only.
         previewImg.removeAttribute('src');
         previewImg.style.display = 'none';
         previewMeta.innerHTML = `
           <span>${escapeHtml(file.name)}</span>
           <span>${sizeMB} MB</span>
         `;
-        const checks = [
-          { label: 'File extension is .ai or .eps', pass: extOk },
-          { label: 'File size under 25 MB', pass: sizeOk },
-        ];
         validationChecks.innerHTML = checks.map(c => `
           <div class="val-check ${c.pass ? 'pass' : 'fail'}">
             <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>

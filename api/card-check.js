@@ -23,18 +23,19 @@ const ROCKETLANE_BASE = 'https://api.rocketlane.com/api/1.0';
 // The prompt varies by card type because physical submissions use
 // .ai/.eps sources and an optional back file.
 
-function buildTechSpecPrompt(cardType, hasBack) {
+function buildTechSpecPrompt(cardType, hasBack, frontExt = '.ai', backExt = '.ai') {
   if (cardType === 'physical') {
-    const frontPath = '/mnt/session/uploads/front.vec';
-    const backArg = hasBack ? ' --back /mnt/session/uploads/back.vec' : '';
-    return `Run the technical spec checker on the physical card art and output ONLY the raw JSON result. No commentary.
-
-If Ghostscript is missing, install it first:
+    const frontPath = `/mnt/session/uploads/front${frontExt}`;
+    const backArg = hasBack ? ` --back /mnt/session/uploads/back${backExt}` : '';
+    const needsGs = frontExt !== '.png' || (hasBack && backExt !== '.png');
+    const gsStep = needsGs
+      ? `\nIf Ghostscript is missing, install it first (required for .ai/.eps rendering):
 \`\`\`bash
 which gs || (apt-get update -qq && apt-get install -y ghostscript)
-\`\`\`
-
-Then:
+\`\`\`\n`
+      : '';
+    return `Run the technical spec checker on the physical card art and output ONLY the raw JSON result. No commentary.
+${gsStep}
 \`\`\`bash
 python3 /mnt/session/scripts/check_technical_specs.py ${frontPath} --card-type physical${backArg}
 \`\`\`
@@ -169,6 +170,10 @@ Required Elements (Front):
 - Visa Brand Mark position: lower right, upper right, or upper left (lower-left is NOT allowed)
 - Visa Brand Mark color is one of: Visa Blue, White, Black, Silver, or Gold (or PVBM in Blue/Silver/Gold/Black)
 - Visa Brand Mark contrast: strong against background
+- Visa Brand Mark 56px bleed zone: the technical checker has already measured
+  edge distances and emitted a \`bleed_zone\` result in TECH_SPEC_RESULTS above.
+  Do NOT re-measure; just mirror that pass/warning/fail verdict in the matching
+  visual_checks entry with a concise human-readable note.
 - Issuer logo clearly present
 - Rounded corners consistent with CR80 die-cut
 
@@ -200,6 +205,7 @@ RESULTS_JSON_START
     { "name": "Visa Brand Mark position (front)", "result": "...", "notes": "..." },
     { "name": "Visa Brand Mark color (front)", "result": "...", "notes": "..." },
     { "name": "Visa Brand Mark contrast (front)", "result": "...", "notes": "..." },
+    { "name": "Visa Brand Mark 56px bleed zone (front)", "result": "mirror the tech bleed_zone verdict", "notes": "restate edge distances" },
     { "name": "Issuer logo (front)", "result": "...", "notes": "..." },
     { "name": "Rounded corners match CR80", "result": "...", "notes": "..." },
     { "name": "Magnetic stripe area (back)", "result": "pass or fail or warning or not submitted", "notes": "..." },
@@ -222,6 +228,7 @@ TECHNICAL CHECKS (front):
 - File Format: PASS/FAIL
 - CR80 Aspect Ratio: PASS/FAIL
 - Min Resolution: PASS/FAIL
+- 56px Bleed Zone: PASS/FAIL/WARNING (mirror the tech bleed_zone result)
 - Color Mode: PASS/FAIL/UNKNOWN
 - Layers Present: PASS/UNKNOWN
 
@@ -232,11 +239,22 @@ VISUAL CHECKS:
 // ── Multipart parser ─────────────────────────────────────────────────
 
 const VALID_CARD_TYPES = new Set(['virtual', 'physical']);
-const PHYSICAL_EXTS = new Set(['.ai', '.eps']);
+// Physical submissions may be either vector source files (.ai/.eps) or a
+// pre-rasterized PNG matching Rain's 1536×969 physical card template.
+const PHYSICAL_EXTS = new Set(['.ai', '.eps', '.png']);
 
 function extOf(name) {
   const m = /\.[a-z0-9]+$/i.exec(name || '');
   return m ? m[0].toLowerCase() : '';
+}
+
+function mimeForPhysicalExt(ext) {
+  switch (ext) {
+    case '.eps': return 'application/postscript';
+    case '.png': return 'image/png';
+    case '.ai':
+    default:     return 'application/illustrator';
+  }
 }
 
 function parseMultipart(request) {
@@ -505,6 +523,7 @@ async function generatePdfReport(imageBuffer, results, options = {}) {
     drawTechRow('File Format', front.file_format);
     drawTechRow('CR80 Aspect Ratio', front.cr80_aspect_ratio);
     drawTechRow('Min Resolution', front.min_resolution);
+    drawTechRow('56px Bleed Zone', front.bleed_zone);
     drawTechRow('Color Mode', front.color_mode);
     drawTechRow('Layers Present', front.layers_present);
 
@@ -516,6 +535,7 @@ async function generatePdfReport(imageBuffer, results, options = {}) {
       drawTechRow('File Format', tc.back.checks.file_format);
       drawTechRow('CR80 Aspect Ratio', tc.back.checks.cr80_aspect_ratio);
       drawTechRow('Min Resolution', tc.back.checks.min_resolution);
+      drawTechRow('56px Bleed Zone', tc.back.checks.bleed_zone);
       drawTechRow('Color Mode', tc.back.checks.color_mode);
       drawTechRow('Layers Present', tc.back.checks.layers_present);
     } else if (hasBack === false) {
@@ -613,29 +633,40 @@ export async function POST(request) {
         // Physical uploads .ai/.eps at /mnt/session/uploads/front.vec (+ back.vec).
         const resources = [];
 
+        // Track physical front/back extensions so the tech-spec prompt invokes
+        // check_technical_specs.py with the real file path.
+        let physicalFrontExt = '.ai';
+        let physicalBackExt = '.ai';
+
         if (cardType === 'virtual') {
           const imageFile = new File([file], 'card-art.png', { type: 'image/png' });
           const uploadedImage = await getAnthropic().beta.files.upload({ file: imageFile });
           resources.push({ type: 'file', file_id: uploadedImage.id, mount_path: '/mnt/session/uploads/card-art.png' });
         } else {
-          // Physical: preserve original extension so Ghostscript can dispatch correctly.
-          const frontExt = (fileName && /\.[a-z0-9]+$/i.exec(fileName)?.[0]) || '.ai';
-          const frontMime = frontExt.toLowerCase() === '.eps' ? 'application/postscript' : 'application/illustrator';
+          // Physical: preserve original extension so the Python script can
+          // branch on format (vector → Ghostscript render; PNG → use directly).
+          physicalFrontExt = (fileName && /\.[a-z0-9]+$/i.exec(fileName)?.[0]?.toLowerCase()) || '.ai';
+          const frontMime = mimeForPhysicalExt(physicalFrontExt);
           const uploadedFront = await getAnthropic().beta.files.upload({
-            file: new File([file], `front${frontExt}`, { type: frontMime }),
+            file: new File([file], `front${physicalFrontExt}`, { type: frontMime }),
           });
-          resources.push({ type: 'file', file_id: uploadedFront.id, mount_path: `/mnt/session/uploads/front${frontExt}` });
-          // Symlink-style mount at a stable path so prompts don't need to know the real ext.
-          resources.push({ type: 'file', file_id: uploadedFront.id, mount_path: '/mnt/session/uploads/front.vec' });
+          resources.push({
+            type: 'file',
+            file_id: uploadedFront.id,
+            mount_path: `/mnt/session/uploads/front${physicalFrontExt}`,
+          });
 
           if (hasBack) {
-            const backExt = (backFileName && /\.[a-z0-9]+$/i.exec(backFileName)?.[0]) || '.ai';
-            const backMime = backExt.toLowerCase() === '.eps' ? 'application/postscript' : 'application/illustrator';
+            physicalBackExt = (backFileName && /\.[a-z0-9]+$/i.exec(backFileName)?.[0]?.toLowerCase()) || '.ai';
+            const backMime = mimeForPhysicalExt(physicalBackExt);
             const uploadedBack = await getAnthropic().beta.files.upload({
-              file: new File([backFile], `back${backExt}`, { type: backMime }),
+              file: new File([backFile], `back${physicalBackExt}`, { type: backMime }),
             });
-            resources.push({ type: 'file', file_id: uploadedBack.id, mount_path: `/mnt/session/uploads/back${backExt}` });
-            resources.push({ type: 'file', file_id: uploadedBack.id, mount_path: '/mnt/session/uploads/back.vec' });
+            resources.push({
+              type: 'file',
+              file_id: uploadedBack.id,
+              mount_path: `/mnt/session/uploads/back${physicalBackExt}`,
+            });
           }
         }
 
@@ -657,7 +688,7 @@ export async function POST(request) {
         await getAnthropic().beta.sessions.events.send(session.id, {
           events: [{
             type: 'user.message',
-            content: [{ type: 'text', text: buildTechSpecPrompt(cardType, hasBack) }],
+            content: [{ type: 'text', text: buildTechSpecPrompt(cardType, hasBack, physicalFrontExt, physicalBackExt) }],
           }],
         });
 

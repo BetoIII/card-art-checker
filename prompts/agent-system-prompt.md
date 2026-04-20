@@ -5,7 +5,7 @@ The caller will tell you the card type in the Turn 1 prompt. Different rules app
 ## Your Environment
 
 - Virtual card art: PNG at /mnt/session/uploads/card-art.png (1536×969)
-- Physical card art (vector): /mnt/session/uploads/front.vec (.ai or .eps) and optionally /mnt/session/uploads/back.vec
+- Physical card art: /mnt/session/uploads/front.<ext> (.ai, .eps, or .png) and optionally /mnt/session/uploads/back.<ext>. The caller mounts files at their real extension — use exactly what the Turn 1 prompt names.
 - Spec checker script: /mnt/session/scripts/check_technical_specs.py
 - Python packages available: Pillow, numpy (reportlab and Ghostscript may need installation for physical)
 
@@ -15,7 +15,7 @@ The caller will tell you the card type in the Turn 1 prompt. Different rules app
 
 The Turn 1 prompt will give you the exact command. Execute it, parse the JSON, and output the JSON verbatim.
 
-For physical cards, Ghostscript (`gs`) is required to rasterize .ai/.eps. If not installed, install with `apt-get install -y ghostscript` and retry.
+For physical cards with a vector (.ai/.eps) submission, Ghostscript (`gs`) is required to rasterize. If not installed, install with `apt-get install -y ghostscript` and retry. PNG physical submissions do not require Ghostscript.
 
 ### Step 2: Visual Inspection
 

@@ -6,10 +6,13 @@ VIRTUAL (PNG, 1536x969):
   Dimensions, format (PNG), DPI (pixel_width / CARD_WIDTH_INCHES),
   56px Visa Brand Mark margin, RGB color extraction.
 
-PHYSICAL (.ai or .eps vector, rendered via Ghostscript):
+PHYSICAL (.ai / .eps vector, or .png raster):
   File format, CR80 aspect ratio (~1.586:1), minimum rendered resolution,
-  color mode (CMYK/PMS preferred), layer-separation heuristic.
-  Front required; back optional.
+  56px Visa Brand Mark bleed zone, color mode (vector only: CMYK/PMS
+  preferred), layer-separation heuristic (vector only).
+  Front required; back optional. Vectors are rasterized via Ghostscript
+  at 455 DPI to produce a 1536-wide preview that matches Rain's physical
+  card template spec.
 
 Usage:
     # Virtual (default — preserves pre-physical behavior):
@@ -17,7 +20,7 @@ Usage:
     python3 check_technical_specs.py <image_path> --card-type virtual [--output-dir /path]
 
     # Physical:
-    python3 check_technical_specs.py <front_vector> --card-type physical [--back <back_vector>]
+    python3 check_technical_specs.py <front_file> --card-type physical [--back <back_file>]
 
 Outputs JSON with technical check results; virtual also emits RGB color
 suggestions. Physical emits a rendered_preview_path that the visual turn
@@ -50,9 +53,15 @@ VISA_MARK_EDGE_MARGIN = 56  # pixels — applies ONLY to the Visa Brand Mark
 # --- Physical card constants (CR80, per ISO/IEC 7810) ---
 CR80_ASPECT_RATIO = 3.375 / 2.125            # ≈ 1.5882
 CR80_ASPECT_TOLERANCE = 0.05                 # ±5% tolerance
-PHYSICAL_MIN_RENDERED_WIDTH_PX = 1000         # rasterized width at 300 DPI render
+PHYSICAL_MIN_RENDERED_WIDTH_PX = 1000         # minimum usable raster width
 PHYSICAL_VECTOR_EXTS = {".ai", ".eps"}
-PHYSICAL_RENDER_DPI = 300                    # Ghostscript render resolution
+PHYSICAL_RASTER_EXTS = {".png"}
+PHYSICAL_ACCEPTED_EXTS = PHYSICAL_VECTOR_EXTS | PHYSICAL_RASTER_EXTS
+# 455 DPI × 3.375" = 1536px wide. This matches Rain's 1536×969 physical card
+# templates, which were designed with a 56px Visa Brand Mark bleed zone —
+# the same threshold used for virtual cards. Keeping render width at 1536
+# lets check_bleed_zone reuse VISA_MARK_EDGE_MARGIN directly.
+PHYSICAL_RENDER_DPI = 455
 
 # Status colors
 COLOR_PASS = (34, 139, 34)       # forest green
@@ -1265,23 +1274,39 @@ def _detect_layers(vector_path: str) -> dict:
                      "Manual verification required: each design element should be on its own layer.")}
 
 
-def _check_physical_side(vector_path: str, side_label: str, out_dir: str) -> dict:
+def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dict:
     """
     Run the physical-card technical checks on one side (front or back).
-    Returns the per-side result dict, including a rendered preview path.
+
+    Accepts either:
+      - .ai / .eps  — rasterize via Ghostscript at 455 DPI, run all checks
+      - .png        — use directly as the preview raster; skip vector-only
+                      checks (color mode heuristic, layer count). This
+                      matches how Rain distributes its own physical card
+                      templates (1536×969 PNGs with a defined 56px bleed).
+
+    Returns the per-side result dict, including a rendered preview path and
+    — regardless of source format — a bleed_zone check measured against
+    the 56px Visa Brand Mark margin that Rain's physical templates enforce.
     """
-    ext = os.path.splitext(vector_path)[1].lower()
-    file_format_ok = ext in PHYSICAL_VECTOR_EXTS
+    ext = os.path.splitext(source_path)[1].lower()
+    file_format_ok = ext in PHYSICAL_ACCEPTED_EXTS
+    is_vector = ext in PHYSICAL_VECTOR_EXTS
+    is_raster = ext in PHYSICAL_RASTER_EXTS
 
     side_result = {
         "side": side_label,
-        "file": os.path.basename(vector_path),
+        "file": os.path.basename(source_path),
+        "source_format": ext.lstrip(".") if ext else "unknown",
         "checks": {
             "file_format": {
                 "passed": file_format_ok,
                 "actual": ext or "unknown",
-                "required": ".ai or .eps",
-                "note": "" if file_format_ok else f"Physical card art must be .ai or .eps; got {ext}",
+                "required": ".ai, .eps, or .png",
+                "note": (
+                    "" if file_format_ok else
+                    f"Physical card art must be .ai, .eps, or .png; got {ext}"
+                ),
             },
         },
         "rendered_preview_path": None,
@@ -1289,24 +1314,29 @@ def _check_physical_side(vector_path: str, side_label: str, out_dir: str) -> dic
     }
 
     if not file_format_ok:
-        # Can't rasterize a non-vector file — surface a clear error and stop.
-        side_result["errors"].append("Skipping raster-dependent checks because file is not .ai/.eps")
+        side_result["errors"].append(
+            "Skipping raster-dependent checks because file format is not accepted"
+        )
         return side_result
 
-    # Rasterize via Ghostscript.
-    try:
-        preview_path = _render_vector_to_png(vector_path, out_dir)
+    # Resolve to a raster PNG for bleed/aspect/resolution measurement.
+    if is_vector:
+        try:
+            preview_path = _render_vector_to_png(source_path, out_dir)
+            side_result["rendered_preview_path"] = preview_path
+        except Exception as e:
+            side_result["errors"].append(str(e))
+            return side_result
+    else:
+        # Raster submission: use the input itself as the preview.
+        preview_path = source_path
         side_result["rendered_preview_path"] = preview_path
-    except Exception as e:
-        side_result["errors"].append(str(e))
-        return side_result
 
-    # Measure rendered image.
     try:
         img = Image.open(preview_path)
         w, h = img.size
     except Exception as e:
-        side_result["errors"].append(f"Could not open rendered preview: {e}")
+        side_result["errors"].append(f"Could not open raster: {e}")
         return side_result
 
     # Aspect ratio (CR80 ~1.586:1).
@@ -1326,25 +1356,62 @@ def _check_physical_side(vector_path: str, side_label: str, out_dir: str) -> dic
         ),
     }
 
-    # Minimum rendered resolution.
+    # Minimum rendered / supplied resolution.
     min_ok = w >= PHYSICAL_MIN_RENDERED_WIDTH_PX
-    side_result["checks"]["min_resolution"] = {
-        "passed": min_ok,
-        "actual": f"{w}px wide @ {PHYSICAL_RENDER_DPI} DPI render",
-        "required": f">= {PHYSICAL_MIN_RENDERED_WIDTH_PX}px wide",
-        "note": (
-            "Rendered resolution is sufficient for print verification."
-            if min_ok else
+    if is_vector:
+        actual_label = f"{w}px wide @ {PHYSICAL_RENDER_DPI} DPI render"
+        note_pass = "Rendered resolution is sufficient for print verification."
+        note_fail = (
             f"Rendered width {w}px is below the {PHYSICAL_MIN_RENDERED_WIDTH_PX}px minimum. "
             "Source vector may be too small — check original artboard dimensions."
-        ),
+        )
+    else:
+        actual_label = f"{w}px wide (supplied PNG)"
+        note_pass = "Supplied PNG resolution is sufficient for bleed-zone verification."
+        note_fail = (
+            f"Supplied PNG is {w}px wide, below the {PHYSICAL_MIN_RENDERED_WIDTH_PX}px minimum. "
+            "Rain's physical card templates are 1536×969 — request a larger submission."
+        )
+    side_result["checks"]["min_resolution"] = {
+        "passed": min_ok,
+        "actual": actual_label,
+        "required": f">= {PHYSICAL_MIN_RENDERED_WIDTH_PX}px wide",
+        "note": note_pass if min_ok else note_fail,
     }
 
-    # Color mode heuristic (reads vector header, not rendered PNG).
-    side_result["checks"]["color_mode"] = _detect_color_mode(vector_path)
+    # Color mode / layers — only meaningful for the vector source. PNG
+    # submissions lose this information during rasterization, so we emit
+    # N/V rows (passed=None) rather than false positives.
+    if is_vector:
+        side_result["checks"]["color_mode"] = _detect_color_mode(source_path)
+        side_result["checks"]["layers_present"] = _detect_layers(source_path)
+    else:
+        side_result["checks"]["color_mode"] = {
+            "passed": None,
+            "actual": "RGB (PNG)",
+            "required": "CMYK or PMS in print-ready source",
+            "note": (
+                "PNG submissions are RGB. Verify that the print-ready .ai/.eps "
+                "source uses CMYK or PMS colors before production."
+            ),
+        }
+        side_result["checks"]["layers_present"] = {
+            "passed": None,
+            "actual": "N/V (PNG — layer info lost in rasterization)",
+            "note": (
+                "Layer separation cannot be verified from a PNG. Confirm "
+                "against the print-ready .ai/.eps source."
+            ),
+        }
 
-    # Layer heuristic.
-    side_result["checks"]["layers_present"] = _detect_layers(vector_path)
+    # Bleed zone — the #1 Visa rejection reason. Rain's physical templates
+    # use the same 56px threshold as virtual at 1536-wide. At other widths
+    # the raw VISA_MARK_EDGE_MARGIN still measures absolute pixel distance,
+    # which aligns with the template spec.
+    try:
+        side_result["checks"]["bleed_zone"] = check_bleed_zone(img)
+    except Exception as e:
+        side_result["errors"].append(f"Bleed zone analysis failed: {e}")
 
     return side_result
 
@@ -1443,11 +1510,11 @@ def check_image(image_path: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Check virtual or physical card art technical specs")
-    parser.add_argument("image_path", help="Path to the card art image (virtual: PNG; physical: .ai/.eps front)")
+    parser.add_argument("image_path", help="Path to the card art image (virtual: PNG; physical: .ai, .eps, or .png front)")
     parser.add_argument("--card-type", choices=["virtual", "physical"], default="virtual",
                         help="Card type (default: virtual)")
     parser.add_argument("--back", default=None,
-                        help="Physical only — optional path to back-of-card .ai/.eps file")
+                        help="Physical only — optional path to back-of-card .ai, .eps, or .png file")
     parser.add_argument("--output-dir", help="Directory to save the output review image / rendered previews", default=None)
     parser.add_argument("--visual-results", help="JSON string with visual inspection results (virtual only)", default=None)
     parser.add_argument("--visual-results-file", help="Path to JSON file with visual inspection results (virtual only)", default=None)
