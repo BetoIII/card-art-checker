@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
 """
-Technical spec checker for Visa virtual/digital card art.
-Checks dimensions, format, and DPI (calculated from image resolution).
-Extracts dominant colors and suggests background, foreground, and label RGB values.
-Generates an output image showing the 56px bleed border, suggested RGB values,
-and a sample last-4 PAN overlay.
+Technical spec checker for Visa virtual/digital AND physical card art.
 
-Can also generate a full results image with numbered markers on the card,
-overall status, tech spec table, and visual design compliance table.
+VIRTUAL (PNG, 1536x969):
+  Dimensions, format (PNG), DPI (pixel_width / CARD_WIDTH_INCHES),
+  56px Visa Brand Mark margin, RGB color extraction.
 
-DPI is calculated as: pixel_width / CARD_WIDTH_INCHES
-where CARD_WIDTH_INCHES = 3.375 (ISO ID-1 standard credit card width).
-For Visa digital card display, a minimum of 72 DPI is required.
-At the standard 1536px width, calculated DPI is ~455, well above the minimum.
+PHYSICAL (.ai or .eps vector, rendered via Ghostscript):
+  File format, CR80 aspect ratio (~1.586:1), minimum rendered resolution,
+  color mode (CMYK/PMS preferred), layer-separation heuristic.
+  Front required; back optional.
 
 Usage:
-    python3 check_technical_specs.py <image_path> [--output-dir /path/to/dir]
-    python3 check_technical_specs.py <image_path> --visual-results '<json>' [--output-dir /path]
-    python3 check_technical_specs.py <image_path> --visual-results-file results.json [--output-dir /path]
+    # Virtual (default — preserves pre-physical behavior):
+    python3 check_technical_specs.py <image_path> [--output-dir /path]
+    python3 check_technical_specs.py <image_path> --card-type virtual [--output-dir /path]
 
-Outputs JSON with technical check results and extracted colors.
-Also saves an output image to the same directory as the input (or --output-dir).
+    # Physical:
+    python3 check_technical_specs.py <front_vector> --card-type physical [--back <back_vector>]
+
+Outputs JSON with technical check results; virtual also emits RGB color
+suggestions. Physical emits a rendered_preview_path that the visual turn
+and the PDF report can use as a raster preview.
 """
 
 import sys
@@ -45,6 +46,13 @@ REQUIRED_FORMAT = "PNG"
 CARD_WIDTH_INCHES = 3.375   # ISO ID-1 standard credit card width
 MIN_DPI_DIGITAL = 72        # Visa minimum DPI for digital card display
 VISA_MARK_EDGE_MARGIN = 56  # pixels — applies ONLY to the Visa Brand Mark
+
+# --- Physical card constants (CR80, per ISO/IEC 7810) ---
+CR80_ASPECT_RATIO = 3.375 / 2.125            # ≈ 1.5882
+CR80_ASPECT_TOLERANCE = 0.05                 # ±5% tolerance
+PHYSICAL_MIN_RENDERED_WIDTH_PX = 1000         # rasterized width at 300 DPI render
+PHYSICAL_VECTOR_EXTS = {".ai", ".eps"}
+PHYSICAL_RENDER_DPI = 300                    # Ghostscript render resolution
 
 # Status colors
 COLOR_PASS = (34, 139, 34)       # forest green
@@ -1147,8 +1155,227 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     return output_path
 
 
+# ─────────────────────────────────────────────────────────────────
+# Physical card checks (vector: .ai / .eps)
+# ─────────────────────────────────────────────────────────────────
+
+def _render_vector_to_png(vector_path: str, out_dir: str) -> str:
+    """
+    Rasterize a .ai or .eps file to PNG using Ghostscript.
+    Adobe Illustrator saves .ai files PDF-compatible by default, so gs handles both.
+    Returns the absolute path to the rendered PNG.
+    """
+    import subprocess
+    base = os.path.splitext(os.path.basename(vector_path))[0]
+    out_path = os.path.join(out_dir, f"{base}_render.png")
+    cmd = [
+        "gs",
+        "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET",
+        f"-r{PHYSICAL_RENDER_DPI}",
+        "-sDEVICE=png16m",
+        f"-sOutputFile={out_path}",
+        vector_path,
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+    except FileNotFoundError:
+        raise RuntimeError(
+            "Ghostscript (gs) is not installed in this environment. "
+            "Install with: apt-get install -y ghostscript"
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode("utf-8", errors="ignore") if e.stderr else ""
+        raise RuntimeError(f"Ghostscript render failed: {stderr[:400]}")
+    if not os.path.exists(out_path):
+        raise RuntimeError("Ghostscript completed but produced no PNG output")
+    return out_path
+
+
+def _detect_color_mode(vector_path: str) -> dict:
+    """
+    Heuristic color-mode detection for .ai/.eps.
+    - .eps: parse PostScript for 'setcmykcolor', 'DeviceCMYK', 'DeviceRGB',
+      or '%%DocumentProcessColors: (Cyan Magenta Yellow Black)'.
+    - .ai: files are PDF-compatible; look for '/DeviceCMYK' or '/DeviceRGB'
+      markers in the first ~200 KB of the binary stream.
+    Returns { actual, passed, note }. passed=True if CMYK detected.
+    """
+    try:
+        with open(vector_path, "rb") as f:
+            head = f.read(200_000)
+    except Exception as e:
+        return {"passed": None, "actual": "unknown",
+                "required": "CMYK or PMS",
+                "note": f"Could not read file for color-mode detection: {e}"}
+
+    text = head.decode("latin-1", errors="ignore")
+    has_cmyk = any(m in text for m in ("setcmykcolor", "DeviceCMYK",
+                                        "DocumentProcessColors: (Cyan",
+                                        "/DeviceN", "CMYK"))
+    has_rgb = any(m in text for m in ("setrgbcolor", "DeviceRGB", "RGB"))
+
+    if has_cmyk and not has_rgb:
+        return {"passed": True, "actual": "CMYK",
+                "required": "CMYK or PMS",
+                "note": "CMYK color space detected in vector header"}
+    if has_cmyk and has_rgb:
+        return {"passed": True, "actual": "CMYK + RGB markers",
+                "required": "CMYK or PMS",
+                "note": ("Both CMYK and RGB color markers detected — likely CMYK "
+                         "primary with embedded RGB assets. Manual verification "
+                         "recommended to ensure all color is CMYK/PMS.")}
+    if has_rgb:
+        return {"passed": False, "actual": "RGB",
+                "required": "CMYK or PMS",
+                "note": "Only RGB color space detected. Physical cards must use CMYK or PMS."}
+    return {"passed": None, "actual": "unknown",
+            "required": "CMYK or PMS",
+            "note": "Could not determine color mode from file header."}
+
+
+def _detect_layers(vector_path: str) -> dict:
+    """
+    Heuristic layer count for .ai/.eps. Counts:
+      - .eps / .ai: '%AI5_BeginLayer' markers (Illustrator layer comment)
+      - Fallback: number of top-level '/OCG' (Optional Content Groups — PDF layers)
+    Returns { actual, passed (None because it's a heuristic), note }.
+    """
+    try:
+        with open(vector_path, "rb") as f:
+            data = f.read()
+    except Exception as e:
+        return {"passed": None, "actual": 0,
+                "note": f"Could not read file for layer detection: {e}"}
+
+    text = data.decode("latin-1", errors="ignore")
+    ai_layers = text.count("%AI5_BeginLayer")
+    ocg_layers = text.count("/Type /OCG") + text.count("/Type/OCG")
+    count = max(ai_layers, ocg_layers)
+
+    if count >= 2:
+        note = (f"Detected {count} named layer(s) in the vector file. "
+                "Verify each design element is on its own layer per Visa guidelines.")
+        return {"passed": True, "actual": count, "note": note}
+    if count == 1:
+        return {"passed": None, "actual": 1,
+                "note": ("Only one named layer detected. Visa requires each "
+                         "design element on its own layer — manual verification needed.")}
+    return {"passed": None, "actual": 0,
+            "note": ("Could not detect named layers (heuristic only). "
+                     "Manual verification required: each design element should be on its own layer.")}
+
+
+def _check_physical_side(vector_path: str, side_label: str, out_dir: str) -> dict:
+    """
+    Run the physical-card technical checks on one side (front or back).
+    Returns the per-side result dict, including a rendered preview path.
+    """
+    ext = os.path.splitext(vector_path)[1].lower()
+    file_format_ok = ext in PHYSICAL_VECTOR_EXTS
+
+    side_result = {
+        "side": side_label,
+        "file": os.path.basename(vector_path),
+        "checks": {
+            "file_format": {
+                "passed": file_format_ok,
+                "actual": ext or "unknown",
+                "required": ".ai or .eps",
+                "note": "" if file_format_ok else f"Physical card art must be .ai or .eps; got {ext}",
+            },
+        },
+        "rendered_preview_path": None,
+        "errors": [],
+    }
+
+    if not file_format_ok:
+        # Can't rasterize a non-vector file — surface a clear error and stop.
+        side_result["errors"].append("Skipping raster-dependent checks because file is not .ai/.eps")
+        return side_result
+
+    # Rasterize via Ghostscript.
+    try:
+        preview_path = _render_vector_to_png(vector_path, out_dir)
+        side_result["rendered_preview_path"] = preview_path
+    except Exception as e:
+        side_result["errors"].append(str(e))
+        return side_result
+
+    # Measure rendered image.
+    try:
+        img = Image.open(preview_path)
+        w, h = img.size
+    except Exception as e:
+        side_result["errors"].append(f"Could not open rendered preview: {e}")
+        return side_result
+
+    # Aspect ratio (CR80 ~1.586:1).
+    actual_ratio = w / h if h else 0
+    ratio_diff = abs(actual_ratio - CR80_ASPECT_RATIO) / CR80_ASPECT_RATIO
+    aspect_ok = ratio_diff <= CR80_ASPECT_TOLERANCE
+    side_result["checks"]["cr80_aspect_ratio"] = {
+        "passed": aspect_ok,
+        "actual": f"{w}x{h} ({actual_ratio:.3f}:1)",
+        "required": f"~{CR80_ASPECT_RATIO:.3f}:1 (±{int(CR80_ASPECT_TOLERANCE*100)}%)",
+        "note": (
+            f"Aspect ratio is within {CR80_ASPECT_TOLERANCE*100:.0f}% of CR80."
+            if aspect_ok else
+            f"Aspect ratio {actual_ratio:.3f}:1 differs from CR80 "
+            f"{CR80_ASPECT_RATIO:.3f}:1 by {ratio_diff*100:.1f}% "
+            f"(>{CR80_ASPECT_TOLERANCE*100:.0f}% tolerance)."
+        ),
+    }
+
+    # Minimum rendered resolution.
+    min_ok = w >= PHYSICAL_MIN_RENDERED_WIDTH_PX
+    side_result["checks"]["min_resolution"] = {
+        "passed": min_ok,
+        "actual": f"{w}px wide @ {PHYSICAL_RENDER_DPI} DPI render",
+        "required": f">= {PHYSICAL_MIN_RENDERED_WIDTH_PX}px wide",
+        "note": (
+            "Rendered resolution is sufficient for print verification."
+            if min_ok else
+            f"Rendered width {w}px is below the {PHYSICAL_MIN_RENDERED_WIDTH_PX}px minimum. "
+            "Source vector may be too small — check original artboard dimensions."
+        ),
+    }
+
+    # Color mode heuristic (reads vector header, not rendered PNG).
+    side_result["checks"]["color_mode"] = _detect_color_mode(vector_path)
+
+    # Layer heuristic.
+    side_result["checks"]["layers_present"] = _detect_layers(vector_path)
+
+    return side_result
+
+
+def check_physical(front_path: str, back_path: str | None = None,
+                   out_dir: str | None = None) -> dict:
+    """
+    Run technical checks on a physical card submission.
+    Front is required; back is optional.
+    """
+    render_dir = out_dir or os.path.dirname(os.path.abspath(front_path))
+    os.makedirs(render_dir, exist_ok=True)
+
+    result = {
+        "card_type": "physical",
+        "front": _check_physical_side(front_path, "front", render_dir),
+        "back": None,
+        "errors": [],
+    }
+    if back_path:
+        result["back"] = _check_physical_side(back_path, "back", render_dir)
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────
+# Virtual card checks (PNG, 1536x969)
+# ─────────────────────────────────────────────────────────────────
+
 def check_image(image_path: str) -> dict:
     results = {
+        "card_type": "virtual",
         "file": os.path.basename(image_path),
         "checks": {},
         "colors": {},
@@ -1215,14 +1442,24 @@ def check_image(image_path: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check virtual card art technical specs")
-    parser.add_argument("image_path", help="Path to the card art image")
-    parser.add_argument("--output-dir", help="Directory to save the output review image", default=None)
-    parser.add_argument("--visual-results", help="JSON string with visual inspection results", default=None)
-    parser.add_argument("--visual-results-file", help="Path to JSON file with visual inspection results", default=None)
+    parser = argparse.ArgumentParser(description="Check virtual or physical card art technical specs")
+    parser.add_argument("image_path", help="Path to the card art image (virtual: PNG; physical: .ai/.eps front)")
+    parser.add_argument("--card-type", choices=["virtual", "physical"], default="virtual",
+                        help="Card type (default: virtual)")
+    parser.add_argument("--back", default=None,
+                        help="Physical only — optional path to back-of-card .ai/.eps file")
+    parser.add_argument("--output-dir", help="Directory to save the output review image / rendered previews", default=None)
+    parser.add_argument("--visual-results", help="JSON string with visual inspection results (virtual only)", default=None)
+    parser.add_argument("--visual-results-file", help="Path to JSON file with visual inspection results (virtual only)", default=None)
     args = parser.parse_args()
 
-    # Always run tech checks first
+    # Physical path — short-circuit (no results-image generation for physical).
+    if args.card_type == "physical":
+        result = check_physical(args.image_path, back_path=args.back, out_dir=args.output_dir)
+        print(json.dumps(result, indent=2))
+        return
+
+    # Virtual path — existing behavior unchanged below.
     result = check_image(args.image_path)
 
     # If visual results provided, generate the full results image

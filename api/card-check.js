@@ -19,17 +19,45 @@ function getAnthropic() {
 const ROCKETLANE_BASE = 'https://api.rocketlane.com/api/1.0';
 
 // ── Analysis prompts ────────────────────────────────────────────────
-// Turn 1: quick tool-use turn to run the Python spec checker
-const TECH_SPEC_PROMPT = `Run the technical spec checker on the card art image and output ONLY the raw JSON result. No commentary.
+// Turn 1: quick tool-use turn to run the Python spec checker.
+// The prompt varies by card type because physical submissions use
+// .ai/.eps sources and an optional back file.
 
+function buildTechSpecPrompt(cardType, hasBack) {
+  if (cardType === 'physical') {
+    const frontPath = '/mnt/session/uploads/front.vec';
+    const backArg = hasBack ? ' --back /mnt/session/uploads/back.vec' : '';
+    return `Run the technical spec checker on the physical card art and output ONLY the raw JSON result. No commentary.
+
+If Ghostscript is missing, install it first:
 \`\`\`bash
-python3 /mnt/session/scripts/check_technical_specs.py /mnt/session/uploads/card-art.png
+which gs || (apt-get update -qq && apt-get install -y ghostscript)
+\`\`\`
+
+Then:
+\`\`\`bash
+python3 /mnt/session/scripts/check_technical_specs.py ${frontPath} --card-type physical${backArg}
 \`\`\`
 
 Output the complete JSON from the script — nothing else.`;
+  }
+  // virtual (default)
+  return `Run the technical spec checker on the card art image and output ONLY the raw JSON result. No commentary.
+
+\`\`\`bash
+python3 /mnt/session/scripts/check_technical_specs.py /mnt/session/uploads/card-art.png --card-type virtual
+\`\`\`
+
+Output the complete JSON from the script — nothing else.`;
+}
 
 // Turn 2: visual-only inspection (no tool use needed → much faster)
-function buildVisualPrompt(techJson) {
+function buildVisualPrompt(techJson, cardType = 'virtual', hasBack = false) {
+  if (cardType === 'physical') return buildPhysicalVisualPrompt(techJson, hasBack);
+  return buildVirtualVisualPrompt(techJson);
+}
+
+function buildVirtualVisualPrompt(techJson) {
   return `Analyze the card art image at /mnt/session/uploads/card-art.png for compliance with Visa Digital Card Brand Standards (September 2025) and Rain's internal requirements.
 
 The technical spec checks have ALREADY been run. Here are the results — do NOT re-run the script:
@@ -115,33 +143,163 @@ RGB FALLBACK COLORS:
 - Label: #XXXXXX (R, G, B)`;
 }
 
+function buildPhysicalVisualPrompt(techJson, hasBack) {
+  const frontPreview = techJson?.front?.rendered_preview_path || '/mnt/session/uploads/front_render.png';
+  const backPreview = techJson?.back?.rendered_preview_path || '/mnt/session/uploads/back_render.png';
+  const backBlock = hasBack
+    ? `You also have the back-of-card render at ${backPreview}. Inspect both sides.`
+    : `The submitter did NOT provide a back-of-card file. For every back-of-card check below, set "result": "not submitted" and explain in the notes that the optional back file was omitted.`;
+
+  return `Analyze the physical card art for compliance with Visa Physical Card Brand Standards and Rain's internal requirements.
+
+Front render: ${frontPreview}
+${backBlock}
+
+The technical spec checks have ALREADY been run. Here are the results — do NOT re-run the script:
+
+TECH_SPEC_RESULTS:
+${JSON.stringify(techJson, null, 2)}
+
+## Your Task: Visual Inspection ONLY
+
+Examine the rendered preview image(s) visually. Note: physical cards may LEGITIMATELY show chip graphics, magnetic stripes, holograms, and 3D effects — these are NOT prohibited on physical cards (unlike virtual).
+
+Required Elements (Front):
+- Visa Brand Mark present, legible, not distorted
+- Visa Brand Mark position: lower right, upper right, or upper left (lower-left is NOT allowed)
+- Visa Brand Mark color is one of: Visa Blue, White, Black, Silver, or Gold (or PVBM in Blue/Silver/Gold/Black)
+- Visa Brand Mark contrast: strong against background
+- Issuer logo clearly present
+- Rounded corners consistent with CR80 die-cut
+
+Required Elements (Back — only if back file was submitted):
+- Magnetic stripe area present
+- PAN, expiry, and security code fields present
+- Issuer text present and reads EXACTLY: "Card issued by Third National under license from Visa."
+- Visa Dove present on the back (UNLESS the Premium Visa Brand Mark (PVBM) is used on the front, in which case the Dove may be omitted)
+
+Layout & Quality:
+- Full color (not grayscale)
+- Horizontal (landscape) orientation
+- Design appears consistent across front and back (if back provided)
+
+For EACH check, determine: pass | fail | warning | not submitted
+
+## Output Structured Results JSON
+
+CRITICAL: You MUST output a JSON block between these exact markers. The system parses this to generate the PDF report. Without it, no report is created.
+
+RESULTS_JSON_START
+{
+  "status": "APPROVED or REQUIRES CHANGES or APPROVED WITH NOTES",
+  "summary": "1-2 sentence overall assessment",
+  "card_type": "physical",
+  "tech_checks": ${JSON.stringify(techJson, null, 2)},
+  "visual_checks": [
+    { "name": "Visa Brand Mark present (front)", "result": "pass or fail or warning", "notes": "details" },
+    { "name": "Visa Brand Mark position (front)", "result": "...", "notes": "..." },
+    { "name": "Visa Brand Mark color (front)", "result": "...", "notes": "..." },
+    { "name": "Visa Brand Mark contrast (front)", "result": "...", "notes": "..." },
+    { "name": "Issuer logo (front)", "result": "...", "notes": "..." },
+    { "name": "Rounded corners match CR80", "result": "...", "notes": "..." },
+    { "name": "Magnetic stripe area (back)", "result": "pass or fail or warning or not submitted", "notes": "..." },
+    { "name": "PAN / expiry / CVV fields (back)", "result": "...", "notes": "..." },
+    { "name": "Issuer text: \\"Card issued by Third National under license from Visa.\\" (back)", "result": "...", "notes": "..." },
+    { "name": "Visa Dove or PVBM exception (back)", "result": "...", "notes": "..." },
+    { "name": "Full color (not grayscale)", "result": "...", "notes": "..." },
+    { "name": "Horizontal orientation", "result": "...", "notes": "..." },
+    { "name": "Front/back design consistency", "result": "...", "notes": "..." }
+  ]
+}
+RESULTS_JSON_END
+
+## Output Human-Readable Summary
+
+STATUS: APPROVED | REQUIRES CHANGES
+SUMMARY: <1-2 sentence overview>
+
+TECHNICAL CHECKS (front):
+- File Format: PASS/FAIL
+- CR80 Aspect Ratio: PASS/FAIL
+- Min Resolution: PASS/FAIL
+- Color Mode: PASS/FAIL/UNKNOWN
+- Layers Present: PASS/UNKNOWN
+
+VISUAL CHECKS:
+- <check name>: PASS/FAIL/WARNING/NOT SUBMITTED — <notes>`;
+}
+
 // ── Multipart parser ─────────────────────────────────────────────────
+
+const VALID_CARD_TYPES = new Set(['virtual', 'physical']);
+const PHYSICAL_EXTS = new Set(['.ai', '.eps']);
+
+function extOf(name) {
+  const m = /\.[a-z0-9]+$/i.exec(name || '');
+  return m ? m[0].toLowerCase() : '';
+}
 
 function parseMultipart(request) {
   return new Promise((resolve, reject) => {
     const contentType = request.headers.get('content-type') || '';
     const bb = Busboy({ headers: { 'content-type': contentType } });
 
-    let fileBuffer = null;
-    let fileName = '';
+    // Per-field file buffers (front = "file", optional back = "backFile")
+    const fileChunks = { file: [], backFile: [] };
+    const fileNames = { file: '', backFile: '' };
     let projectId = '';
-    const chunks = [];
+    let cardType = '';
 
-    bb.on('file', (_fieldname, stream, info) => {
-      fileName = info.filename;
-      stream.on('data', (chunk) => chunks.push(chunk));
-      stream.on('end', () => { fileBuffer = Buffer.concat(chunks); });
+    bb.on('file', (fieldname, stream, info) => {
+      const key = fieldname === 'backFile' ? 'backFile' : 'file';
+      fileNames[key] = info.filename || '';
+      stream.on('data', (chunk) => fileChunks[key].push(chunk));
     });
 
     bb.on('field', (name, value) => {
       if (name === 'projectId') projectId = value;
+      else if (name === 'cardType') cardType = (value || '').trim().toLowerCase();
     });
 
     bb.on('finish', () => {
       clearTimeout(timeout);
+
+      const fileBuffer = fileChunks.file.length ? Buffer.concat(fileChunks.file) : null;
+      const backBuffer = fileChunks.backFile.length ? Buffer.concat(fileChunks.backFile) : null;
+
       if (!fileBuffer) return reject(new Error('No file uploaded'));
       if (!projectId) return reject(new Error('Missing projectId'));
-      resolve({ file: fileBuffer, fileName, projectId });
+      if (!cardType) return reject(new Error('Missing cardType — must be "virtual" or "physical"'));
+      if (!VALID_CARD_TYPES.has(cardType)) {
+        return reject(new Error(`Invalid cardType "${cardType}" — must be "virtual" or "physical"`));
+      }
+
+      if (cardType === 'virtual') {
+        if (backBuffer) {
+          return reject(new Error('backFile is only valid for physical submissions'));
+        }
+      } else {
+        // physical: enforce .ai/.eps on both files
+        const frontExt = extOf(fileNames.file);
+        if (!PHYSICAL_EXTS.has(frontExt)) {
+          return reject(new Error(`Physical front file must be .ai or .eps; got ${frontExt || 'unknown'}`));
+        }
+        if (backBuffer) {
+          const backExt = extOf(fileNames.backFile);
+          if (!PHYSICAL_EXTS.has(backExt)) {
+            return reject(new Error(`Physical back file must be .ai or .eps; got ${backExt || 'unknown'}`));
+          }
+        }
+      }
+
+      resolve({
+        file: fileBuffer,
+        fileName: fileNames.file,
+        backFile: backBuffer,
+        backFileName: fileNames.backFile,
+        projectId,
+        cardType,
+      });
     });
 
     bb.on('error', (err) => { clearTimeout(timeout); reject(err); });
@@ -221,7 +379,9 @@ const PDF_COLORS = {
   mid: rgb(0.4, 0.4, 0.45),
 };
 
-async function generatePdfReport(imageBuffer, results) {
+async function generatePdfReport(imageBuffer, results, options = {}) {
+  const cardType = options.cardType || results.card_type || 'virtual';
+  const hasBack = !!options.hasBack;
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -264,7 +424,10 @@ async function generatePdfReport(imageBuffer, results) {
   }
 
   // ── Title ──
-  pg.drawText('Card Art Compliance Report', { x: M, y, size: 22, font: bold, color: PDF_COLORS.dark });
+  const titleText = cardType === 'physical'
+    ? 'Physical Card Art Compliance Report'
+    : 'Virtual Card Art Compliance Report';
+  pg.drawText(titleText, { x: M, y, size: 22, font: bold, color: PDF_COLORS.dark });
   y -= 36;
 
   // ── Status badge ──
@@ -287,44 +450,99 @@ async function generatePdfReport(imageBuffer, results) {
     y -= 6;
   }
 
-  // ── Card art image ──
-  try {
-    const image = await doc.embedPng(imageBuffer);
-    const scale = Math.min(CW / image.width, 260 / image.height);
-    const iw = image.width * scale, ih = image.height * scale;
-    ensureSpace(ih + 16);
-    pg.drawImage(image, { x: M, y: y - ih, width: iw, height: ih });
-    y -= ih + 16;
-  } catch { /* skip if image can't be embedded */ }
+  // ── Card art image (virtual only — physical vectors can't be embedded) ──
+  if (imageBuffer) {
+    try {
+      const image = await doc.embedPng(imageBuffer);
+      const scale = Math.min(CW / image.width, 260 / image.height);
+      const iw = image.width * scale, ih = image.height * scale;
+      ensureSpace(ih + 16);
+      pg.drawImage(image, { x: M, y: y - ih, width: iw, height: ih });
+      y -= ih + 16;
+    } catch { /* skip if image can't be embedded */ }
+  } else if (cardType === 'physical') {
+    // Note: the rendered preview PNG lives in the agent sandbox and isn't
+    // transported back to this function. The visual-check notes include
+    // everything the reviewer needs; no inline preview.
+    ensureSpace(20);
+    pg.drawText('Source: .ai / .eps vector file (preview rendered in agent sandbox)',
+      { x: M, y, size: 9, font, color: PDF_COLORS.mid });
+    y -= 20;
+  }
 
   // ── Technical Checks ──
   drawSection('Technical Specifications');
-  const tc = results.tech_checks || {};
-  const techItems = [
-    ['Dimensions', tc.dimensions],
-    ['File Format', tc.file_format],
-    ['DPI', tc.dpi],
-    ['56px Margin', tc.margin_56px],
-  ];
-  for (const [name, check] of techItems) {
-    if (!check) continue;
+  const drawTechRow = (name, check) => {
+    if (!check) return;
     ensureSpace(18);
     const passed = check.passed;
-    const color = passed ? PDF_COLORS.green : PDF_COLORS.red;
-    const label = passed ? 'PASS' : 'FAIL';
-    const detail = check.actual ? `  (${check.actual}${check.required ? ' / required ' + check.required : ''})` : '';
+    let color, label;
+    if (passed === true) { color = PDF_COLORS.green; label = 'PASS'; }
+    else if (passed === false) { color = PDF_COLORS.red; label = 'FAIL'; }
+    else { color = PDF_COLORS.amber; label = 'N/V'; } // null → not verified
+    const detail = check.actual
+      ? `  (${check.actual}${check.required ? ' / required ' + check.required : ''})`
+      : '';
     pg.drawText(label, { x: M, y, size: 10, font: bold, color });
     pg.drawText(sanitize(`${name}${detail}`), { x: M + 42, y, size: 10, font, color: PDF_COLORS.dark });
     y -= 18;
+    if (check.note) {
+      for (const line of wrapText(check.note, 8, CW - 42)) {
+        ensureSpace(12);
+        pg.drawText(line, { x: M + 42, y, size: 8, font, color: PDF_COLORS.mid });
+        y -= 12;
+      }
+      y -= 2;
+    }
+  };
+
+  if (cardType === 'physical') {
+    const tc = results.tech_checks || {};
+    const front = tc.front?.checks || {};
+    ensureSpace(16);
+    pg.drawText('Front', { x: M, y, size: 11, font: bold, color: PDF_COLORS.dark });
+    y -= 16;
+    drawTechRow('File Format', front.file_format);
+    drawTechRow('CR80 Aspect Ratio', front.cr80_aspect_ratio);
+    drawTechRow('Min Resolution', front.min_resolution);
+    drawTechRow('Color Mode', front.color_mode);
+    drawTechRow('Layers Present', front.layers_present);
+
+    if (tc.back && tc.back.checks) {
+      y -= 4;
+      ensureSpace(16);
+      pg.drawText('Back', { x: M, y, size: 11, font: bold, color: PDF_COLORS.dark });
+      y -= 16;
+      drawTechRow('File Format', tc.back.checks.file_format);
+      drawTechRow('CR80 Aspect Ratio', tc.back.checks.cr80_aspect_ratio);
+      drawTechRow('Min Resolution', tc.back.checks.min_resolution);
+      drawTechRow('Color Mode', tc.back.checks.color_mode);
+      drawTechRow('Layers Present', tc.back.checks.layers_present);
+    } else if (hasBack === false) {
+      ensureSpace(14);
+      pg.drawText('Back: not submitted (optional)',
+        { x: M, y, size: 9, font, color: PDF_COLORS.mid });
+      y -= 14;
+    }
+  } else {
+    const tc = results.tech_checks || {};
+    drawTechRow('Dimensions', tc.dimensions);
+    drawTechRow('File Format', tc.file_format);
+    drawTechRow('DPI', tc.dpi);
+    drawTechRow('56px Margin', tc.margin_56px);
   }
 
   // ── Visual Checks ──
   drawSection('Visual Design Compliance');
   const vc = results.visual_checks || [];
   for (const check of vc) {
-    const color = check.result === 'pass' ? PDF_COLORS.green
-      : check.result === 'warning' ? PDF_COLORS.amber : PDF_COLORS.red;
-    const label = (check.result || 'N/A').toUpperCase();
+    const result = (check.result || '').toLowerCase();
+    let color, label;
+    if (result === 'pass') { color = PDF_COLORS.green; label = 'PASS'; }
+    else if (result === 'warning') { color = PDF_COLORS.amber; label = 'WARN'; }
+    else if (result === 'not submitted') { color = PDF_COLORS.mid; label = 'N/S'; }
+    else if (result === 'fail') { color = PDF_COLORS.red; label = 'FAIL'; }
+    else { color = PDF_COLORS.mid; label = (check.result || 'N/A').toUpperCase(); }
 
     ensureSpace(18);
     pg.drawText(label, { x: M, y, size: 9, font: bold, color });
@@ -341,8 +559,8 @@ async function generatePdfReport(imageBuffer, results) {
     y -= 3;
   }
 
-  // ── RGB Colors ──
-  if (results.colors && Object.keys(results.colors).length) {
+  // ── RGB Fallback Colors (virtual only — physical uses CMYK/PMS) ──
+  if (cardType !== 'physical' && results.colors && Object.keys(results.colors).length) {
     drawSection('RGB Fallback Colors');
     for (const [role, data] of Object.entries(results.colors)) {
       if (!data?.rgb) continue;
@@ -379,7 +597,8 @@ export async function POST(request) {
         send('progress', { step: 'upload', message: 'Receiving file...', status: 'pending' });
 
         // ── Phase 1: Setup ─────────────────────────────────────
-        const { file, projectId } = await parseMultipart(request);
+        const { file, fileName, backFile, backFileName, projectId, cardType } = await parseMultipart(request);
+        const hasBack = !!backFile;
         send('progress', { step: 'upload', message: 'File received', status: 'done' });
 
         send('progress', { step: 'rocketlane', message: 'Looking up project details...', status: 'pending' });
@@ -389,18 +608,42 @@ export async function POST(request) {
         // ── Phase 2: Agent Execution (two turns) ─────────────
         send('progress', { step: 'agent_init', message: 'Uploading image for analysis...', status: 'pending' });
 
-        // Upload card art PNG to Anthropic Files API
-        const imageFile = new File([file], 'card-art.png', { type: 'image/png' });
-        const uploadedImage = await getAnthropic().beta.files.upload({ file: imageFile });
-        send('progress', { step: 'agent_init', message: 'Starting card art analysis...', status: 'done' });
+        // Upload front (and optional back) to Anthropic Files API.
+        // Virtual uploads a PNG at /mnt/session/uploads/card-art.png.
+        // Physical uploads .ai/.eps at /mnt/session/uploads/front.vec (+ back.vec).
+        const resources = [];
 
-        // Build resource list — image is per-request, script is reusable
-        const resources = [
-          { type: 'file', file_id: uploadedImage.id, mount_path: '/mnt/session/uploads/card-art.png' },
-        ];
+        if (cardType === 'virtual') {
+          const imageFile = new File([file], 'card-art.png', { type: 'image/png' });
+          const uploadedImage = await getAnthropic().beta.files.upload({ file: imageFile });
+          resources.push({ type: 'file', file_id: uploadedImage.id, mount_path: '/mnt/session/uploads/card-art.png' });
+        } else {
+          // Physical: preserve original extension so Ghostscript can dispatch correctly.
+          const frontExt = (fileName && /\.[a-z0-9]+$/i.exec(fileName)?.[0]) || '.ai';
+          const frontMime = frontExt.toLowerCase() === '.eps' ? 'application/postscript' : 'application/illustrator';
+          const uploadedFront = await getAnthropic().beta.files.upload({
+            file: new File([file], `front${frontExt}`, { type: frontMime }),
+          });
+          resources.push({ type: 'file', file_id: uploadedFront.id, mount_path: `/mnt/session/uploads/front${frontExt}` });
+          // Symlink-style mount at a stable path so prompts don't need to know the real ext.
+          resources.push({ type: 'file', file_id: uploadedFront.id, mount_path: '/mnt/session/uploads/front.vec' });
+
+          if (hasBack) {
+            const backExt = (backFileName && /\.[a-z0-9]+$/i.exec(backFileName)?.[0]) || '.ai';
+            const backMime = backExt.toLowerCase() === '.eps' ? 'application/postscript' : 'application/illustrator';
+            const uploadedBack = await getAnthropic().beta.files.upload({
+              file: new File([backFile], `back${backExt}`, { type: backMime }),
+            });
+            resources.push({ type: 'file', file_id: uploadedBack.id, mount_path: `/mnt/session/uploads/back${backExt}` });
+            resources.push({ type: 'file', file_id: uploadedBack.id, mount_path: '/mnt/session/uploads/back.vec' });
+          }
+        }
+
         if (process.env.SPEC_SCRIPT_FILE_ID) {
           resources.push({ type: 'file', file_id: process.env.SPEC_SCRIPT_FILE_ID, mount_path: '/mnt/session/scripts/check_technical_specs.py' });
         }
+
+        send('progress', { step: 'agent_init', message: 'Starting card art analysis...', status: 'done' });
 
         // Create agent session
         const session = await getAnthropic().beta.sessions.create({
@@ -414,7 +657,7 @@ export async function POST(request) {
         await getAnthropic().beta.sessions.events.send(session.id, {
           events: [{
             type: 'user.message',
-            content: [{ type: 'text', text: TECH_SPEC_PROMPT }],
+            content: [{ type: 'text', text: buildTechSpecPrompt(cardType, hasBack) }],
           }],
         });
 
@@ -445,7 +688,7 @@ export async function POST(request) {
         await getAnthropic().beta.sessions.events.send(session.id, {
           events: [{
             type: 'user.message',
-            content: [{ type: 'text', text: buildVisualPrompt(techJson) }],
+            content: [{ type: 'text', text: buildVisualPrompt(techJson, cardType, hasBack) }],
           }],
         });
 
@@ -469,7 +712,10 @@ export async function POST(request) {
         send('progress', { step: 'pdf_generate', message: 'Generating report...', status: 'pending' });
         const results = parseResultsJson(agentTextResponse);
         if (!results) throw Object.assign(new Error('Agent did not output structured results (RESULTS_JSON_START/END block missing)'), { step: 'pdf_generate' });
-        const pdfBuffer = await generatePdfReport(file, results);
+        // Physical submissions ship .ai/.eps, which pdf-lib can't embed — pass null
+        // so generatePdfReport skips the inline image preview.
+        const pdfImageBuffer = cardType === 'virtual' ? file : null;
+        const pdfBuffer = await generatePdfReport(pdfImageBuffer, results, { cardType, hasBack });
         send('progress', { step: 'pdf_generate', message: 'Report generated', status: 'done' });
 
         send('progress', { step: 'blob_upload', message: 'Storing report...', status: 'pending' });
@@ -485,6 +731,7 @@ export async function POST(request) {
         send('complete', {
           status,
           summary,
+          cardType,
           pdfUrl: blob.url,
           // Delivery context for the client to forward to /api/card-deliver
           delivery: {
@@ -493,6 +740,7 @@ export async function POST(request) {
             pdfUrl: blob.url,
             status,
             summary,
+            cardType,
           },
         });
       } catch (err) {
