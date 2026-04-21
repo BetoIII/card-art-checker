@@ -26,7 +26,11 @@ async function getSpaceId(projectId) {
   return data.results[0].id;
 }
 
-async function uploadToRocketlaneSpace(projectId, pdfUrl, projectName) {
+function cardTypeLabel(cardType) {
+  return cardType === 'physical' ? 'Physical' : 'Virtual';
+}
+
+async function uploadToRocketlaneSpace(projectId, pdfUrl, projectName, cardType) {
   const spaceId = await getSpaceId(projectId);
   const timestamp = new Date().toISOString().split('T')[0];
 
@@ -37,7 +41,7 @@ async function uploadToRocketlaneSpace(projectId, pdfUrl, projectName) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      spaceDocumentName: `Card Art Report — ${projectName} — ${timestamp}`,
+      spaceDocumentName: `${cardTypeLabel(cardType)} Card Art Report — ${projectName} — ${timestamp}`,
       space: { id: spaceId },
       spaceDocumentType: 'EMBEDDED_DOCUMENT',
       url: pdfUrl,
@@ -91,16 +95,18 @@ async function findSlackChannel(projectName) {
 
 // ── Slack posting ───────────────────────────────────────────────────
 
-async function postToSlack(channelId, pdfUrl, status, summary, projectName, projectId) {
+async function postToSlack(channelId, pdfUrl, status, summary, projectName, projectId, cardType) {
   // Fetch the PDF to attach as a file
   const pdfRes = await fetch(pdfUrl);
   const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
 
+  const label = cardTypeLabel(cardType);
+
   await getSlack().files.uploadV2({
     channel_id: channelId,
     file: pdfBuffer,
-    filename: `card-art-report-${projectId}.pdf`,
-    title: 'Card Art Compliance Report',
+    filename: `${label.toLowerCase()}-card-art-report-${projectId}.pdf`,
+    title: `${label} Card Art Compliance Report`,
   });
 
   const statusEmoji = status === 'pass' ? ':white_check_mark:' : ':x:';
@@ -111,7 +117,7 @@ async function postToSlack(channelId, pdfUrl, status, summary, projectName, proj
     blocks: [
       {
         type: 'header',
-        text: { type: 'plain_text', text: `${statusLabel} — Card Art Review` },
+        text: { type: 'plain_text', text: `${statusLabel} — ${label} Card Art Review` },
       },
       {
         type: 'section',
@@ -129,11 +135,13 @@ async function postToSlack(channelId, pdfUrl, status, summary, projectName, proj
 
 export async function POST(request) {
   try {
-    const { projectId, projectName, pdfUrl, status, summary } = await request.json();
+    const { projectId, projectName, pdfUrl, status, summary, cardType } = await request.json();
 
     if (!pdfUrl || !projectId) {
       return Response.json({ error: 'Missing required fields: pdfUrl, projectId' }, { status: 400 });
     }
+
+    const normalizedCardType = cardType === 'physical' ? 'physical' : 'virtual';
 
     const results = { slack: null, rocketlane: null };
 
@@ -142,7 +150,7 @@ export async function POST(request) {
       try {
         const channel = await findSlackChannel(projectName);
         await getSlack().conversations.join({ channel: channel.id });
-        await postToSlack(channel.id, pdfUrl, status, summary, projectName, projectId);
+        await postToSlack(channel.id, pdfUrl, status, summary, projectName, projectId, normalizedCardType);
         results.slack = 'ok';
       } catch (err) {
         results.slack = `failed: ${err.message}`;
@@ -153,7 +161,7 @@ export async function POST(request) {
 
     // Rocketlane delivery (non-fatal)
     try {
-      await uploadToRocketlaneSpace(projectId, pdfUrl, projectName);
+      await uploadToRocketlaneSpace(projectId, pdfUrl, projectName, normalizedCardType);
       results.rocketlane = 'ok';
     } catch (err) {
       results.rocketlane = `failed: ${err.message}`;

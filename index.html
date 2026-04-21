@@ -191,6 +191,36 @@
     }
 
     /* ── Drop zone ── */
+    .segmented {
+      display: inline-flex;
+      padding: 4px;
+      background: var(--rain-off-white);
+      border: 1px solid var(--rain-light-gray);
+      border-radius: var(--rain-radius-pill);
+      font-family: var(--rain-mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .segmented button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--rain-dark-gray);
+      padding: 7px 18px;
+      border-radius: var(--rain-radius-pill);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .segmented button.active {
+      background: var(--rain-black);
+      color: var(--rain-white);
+    }
+    .segmented button:not(.active):hover {
+      color: var(--rain-black);
+    }
+
     .drop-zone {
       border: 2px dashed var(--rain-light-gray);
       border-radius: var(--rain-radius-lg);
@@ -600,6 +630,15 @@
         <div class="panel-title">Request</div>
 
         <div class="field">
+          <label class="field-label">cardType <span class="required">*</span></label>
+          <div class="segmented" id="card-type-toggle" role="tablist">
+            <button type="button" data-value="virtual" class="active" role="tab">Virtual</button>
+            <button type="button" data-value="physical" role="tab">Physical</button>
+          </div>
+          <div class="field-hint">Virtual = 1536&times;969 PNG digital art. Physical = .ai/.eps vector art for CR80 plastic cards.</div>
+        </div>
+
+        <div class="field">
           <label class="field-label" for="project-id">
             projectId <span class="required">*</span>
           </label>
@@ -608,12 +647,12 @@
         </div>
 
         <div class="field">
-          <label class="field-label">file <span class="required">*</span></label>
+          <label class="field-label" id="front-file-label">file <span class="required">*</span></label>
           <div class="drop-zone" id="drop-zone">
             <input type="file" id="file-input" accept="image/png">
             <img class="drop-zone-icon" src="/assets/visa-corporate-card.png" alt="Visa card">
 
-            <div class="drop-zone-text">
+            <div class="drop-zone-text" id="drop-zone-text">
               Drag &amp; drop a card art PNG (1536 &times; 969)<br>
               or <strong>click to browse</strong>
             </div>
@@ -624,6 +663,22 @@
             <div class="preview-meta" id="preview-meta"></div>
             <div class="validation-checks" id="validation-checks"></div>
           </div>
+        </div>
+
+        <div class="field" id="back-file-field" style="display: none;">
+          <label class="field-label" for="back-file-input">backFile <span class="field-hint" style="display:inline; margin:0;">(optional)</span></label>
+          <div class="drop-zone" id="back-drop-zone">
+            <input type="file" id="back-file-input" accept=".ai,.eps,application/postscript,application/illustrator">
+            <div class="drop-zone-text" id="back-drop-zone-text">
+              Drag &amp; drop back-of-card .ai or .eps<br>
+              or <strong>click to browse</strong>
+            </div>
+          </div>
+          <div class="preview-section" id="back-preview-section">
+            <div class="preview-meta" id="back-preview-meta"></div>
+            <div class="validation-checks" id="back-validation-checks"></div>
+          </div>
+          <div class="field-hint">If omitted, back-of-card compliance checks will be marked "not submitted".</div>
         </div>
 
         <div class="field">
@@ -687,6 +742,13 @@
     const previewImg = document.getElementById('preview-img');
     const previewMeta = document.getElementById('preview-meta');
     const validationChecks = document.getElementById('validation-checks');
+    const dropZoneText = document.getElementById('drop-zone-text');
+    const backFileField = document.getElementById('back-file-field');
+    const backDropZone = document.getElementById('back-drop-zone');
+    const backFileInput = document.getElementById('back-file-input');
+    const backPreviewMeta = document.getElementById('back-preview-meta');
+    const backValidationChecks = document.getElementById('back-validation-checks');
+    const cardTypeToggle = document.getElementById('card-type-toggle');
     const submitBtn = document.getElementById('submit-btn');
     const form = document.getElementById('upload-form');
     const projectIdInput = document.getElementById('project-id');
@@ -704,8 +766,13 @@
     const copyBtn = document.getElementById('copy-btn');
 
     let selectedFile = null;
+    let selectedBackFile = null;
     let isFileValid = false;
+    let isBackValid = true; // true when no back file or back is valid; false only on bad back ext
+    let cardType = 'virtual';
     let eventCount = 0;
+
+    const PHYSICAL_EXT_RE = /\.(ai|eps)$/i;
 
     // Prefill projectId from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -715,15 +782,56 @@
     // ── Curl preview ──
     function updateCurl() {
       const pid = projectIdInput.value.trim() || '<projectId>';
-      const filename = selectedFile ? selectedFile.name : 'card-art.png';
+      const defaultName = cardType === 'physical' ? 'front.ai' : 'card-art.png';
+      const filename = selectedFile ? selectedFile.name : defaultName;
       const origin = window.location.origin;
-      curlText.innerHTML =
+      let html =
         `curl <span class="flag">-X</span> POST <span class="url">${origin}/api/card-check</span> \\\n` +
+        `  <span class="flag">-F</span> <span class="str">"cardType=${cardType}"</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"file=@${escapeHtml(filename)}"</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"projectId=${escapeHtml(pid)}"</span>`;
+      if (cardType === 'physical' && selectedBackFile) {
+        html += ` \\\n  <span class="flag">-F</span> <span class="str">"backFile=@${escapeHtml(selectedBackFile.name)}"</span>`;
+      }
+      curlText.innerHTML = html;
     }
     projectIdInput.addEventListener('input', () => { updateCurl(); updateSubmitState(); });
     updateCurl();
+
+    // ── Card type toggle ──
+    function setCardType(next) {
+      if (next !== 'virtual' && next !== 'physical') return;
+      cardType = next;
+      for (const btn of cardTypeToggle.querySelectorAll('button')) {
+        btn.classList.toggle('active', btn.dataset.value === cardType);
+      }
+
+      // Update front dropzone accept + caption
+      if (cardType === 'physical') {
+        fileInput.setAttribute('accept', '.ai,.eps,application/postscript,application/illustrator');
+        dropZoneText.innerHTML = 'Drag &amp; drop front card art (.ai or .eps)<br>or <strong>click to browse</strong>';
+        backFileField.style.display = '';
+      } else {
+        fileInput.setAttribute('accept', 'image/png');
+        dropZoneText.innerHTML = 'Drag &amp; drop a card art PNG (1536 &times; 969)<br>or <strong>click to browse</strong>';
+        backFileField.style.display = 'none';
+        // clear any selected back file when switching back to virtual
+        selectedBackFile = null;
+        backFileInput.value = '';
+        backPreviewMeta.innerHTML = '';
+        backValidationChecks.innerHTML = '';
+        isBackValid = true;
+      }
+
+      // Re-validate any already-selected front file under new rules
+      if (selectedFile) handleFile(selectedFile);
+      updateCurl();
+      updateSubmitState();
+    }
+    cardTypeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-value]');
+      if (btn) setCardType(btn.dataset.value);
+    });
 
     copyBtn.addEventListener('click', async () => {
       const text = curlText.innerText;
@@ -765,9 +873,41 @@
 
     function handleFile(file) {
       selectedFile = file;
+      previewSection.classList.add('visible');
+
+      if (cardType === 'physical') {
+        // Vector files can't be decoded in-browser. Validate extension + size only.
+        const extOk = PHYSICAL_EXT_RE.test(file.name || '');
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        const sizeOk = file.size < 25 * 1024 * 1024;
+        previewImg.removeAttribute('src');
+        previewImg.style.display = 'none';
+        previewMeta.innerHTML = `
+          <span>${escapeHtml(file.name)}</span>
+          <span>${sizeMB} MB</span>
+        `;
+        const checks = [
+          { label: 'File extension is .ai or .eps', pass: extOk },
+          { label: 'File size under 25 MB', pass: sizeOk },
+        ];
+        validationChecks.innerHTML = checks.map(c => `
+          <div class="val-check ${c.pass ? 'pass' : 'fail'}">
+            <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
+            <span>${c.label}</span>
+          </div>
+        `).join('');
+        validationChecks.classList.add('visible');
+        isFileValid = checks.every(c => c.pass);
+        dropZone.classList.toggle('has-file', isFileValid);
+        updateCurl();
+        updateSubmitState();
+        return;
+      }
+
+      // Virtual: raster validation via <img> decoding
+      previewImg.style.display = '';
       const url = URL.createObjectURL(file);
       previewImg.src = url;
-      previewSection.classList.add('visible');
 
       const img = new Image();
       img.onload = () => {
@@ -803,9 +943,54 @@
       img.src = url;
     }
 
+    function handleBackFile(file) {
+      selectedBackFile = file;
+      const extOk = PHYSICAL_EXT_RE.test(file.name || '');
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+      const sizeOk = file.size < 25 * 1024 * 1024;
+      backPreviewMeta.innerHTML = `
+        <span>${escapeHtml(file.name)}</span>
+        <span>${sizeMB} MB</span>
+      `;
+      const checks = [
+        { label: 'File extension is .ai or .eps', pass: extOk },
+        { label: 'File size under 25 MB', pass: sizeOk },
+      ];
+      backValidationChecks.innerHTML = checks.map(c => `
+        <div class="val-check ${c.pass ? 'pass' : 'fail'}">
+          <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
+          <span>${c.label}</span>
+        </div>
+      `).join('');
+      backValidationChecks.classList.add('visible');
+      isBackValid = checks.every(c => c.pass);
+      backDropZone.classList.toggle('has-file', isBackValid);
+      updateCurl();
+      updateSubmitState();
+    }
+
+    // Back dropzone events (only meaningful in physical mode)
+    backDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      backDropZone.classList.add('dragover');
+    });
+    backDropZone.addEventListener('dragleave', () => {
+      backDropZone.classList.remove('dragover');
+    });
+    backDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      backDropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleBackFile(e.dataTransfer.files[0]);
+    });
+    backFileInput.addEventListener('change', () => {
+      if (backFileInput.files.length) handleBackFile(backFileInput.files[0]);
+    });
+
     function updateSubmitState() {
       const pidOk = projectIdInput.value.trim().length > 0;
-      submitBtn.disabled = !(pidOk && selectedFile && isFileValid);
+      const frontOk = selectedFile && isFileValid;
+      const backOk = cardType !== 'physical' || !selectedBackFile || isBackValid;
+      submitBtn.disabled = !(pidOk && frontOk && backOk);
     }
 
     // ── Submit ──
@@ -832,8 +1017,12 @@
       stepElements = {};
 
       const formData = new FormData();
+      formData.append('cardType', cardType);
       formData.append('file', selectedFile);
       formData.append('projectId', projectId);
+      if (cardType === 'physical' && selectedBackFile) {
+        formData.append('backFile', selectedBackFile);
+      }
 
       try {
         const response = await fetch('/api/card-check', {
