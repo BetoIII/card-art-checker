@@ -9,7 +9,7 @@ export async function POST(request) {
     }
 
     const results = await deliverReport({ projectId, projectName, pdfUrl, status, summary, cardType });
-    return Response.json({ ok: true, results });
+    return Response.json({ ok: true, pdfUrl, results });
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 });
   }

@@ -58,6 +58,7 @@ async function processAnswer(answer, projectName) {
       });
 
       const { pdfUrl } = await storeReport({ pdfBuffer, projectId });
+      console.log(`[rocketlane-webhook] pdfUrl=${pdfUrl} answer=${answerId} project=${projectId}`);
 
       const delivery = await deliverReport({
         projectId,
