@@ -11,6 +11,9 @@
   "functions": {
     "api/card-check.js": {
       "maxDuration": 300
+    },
+    "api/rocketlane-webhook.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
