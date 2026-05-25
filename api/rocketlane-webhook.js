@@ -141,17 +141,23 @@ export async function POST(request) {
     return new Response('Bad JSON', { status: 400 });
   }
 
-  const eventType = body?.eventType || body?.event_type || body?.type;
-  if (eventType !== 'TASK_UPDATED') {
-    // Acknowledge irrelevant events so Rocketlane doesn't retry, but skip work.
+  // Rocketlane's HTTPS-request automation sends the triggering task's native
+  // payload, which doesn't include an `eventType` field — it sets `type:
+  // "TASK"` to describe the entity, not the event. Only filter when an
+  // explicit event-type field is present and isn't TASK_UPDATED.
+  const eventType = body?.eventType || body?.event_type;
+  if (eventType && eventType !== 'TASK_UPDATED') {
     console.log(`[rocketlane-webhook] ignoring eventType=${eventType}`);
     return Response.json({ ok: true, ignored: true });
   }
 
-  // Rocketlane TASK_UPDATED payload shape isn't fully documented; tolerate
-  // a few common nestings while keeping the contract strict on the IDs.
-  const taskId = body?.taskId ?? body?.data?.taskId ?? body?.task?.id;
-  const projectId = body?.projectId ?? body?.data?.projectId ?? body?.project?.id;
+  // Accept Rocketlane's native task shape (`taskId` + `project.projectId`)
+  // as well as a few common nestings for flexibility.
+  const taskId = body?.taskId ?? body?.data?.taskId ?? body?.task?.id ?? body?.task?.taskId;
+  const projectId = body?.projectId
+    ?? body?.data?.projectId
+    ?? body?.project?.projectId
+    ?? body?.project?.id;
 
   if (!taskId || !projectId) {
     console.warn('[rocketlane-webhook] 400 missing IDs — body shape:', JSON.stringify(body));
