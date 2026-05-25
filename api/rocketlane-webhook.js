@@ -154,6 +154,7 @@ export async function POST(request) {
   const projectId = body?.projectId ?? body?.data?.projectId ?? body?.project?.id;
 
   if (!taskId || !projectId) {
+    console.warn('[rocketlane-webhook] 400 missing IDs — body shape:', JSON.stringify(body));
     return Response.json({ error: 'Missing taskId or projectId in payload' }, { status: 400 });
   }
 
