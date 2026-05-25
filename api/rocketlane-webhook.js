@@ -6,6 +6,7 @@ import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
 import {
   getProjectName,
+  getTaskById,
   findAnswersForTask,
   downloadAttachment,
 } from '../lib/rocketlane.js';
@@ -167,15 +168,35 @@ export async function POST(request) {
     ?? body?.data?.taskId
     ?? body?.task?.id
     ?? body?.task?.taskId;
-  const projectId = qsProjectId
+  let projectId = qsProjectId
     ?? body?.projectId
     ?? body?.data?.projectId
     ?? body?.project?.projectId
     ?? body?.project?.id;
 
-  if (!taskId || !projectId) {
-    console.warn('[rocketlane-webhook] 400 missing IDs — qs:', JSON.stringify({ qsTaskId, qsProjectId }), 'body:', JSON.stringify(body));
-    return Response.json({ error: 'Missing taskId or projectId in URL or body' }, { status: 400 });
+  // Guard against unresolved Rocketlane smart-fill tokens (e.g.
+  // "{{OV.79634378369.task.taskId}}") and other obvious non-numerics.
+  const looksLikeId = (v) => v != null && /^\d+$/.test(String(v).trim());
+
+  if (!looksLikeId(taskId)) {
+    console.warn('[rocketlane-webhook] 400 taskId missing or unresolved — qs:', JSON.stringify({ qsTaskId, qsProjectId }), 'body:', JSON.stringify(body));
+    return Response.json({ error: 'Missing or unresolved taskId' }, { status: 400 });
+  }
+
+  // projectId is optional — derive it from the task when absent so the
+  // Rocketlane automation only needs to forward one ID.
+  if (!looksLikeId(projectId)) {
+    try {
+      const task = await getTaskById(taskId);
+      projectId = task?.project?.projectId ?? task?.project?.id ?? task?.projectId;
+      if (!looksLikeId(projectId)) {
+        throw new Error('task payload had no project.projectId');
+      }
+      console.log(`[rocketlane-webhook] derived projectId=${projectId} from taskId=${taskId}`);
+    } catch (err) {
+      console.error(`[rocketlane-webhook] could not derive projectId for taskId=${taskId}:`, err.message);
+      return Response.json({ error: 'Could not derive projectId from taskId' }, { status: 400 });
+    }
   }
 
   // Ack immediately, run the heavy work in the background. Fluid Compute keeps
