@@ -122,8 +122,15 @@ export async function POST(request) {
     console.error('[rocketlane-webhook] ROCKETLANE_WEBHOOK_SECRET is not set — refusing to process');
     return new Response('Server misconfigured', { status: 500 });
   }
-  const provided = request.headers.get('x-webhook-secret') || '';
-  if (!secretsMatch(provided, expected)) {
+  // Accept either Authorization: Bearer <secret> (Rocketlane automations only
+  // pass standard headers through) or x-webhook-secret (original generic
+  // webhook setup, kept for parity).
+  const authHeader = request.headers.get('authorization') || '';
+  const bearer = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
+  const xHeader = request.headers.get('x-webhook-secret') || '';
+  if (!secretsMatch(bearer, expected) && !secretsMatch(xHeader, expected)) {
     return new Response('Unauthorized', { status: 401 });
   }
 
