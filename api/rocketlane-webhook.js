@@ -134,11 +134,20 @@ export async function POST(request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return new Response('Bad JSON', { status: 400 });
+  // URL query params take precedence — Rocketlane's URL-field smart-fill
+  // substitution is more reliable than its JSON-body substitution.
+  const url = new URL(request.url);
+  const qsTaskId = url.searchParams.get('taskId');
+  const qsProjectId = url.searchParams.get('projectId');
+
+  // Body is optional when IDs are in the URL.
+  let body = null;
+  if (!qsTaskId || !qsProjectId) {
+    try {
+      body = await request.json();
+    } catch {
+      // Empty/invalid body is fine if we already have IDs in the URL.
+    }
   }
 
   // Rocketlane's HTTPS-request automation sends the triggering task's native
@@ -151,17 +160,22 @@ export async function POST(request) {
     return Response.json({ ok: true, ignored: true });
   }
 
-  // Accept Rocketlane's native task shape (`taskId` + `project.projectId`)
-  // as well as a few common nestings for flexibility.
-  const taskId = body?.taskId ?? body?.data?.taskId ?? body?.task?.id ?? body?.task?.taskId;
-  const projectId = body?.projectId
+  // Accept IDs from query string first, then Rocketlane's native task shape
+  // (`taskId` + `project.projectId`) and a few common nestings.
+  const taskId = qsTaskId
+    ?? body?.taskId
+    ?? body?.data?.taskId
+    ?? body?.task?.id
+    ?? body?.task?.taskId;
+  const projectId = qsProjectId
+    ?? body?.projectId
     ?? body?.data?.projectId
     ?? body?.project?.projectId
     ?? body?.project?.id;
 
   if (!taskId || !projectId) {
-    console.warn('[rocketlane-webhook] 400 missing IDs — body shape:', JSON.stringify(body));
-    return Response.json({ error: 'Missing taskId or projectId in payload' }, { status: 400 });
+    console.warn('[rocketlane-webhook] 400 missing IDs — qs:', JSON.stringify({ qsTaskId, qsProjectId }), 'body:', JSON.stringify(body));
+    return Response.json({ error: 'Missing taskId or projectId in URL or body' }, { status: 400 });
   }
 
   // Ack immediately, run the heavy work in the background. Fluid Compute keeps
