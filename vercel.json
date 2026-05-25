@@ -12,7 +12,7 @@
     "api/card-check.js": {
       "maxDuration": 300
     },
-    "api/rocketlane-webhook.js": {
+    "api/card-art-check.js": {
       "maxDuration": 300
     }
   },

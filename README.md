@@ -51,6 +51,30 @@ Notes:
 | `/` | API playground for internal testing | — |
 | `/api/card-check` | Analysis + PDF generation, streams SSE | 300s |
 | `/api/card-deliver` | Slack + Rocketlane delivery, non-fatal per service | 60s |
+| `/api/card-art-check` | External-trigger entrypoint: download attachment, analyze, store, deliver. See below. | 300s |
+
+## External-trigger API: `/api/card-art-check`
+
+Open-format, single-shot card-art check. Any system with a Rocketlane `projectId` and `attachmentId` can fire one request and get a full Slack-delivered report. No event-type filter, no batching, no dedup — one request → one analysis → one delivery.
+
+**Auth:** `Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET` (or `x-webhook-secret: $ROCKETLANE_WEBHOOK_SECRET`).
+
+**Inputs** (query string takes precedence over JSON body — Rocketlane URL smart-fill is more reliable than body smart-fill):
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `projectId` | yes | Numeric Rocketlane project ID. Used for Slack channel routing and Blob report path. |
+| `attachmentId` | yes | Numeric Rocketlane attachment ID. Downloaded via the Rocketlane v1 attachments API. |
+| `cardType` | no | `"virtual"` or `"physical"`. Override for ambiguous filenames; `.ai`/`.eps` always run physical regardless. |
+
+**Response:** `200 { ok: true, queued: true, projectId, attachmentId }` once auth + validation pass. The pipeline runs in the background via `waitUntil` — watch function logs for progress and delivery results.
+
+**Example:**
+
+```bash
+curl -X POST "https://card-art-checker.vercel.app/api/card-art-check?projectId=12345&attachmentId=67890" \
+  -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET"
+```
 
 ## Deployment
 
