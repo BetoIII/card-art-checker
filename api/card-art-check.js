@@ -22,6 +22,18 @@ function secretsMatch(a, b) {
 
 const looksLikeId = (v) => v != null && /^\d+$/.test(String(v).trim());
 
+// Rocketlane wires cardType to the "card material" form answer, which is
+// free-ish text ("Plastic", "Metal", "Virtual card", …) — normalize it to the
+// virtual/physical override inferCardType expects, or drop it entirely so the
+// filename extension decides. Never let an odd form answer abort the analysis.
+function normalizeCardType(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return undefined;
+  if (s.includes('virtual')) return 'virtual';
+  if (s.includes('physical') || s.includes('plastic') || s.includes('metal')) return 'physical';
+  return undefined;
+}
+
 async function processAttachment({ projectId, attachmentId, cardTypeOverride }) {
   try {
     console.log(`[card-art-check] processing attachment=${attachmentId} project=${projectId}`);
@@ -83,8 +95,10 @@ export async function POST(request) {
   const qsAttachmentId = url.searchParams.get('attachmentId');
   const qsCardType = url.searchParams.get('cardType');
 
+  // Parse the body whenever a usable ID hasn't arrived via the URL — including
+  // when a smart-fill chip came through unsubstituted as literal {{OV.…}} text.
   let body = null;
-  if (!qsProjectId || !qsAttachmentId) {
+  if (!looksLikeId(qsProjectId) || !looksLikeId(qsAttachmentId)) {
     try {
       body = await request.json();
     } catch {
@@ -92,9 +106,15 @@ export async function POST(request) {
     }
   }
 
-  const projectId = qsProjectId ?? body?.projectId;
-  const attachmentId = qsAttachmentId ?? body?.attachmentId;
-  const cardTypeOverride = qsCardType ?? body?.cardType ?? undefined;
+  // Trim the winner: Rocketlane's chip-insertion flow encourages a space
+  // before the chip, which can survive as %20 in the path segment.
+  const pickId = (...vals) => {
+    const v = vals.find(looksLikeId);
+    return v == null ? undefined : String(v).trim();
+  };
+  const projectId = pickId(qsProjectId, body?.projectId);
+  const attachmentId = pickId(qsAttachmentId, body?.attachmentId);
+  const cardTypeOverride = normalizeCardType(qsCardType) ?? normalizeCardType(body?.cardType);
 
   if (!looksLikeId(projectId)) {
     console.warn('[card-art-check] 400 projectId missing or unresolved — qs:', JSON.stringify({ qsProjectId, qsAttachmentId }), 'body:', JSON.stringify(body));
