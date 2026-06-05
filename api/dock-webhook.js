@@ -23,17 +23,32 @@ function signaturesMatch(received, computed) {
   return timingSafeEqual(receivedBuf, computedBuf);
 }
 
-function verifySignature({ signature, method, host, path, rawBody, secret }) {
+function computeCandidates({ method, host, path, rawBody, secret }) {
+  // Dock's docs disagree on URL construction (Node example: https://host/path,
+  // Python/Go: host/path), and don't specify separators beyond \n. Try the
+  // plausible constructions and remember each so failures can be diagnosed.
   const urlCandidates = [
     `https://${host}${path}`,
     `${host}${path}`,
+    `http://${host}${path}`,
+    `https://${host}${path}/`,
+    path,
   ];
-  return urlCandidates.some((url) => {
-    const computed = createHmac('sha256', secret)
+  const candidates = {};
+  for (const url of urlCandidates) {
+    candidates[url] = createHmac('sha256', secret)
       .update(`${method}\n${url}\n${rawBody}`)
       .digest('hex');
-    return signaturesMatch(signature, computed);
-  });
+  }
+  // Variant without any URL component, in case Dock signs method+body only.
+  candidates['<no-url>'] = createHmac('sha256', secret)
+    .update(`${method}\n${rawBody}`)
+    .digest('hex');
+  return candidates;
+}
+
+function verifySignature({ signature, candidates }) {
+  return Object.values(candidates).some((computed) => signaturesMatch(signature, computed));
 }
 
 export async function POST(request) {
@@ -51,16 +66,29 @@ export async function POST(request) {
 
   const signature = request.headers.get('x-dock-signature');
   if (signature) {
-    const valid = verifySignature({
-      signature,
+    const candidates = computeCandidates({
       method: 'POST',
       host,
       path: url.pathname,
       rawBody,
       secret,
     });
-    if (!valid) {
-      console.warn(`[dock-webhook] invalid signature — host=${host} path=${url.pathname} bodyLength=${rawBody.length}`);
+    if (!verifySignature({ signature, candidates })) {
+      // Diagnostic dump: everything needed to reproduce the HMAC offline and
+      // pinpoint whether the URL construction or the secret is wrong.
+      console.warn('[dock-webhook] invalid signature — diagnostics:', JSON.stringify({
+        receivedSignature: signature,
+        xTimestamp: request.headers.get('x-timestamp'),
+        requestUrl: request.url,
+        xForwardedHost: request.headers.get('x-forwarded-host'),
+        xForwardedProto: request.headers.get('x-forwarded-proto'),
+        hostUsed: host,
+        path: url.pathname,
+        search: url.search,
+        bodyLength: rawBody.length,
+        candidates,
+        rawBody: rawBody.slice(0, 4000),
+      }));
       return new Response('Invalid signature', { status: 401 });
     }
   } else if (rawBody.trim()) {
