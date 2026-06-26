@@ -1,9 +1,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
+import { runAnalysis } from '../lib/pipeline.js';
+import { storeReport } from '../lib/blob-report.js';
+import { inferCardType } from '../lib/card-type.js';
+import { extractCardArtFile, cardTypeFromForm } from '../lib/dock.js';
 
 // Receives Dock (dock.us) webhook events — currently subscribed to
-// workspace.form.submitted. Verifies the X-Dock-Signature HMAC, logs the
-// payload, and acks with 200. Event handling (what a form submission should
-// trigger) plugs in below once decided.
+// workspace.form.submitted. Verifies the X-Dock-Signature HMAC, then runs the
+// card-art compliance pipeline on the submitted design file and stores the PDF
+// report to Blob. Acks with 200 immediately; analysis runs via waitUntil.
 //
 // Signature scheme (https://developers.dock.us/webhooks/verify-webhook-requests):
 //   X-Dock-Signature = hex(HMAC-SHA256(secret, `${method}\n${url}\n${rawBody}`))
@@ -49,6 +54,57 @@ function computeCandidates({ method, host, path, rawBody, secret }) {
 
 function verifySignature({ signature, candidates }) {
   return Object.values(candidates).some((computed) => signaturesMatch(signature, computed));
+}
+
+// Run the card-art pipeline on a Dock form submission. Downloads the card-art
+// file straight from the payload's signed GCS URL, analyzes it, and stores the
+// PDF report to Blob. Delivery (Slack/Rocketlane) is intentionally left out:
+// Dock gives us an account/workspace, not a Rocketlane projectId, so customer
+// delivery needs an account→project mapping that doesn't exist yet.
+async function processDockSubmission({ assoc, eventId }) {
+  try {
+    const questions = assoc.formQuestions;
+    const responses = assoc.formQuestionResponses;
+
+    const cardArt = extractCardArtFile(questions, responses);
+    if (!cardArt) {
+      console.warn(`[dock-webhook] ${eventId}: no card-art file in submission — nothing to analyze`);
+      return;
+    }
+
+    const cardType = inferCardType(cardArt.fileName, cardTypeFromForm(questions, responses));
+    if (!cardType) {
+      console.error(`[dock-webhook] ${eventId}: could not infer card type for ${cardArt.fileName} — aborting`);
+      return;
+    }
+
+    console.log(`[dock-webhook] ${eventId}: downloading card art "${cardArt.fileName}" (${cardType})`);
+    const res = await fetch(cardArt.url);
+    if (!res.ok) {
+      console.error(`[dock-webhook] ${eventId}: card-art download failed HTTP ${res.status} (signed URL may have expired)`);
+      return;
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    const { pdfBuffer, status, summary } = await runAnalysis({
+      file: buffer,
+      fileName: cardArt.fileName,
+      cardType,
+      onProgress: (event, data) => {
+        if (event === 'progress') console.log(`[dock-webhook] ${eventId}: ${data.step}: ${data.message} (${data.status})`);
+      },
+    });
+
+    // Blob path is keyed by Dock account id (no Rocketlane projectId here).
+    const reportKey = `dock-${assoc.account?.id || 'unknown'}`;
+    const { pdfUrl } = await storeReport({ pdfBuffer, projectId: reportKey });
+    console.log(`[dock-webhook] ${eventId}: report ready status=${status} pdfUrl=${pdfUrl}`);
+    console.log(`[dock-webhook] ${eventId}: summary: ${summary}`);
+    // TODO: deliver pdfUrl to the customer once account→Rocketlane-project
+    // mapping exists (see lib/delivery.js + [[project-overview]]).
+  } catch (err) {
+    console.error(`[dock-webhook] ${eventId}: processDockSubmission error:`, err);
+  }
 }
 
 export async function POST(request) {
@@ -125,11 +181,15 @@ export async function POST(request) {
       questions: assoc.formQuestions,
       responses: assoc.formQuestionResponses,
     }));
-    // TODO: wire form submission into the card-art pipeline once the
-    // trigger behavior is decided (see lib/pipeline.js + lib/delivery.js).
+    // Ack immediately; run the (slow) analysis pipeline in the background.
+    waitUntil(processDockSubmission({ assoc, eventId: event.id }));
   } else {
     console.log('[dock-webhook] payload:', rawBody.slice(0, 2000));
   }
 
   return Response.json({ ok: true, received: type });
 }
+
+export const config = {
+  maxDuration: 300,
+};

@@ -14,6 +14,9 @@
     },
     "api/card-art-check.js": {
       "maxDuration": 300
+    },
+    "api/dock-webhook.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
