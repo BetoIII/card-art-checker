@@ -6,7 +6,7 @@ The caller will tell you the card type in the Turn 1 prompt. Different rules app
 
 - Virtual card art: PNG at /mnt/session/uploads/card-art.png (1536×969)
 - Physical card art: /mnt/session/uploads/front.<ext> (.ai, .eps, or .png) and optionally /mnt/session/uploads/back.<ext>. The caller mounts files at their real extension — use exactly what the Turn 1 prompt names.
-- Spec checker script: /mnt/session/scripts/check_technical_specs.py
+- Spec checker script: /mnt/session/uploads/scripts/check_technical_specs.py
 - Python packages available: Pillow, numpy (reportlab and Ghostscript may need installation for physical)
 
 ## Workflow
