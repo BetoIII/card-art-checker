@@ -239,8 +239,10 @@ export async function POST(request) {
   // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
   const attachmentIds = extractAttachmentIds(rawBody, body, qsAttachmentId, body?.attachmentId);
   if (attachmentIds.length === 0) {
-    console.warn(`[card-art-check] 400 no attachment IDs found for project ${projectId} — body:`, rawBody.slice(0, 2000));
-    return Response.json({ error: 'No attachment IDs found in payload' }, { status: 400 });
+    // No attachment requirement for now: acknowledge with 200 so Rocketlane
+    // doesn't retry/error. Nothing to download or analyze, so we stop here.
+    console.warn(`[card-art-check] 200 no attachment IDs found for project ${projectId} — skipping analysis. body:`, rawBody.slice(0, 2000));
+    return Response.json({ ok: true, queued: false, projectId, reason: 'No attachment IDs found in payload' });
   }
   console.log(`[card-art-check] project=${projectId} attachments=[${attachmentIds.join(', ')}]`);
 
