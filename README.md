@@ -51,11 +51,18 @@ Notes:
 | `/` | API playground for internal testing | — |
 | `/api/card-check` | Analysis + PDF generation, streams SSE | 300s |
 | `/api/card-deliver` | Slack + Rocketlane delivery, non-fatal per service | 60s |
-| `/api/card-art-check` | External-trigger entrypoint: download attachment, analyze, store, deliver. See below. | 300s |
+| `/api/card-art-check` | External-trigger entrypoint: resolve attachment IDs, download, analyze, store, deliver. See below. | 300s |
 
 ## External-trigger API: `/api/card-art-check`
 
-Open-format, single-shot card-art check. Any system with a Rocketlane `projectId` and `attachmentId` can fire one request and get a full Slack-delivered report. No event-type filter, no batching, no dedup — one request → one analysis → one delivery.
+Project-keyed card-art check, driven by a Rocketlane "Form completed" HTTP automation. The request identifies a `projectId`; the attachment ID(s) are carried in the payload as the card-art field's HTML anchors (`<a data-attachment-id="12345">akasa.jpg</a>`). One field can hold several files → several anchors → several attachments, each analyzed and delivered.
+
+Two stages run, in order, before any analysis or delivery begins:
+
+1. **Resolve** — regex every `data-attachment-id` out of the raw payload.
+2. **Download** — fetch each attachment's bytes via the Rocketlane v1 attachments API (`GET /api/v1/attachments/{id}/download`).
+
+Both stages are awaited synchronously, so the HTTP response reflects whether the download succeeded. Analysis → store → deliver then runs per attachment in the background.
 
 **Auth:** `Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET` (or `x-webhook-secret: $ROCKETLANE_WEBHOOK_SECRET`).
 
@@ -63,13 +70,17 @@ Open-format, single-shot card-art check. Any system with a Rocketlane `projectId
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `projectId` | yes | Numeric Rocketlane project ID. Used for Slack channel routing and Blob report path. |
-| `attachmentId` | yes | Numeric Rocketlane attachment ID. Downloaded via the Rocketlane v1 attachments API. |
-| `cardType` | no | `"virtual"` or `"physical"`. Override for ambiguous filenames; `.ai`/`.eps` always run physical regardless. |
+| `projectId` | yes | Numeric Rocketlane project ID. From the URL query string or JSON body. Used for Slack channel routing and Blob report path. |
+| attachment IDs | yes | One or more, sourced from `data-attachment-id="…"` anchors anywhere in the payload. An explicit `attachmentId` query-string/body field is also accepted (manual/legacy callers). |
+| `cardType` | no | `"virtual"` or `"physical"`. Override for ambiguous filenames; `.ai`/`.eps` always run physical regardless. Applies to every attachment in the request. |
 
-**Response:** `200 { ok: true, queued: true, projectId, attachmentId }` once auth + validation pass. The pipeline runs in the background via `waitUntil` — watch function logs for progress and delivery results.
+**Responses:**
+- `200 { ok: true, queued: true, projectId, downloaded: [...ids], failed: [...ids] }` — at least one attachment downloaded; analysis runs in the background via `waitUntil`.
+- `400 { error: "Missing or unresolved projectId" }` / `{ error: "No attachment IDs found in payload" }`.
+- `401` — bad/missing secret. `500` — server missing `ROCKETLANE_WEBHOOK_SECRET`.
+- `502 { error: "All attachment downloads failed", projectId, failed }` — every download failed; nothing was analyzed.
 
-**Example:**
+**Example** (manual trigger with an explicit attachment ID; the Rocketlane automation instead posts the field-anchor payload):
 
 ```bash
 curl -X POST "https://card-art-checker.vercel.app/api/card-art-check?projectId=12345&attachmentId=67890" \

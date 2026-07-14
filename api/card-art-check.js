@@ -6,11 +6,20 @@ import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
 import { getProjectName, downloadAttachment } from '../lib/rocketlane.js';
 
-// Single-shot card-art check. Caller supplies { projectId, attachmentId,
-// cardType? } via query string or JSON body; the API downloads the attachment
-// from Rocketlane, runs the analysis pipeline, stores the PDF, and delivers
-// to Slack. One request → one analysis → one delivery. No event-type filter,
-// no batching, no dedup.
+// Card-art check, keyed on a Rocketlane projectId. The caller (a Rocketlane
+// "Form completed" HTTP automation) posts a payload that carries the card-art
+// field value as one or more HTML anchors, e.g.
+//   <a data-attachment-id="12345">akasa.jpg</a>
+// One field can hold several files → several anchors → several attachment IDs.
+//
+// Two stages, in order, before any analysis or delivery runs:
+//   Stage 1 — resolve the attachment ID(s) for this submission (regex the
+//             data-attachment-id anchors out of the raw payload).
+//   Stage 2 — download each attachment's bytes from Rocketlane
+//             (GET /api/v1/attachments/{id}/download).
+// Both stages are awaited synchronously so the HTTP response reflects whether
+// the download succeeded. Only once bytes are in hand do we spawn the
+// (slow) analyze → store → deliver flow per attachment in the background.
 
 function secretsMatch(a, b) {
   if (!a || !b) return false;
@@ -34,13 +43,34 @@ function normalizeCardType(v) {
   return undefined;
 }
 
-async function processAttachment({ projectId, attachmentId, cardTypeOverride }) {
+// Pull every attachment ID out of the raw payload. The card-art field value
+// arrives as HTML anchors carrying data-attachment-id; a single field can hold
+// multiple files, so collect them all (deduped, order preserved). The pattern
+// is lenient about quoting so it matches whether the anchor is unescaped
+// (data-attachment-id="123") or JSON-escaped inside a string
+// (data-attachment-id=\"123\") or bare (data-attachment-id=123).
+function extractAttachmentIds(rawBody, ...extra) {
+  const ids = [];
+  const seen = new Set();
+  const push = (v) => {
+    if (looksLikeId(v)) {
+      const id = String(v).trim();
+      if (!seen.has(id)) { seen.add(id); ids.push(id); }
+    }
+  };
+  const re = /data-attachment-id\s*=\s*\\?["']?(\d+)/gi;
+  let m;
+  while ((m = re.exec(rawBody || '')) !== null) push(m[1]);
+  // Explicit ids (query string / JSON field) let a manual curl or legacy
+  // caller still target a specific attachment.
+  for (const v of extra) push(v);
+  return ids;
+}
+
+// Analyze one already-downloaded attachment and deliver its report. Runs in the
+// background (waitUntil) after Stage 2 has confirmed the bytes exist.
+async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride }) {
   try {
-    console.log(`[card-art-check] processing attachment=${attachmentId} project=${projectId}`);
-
-    const projectName = await getProjectName(projectId);
-    const { buffer, filename } = await downloadAttachment(attachmentId);
-
     const cardType = inferCardType(filename, cardTypeOverride);
     if (!cardType) {
       console.error(`[card-art-check] could not infer card type for ${filename} (attachment ${attachmentId}) — aborting`);
@@ -69,7 +99,7 @@ async function processAttachment({ projectId, attachmentId, cardTypeOverride }) 
     });
     console.log(`[card-art-check] delivered attachment ${attachmentId}:`, delivery);
   } catch (err) {
-    console.error(`[card-art-check] processAttachment error (attachment ${attachmentId}, project ${projectId}):`, err);
+    console.error(`[card-art-check] analyzeAndDeliver error (attachment ${attachmentId}, project ${projectId}):`, err);
   }
 }
 
@@ -88,46 +118,92 @@ export async function POST(request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  // Query string wins over body — Rocketlane's URL-field smart-fill
-  // substitution is more reliable than its JSON-body substitution.
+  // Read the raw body once: Stage 1 regexes attachment IDs out of it, and we
+  // also JSON-parse it for projectId when the query string didn't carry one.
+  const rawBody = await request.text();
+
   const url = new URL(request.url);
+  // Query string wins for projectId — Rocketlane's URL-field smart-fill
+  // substitution is more reliable than its JSON-body substitution.
   const qsProjectId = url.searchParams.get('projectId');
   const qsAttachmentId = url.searchParams.get('attachmentId');
   const qsCardType = url.searchParams.get('cardType');
 
-  // Parse the body whenever a usable ID hasn't arrived via the URL — including
-  // when a smart-fill chip came through unsubstituted as literal {{OV.…}} text.
   let body = null;
-  if (!looksLikeId(qsProjectId) || !looksLikeId(qsAttachmentId)) {
+  if (rawBody.trim()) {
     try {
-      body = await request.json();
+      body = JSON.parse(rawBody);
     } catch {
-      // Empty/invalid body is fine if both IDs are in the URL.
+      // Non-JSON (or empty) body is fine — projectId may be in the URL, and
+      // the attachment-id regex runs over the raw text regardless of format.
     }
   }
 
-  // Trim the winner: Rocketlane's chip-insertion flow encourages a space
-  // before the chip, which can survive as %20 in the path segment.
   const pickId = (...vals) => {
     const v = vals.find(looksLikeId);
     return v == null ? undefined : String(v).trim();
   };
   const projectId = pickId(qsProjectId, body?.projectId);
-  const attachmentId = pickId(qsAttachmentId, body?.attachmentId);
   const cardTypeOverride = normalizeCardType(qsCardType) ?? normalizeCardType(body?.cardType);
 
   if (!looksLikeId(projectId)) {
-    console.warn('[card-art-check] 400 projectId missing or unresolved — qs:', JSON.stringify({ qsProjectId, qsAttachmentId }), 'body:', JSON.stringify(body));
+    console.warn('[card-art-check] 400 projectId missing or unresolved — qs:', JSON.stringify({ qsProjectId }), 'body:', rawBody.slice(0, 2000));
     return Response.json({ error: 'Missing or unresolved projectId' }, { status: 400 });
   }
-  if (!looksLikeId(attachmentId)) {
-    console.warn('[card-art-check] 400 attachmentId missing or unresolved — qs:', JSON.stringify({ qsProjectId, qsAttachmentId }), 'body:', JSON.stringify(body));
-    return Response.json({ error: 'Missing or unresolved attachmentId' }, { status: 400 });
+
+  // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
+  const attachmentIds = extractAttachmentIds(rawBody, qsAttachmentId, body?.attachmentId);
+  if (attachmentIds.length === 0) {
+    console.warn(`[card-art-check] 400 no attachment IDs found for project ${projectId} — body:`, rawBody.slice(0, 2000));
+    return Response.json({ error: 'No attachment IDs found in payload' }, { status: 400 });
+  }
+  console.log(`[card-art-check] project=${projectId} attachments=[${attachmentIds.join(', ')}]`);
+
+  // ── Stage 2: download each attachment's bytes (synchronous gate) ────
+  const downloaded = [];
+  const failed = [];
+  for (const attachmentId of attachmentIds) {
+    try {
+      const { buffer, filename } = await downloadAttachment(attachmentId);
+      downloaded.push({ attachmentId, buffer, filename });
+      console.log(`[card-art-check] downloaded attachment ${attachmentId} → "${filename}" (${buffer.length} bytes)`);
+    } catch (err) {
+      failed.push({ attachmentId, error: String(err?.message || err) });
+      console.error(`[card-art-check] download failed for attachment ${attachmentId} (project ${projectId}):`, err);
+    }
   }
 
-  waitUntil(processAttachment({ projectId, attachmentId, cardTypeOverride }));
+  // Nothing downloaded → surface the failure to Rocketlane; don't start any
+  // analysis or delivery.
+  if (downloaded.length === 0) {
+    return Response.json(
+      { error: 'All attachment downloads failed', projectId, failed },
+      { status: 502 }
+    );
+  }
 
-  return Response.json({ ok: true, queued: true, projectId, attachmentId });
+  // Project name is needed for delivery (Slack channel resolution), not for the
+  // download — fetch it once, but never let a lookup failure block the flow.
+  let projectName;
+  try {
+    projectName = await getProjectName(projectId);
+  } catch (err) {
+    console.error(`[card-art-check] getProjectName failed for project ${projectId} — proceeding without name:`, err);
+  }
+
+  // Stages 1–2 are done. Only now kick off analyze → store → deliver per
+  // attachment, in the background.
+  for (const { attachmentId, buffer, filename } of downloaded) {
+    waitUntil(analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride }));
+  }
+
+  return Response.json({
+    ok: true,
+    queued: true,
+    projectId,
+    downloaded: downloaded.map((d) => d.attachmentId),
+    failed: failed.map((f) => f.attachmentId),
+  });
 }
 
 export const config = {
