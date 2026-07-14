@@ -6,15 +6,20 @@ import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
 import { getProjectName, downloadAttachment } from '../lib/rocketlane.js';
 
-// Card-art check, keyed on a Rocketlane projectId. The caller (a Rocketlane
-// "Form completed" HTTP automation) posts a payload that carries the card-art
-// field value as one or more HTML anchors, e.g.
+// Card-art check, keyed on a Rocketlane projectId. Rocketlane can't reliably
+// substitute a custom URL/body parameter (smart-fill chips arrive as literal
+// {{OV.…}} text), so the caller (a Rocketlane "Form completed" HTTP automation)
+// just POSTs its entire native form response and we dig out what we need. The
+// endpoint accepts any JSON shape: both projectId and the card-art attachment
+// ID(s) are located by scanning the whole payload rather than expecting them at
+// a fixed key. The card-art field value may appear as HTML anchors, e.g.
 //   <a data-attachment-id="12345">akasa.jpg</a>
-// One field can hold several files → several anchors → several attachment IDs.
+// or as structured attachment/file objects; one field can hold several files.
 //
 // Two stages, in order, before any analysis or delivery runs:
-//   Stage 1 — resolve the attachment ID(s) for this submission (regex the
-//             data-attachment-id anchors out of the raw payload).
+//   Stage 1 — resolve the attachment ID(s) for this submission (scan the raw
+//             payload for data-attachment-id anchors and the parsed JSON for
+//             attachment/file objects).
 //   Stage 2 — download each attachment's bytes from Rocketlane
 //             (GET /api/v1/attachments/{id}/download).
 // Both stages are awaited synchronously so the HTTP response reflects whether
@@ -43,13 +48,38 @@ function normalizeCardType(v) {
   return undefined;
 }
 
-// Pull every attachment ID out of the raw payload. The card-art field value
-// arrives as HTML anchors carrying data-attachment-id; a single field can hold
-// multiple files, so collect them all (deduped, order preserved). The pattern
-// is lenient about quoting so it matches whether the anchor is unescaped
-// (data-attachment-id="123") or JSON-escaped inside a string
-// (data-attachment-id=\"123\") or bare (data-attachment-id=123).
-function extractAttachmentIds(rawBody, ...extra) {
+// Walk an arbitrary JSON value and hand every attachment-id-looking value to
+// `push`. Rocketlane's native form response can carry the card-art field as a
+// structured attachments/files array of objects ({ attachmentId | id, ... })
+// rather than as HTML anchors, so we scan for both key-named ids and the ids
+// nested inside attachment/file objects. Depth-first; order preserved.
+function collectAttachmentIdsFromJson(node, push) {
+  if (node == null || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectAttachmentIdsFromJson(item, push);
+    return;
+  }
+  for (const [k, v] of Object.entries(node)) {
+    if (/^attachment_?id$/i.test(k)) push(v);
+    if (/^(attachments?|files?)$/i.test(k)) {
+      const items = Array.isArray(v) ? v : [v];
+      for (const it of items) {
+        if (it && typeof it === 'object') push(it.attachmentId ?? it.attachment_id ?? it.id);
+      }
+    }
+    collectAttachmentIdsFromJson(v, push);
+  }
+}
+
+// Pull every attachment ID out of the submission. The card-art field value can
+// arrive two ways in a Rocketlane form response: as HTML anchors carrying
+// data-attachment-id (rich-text/link fields) or as structured attachment/file
+// objects (file-upload fields). A single field can hold multiple files, so we
+// gather from every source, dedupe, and preserve order. The anchor pattern is
+// lenient about quoting so it matches whether the anchor is unescaped
+// (data-attachment-id="123"), JSON-escaped inside a string
+// (data-attachment-id=\"123\"), or bare (data-attachment-id=123).
+function extractAttachmentIds(rawBody, body, ...extra) {
   const ids = [];
   const seen = new Set();
   const push = (v) => {
@@ -61,10 +91,58 @@ function extractAttachmentIds(rawBody, ...extra) {
   const re = /data-attachment-id\s*=\s*\\?["']?(\d+)/gi;
   let m;
   while ((m = re.exec(rawBody || '')) !== null) push(m[1]);
+  // Structured attachment/file objects anywhere in the parsed payload.
+  if (body) collectAttachmentIdsFromJson(body, push);
   // Explicit ids (query string / JSON field) let a manual curl or legacy
   // caller still target a specific attachment.
   for (const v of extra) push(v);
   return ids;
+}
+
+// Find a Rocketlane projectId anywhere in a parsed form-response payload.
+// Rocketlane can't reliably substitute a custom URL/body parameter, so it just
+// POSTs its native form response and we dig the projectId out of it. We prefer
+// an explicitly project-id-named key, then a nested `project` object's own id,
+// then recurse. Keying on the field *name* (not just "a number") keeps us from
+// grabbing an unrelated id.
+function findProjectIdInJson(node) {
+  if (node == null || typeof node !== 'object') return undefined;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findProjectIdInJson(item);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  for (const [k, v] of Object.entries(node)) {
+    if (/^project_?id$/i.test(k) && looksLikeId(v)) return String(v).trim();
+  }
+  for (const [k, v] of Object.entries(node)) {
+    if (/^project$/i.test(k) && v && typeof v === 'object') {
+      const id = v.projectId ?? v.project_id ?? v.id;
+      if (looksLikeId(id)) return String(id).trim();
+    }
+  }
+  for (const v of Object.values(node)) {
+    const found = findProjectIdInJson(v);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+// Last-resort projectId scrape straight off the raw text — catches an embedded
+// project URL/path segment (.../projects/12345) or a stringified id in a shape
+// the parsed-JSON walk didn't reach.
+function projectIdFromRawBody(rawBody) {
+  const patterns = [
+    /"project_?id"\s*:\s*\\?"?(\d+)/i,
+    /\/projects?\/(\d+)/i,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(rawBody || '');
+    if (m) return m[1];
+  }
+  return undefined;
 }
 
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
@@ -143,7 +221,14 @@ export async function POST(request) {
     const v = vals.find(looksLikeId);
     return v == null ? undefined : String(v).trim();
   };
-  const projectId = pickId(qsProjectId, body?.projectId);
+  // Resolution order, most-explicit first:
+  //   1. ?projectId= query param (manual curl / legacy caller)
+  //   2. any project-id-named field anywhere in the parsed form response
+  //   3. a project URL/id scraped off the raw body text
+  const projectId =
+    pickId(qsProjectId, body?.projectId) ??
+    findProjectIdInJson(body) ??
+    projectIdFromRawBody(rawBody);
   const cardTypeOverride = normalizeCardType(qsCardType) ?? normalizeCardType(body?.cardType);
 
   if (!looksLikeId(projectId)) {
@@ -152,7 +237,7 @@ export async function POST(request) {
   }
 
   // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
-  const attachmentIds = extractAttachmentIds(rawBody, qsAttachmentId, body?.attachmentId);
+  const attachmentIds = extractAttachmentIds(rawBody, body, qsAttachmentId, body?.attachmentId);
   if (attachmentIds.length === 0) {
     console.warn(`[card-art-check] 400 no attachment IDs found for project ${projectId} — body:`, rawBody.slice(0, 2000));
     return Response.json({ error: 'No attachment IDs found in payload' }, { status: 400 });
