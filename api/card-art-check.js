@@ -4,27 +4,26 @@ import { runAnalysis } from '../lib/pipeline.js';
 import { storeReport } from '../lib/blob-report.js';
 import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
-import { getProjectName, downloadAttachment } from '../lib/rocketlane.js';
+import { getProjectName, downloadAttachment, resolveLatestCardArt } from '../lib/rocketlane.js';
 
-// Card-art check, keyed on a Rocketlane projectId. Rocketlane can't reliably
-// substitute a custom URL/body parameter (smart-fill chips arrive as literal
-// {{OV.…}} text), so the caller (a Rocketlane "Form completed" HTTP automation)
-// just POSTs its entire native form response and we dig out what we need. The
-// endpoint accepts any JSON shape: both projectId and the card-art attachment
-// ID(s) are located by scanning the whole payload rather than expecting them at
-// a fixed key. The card-art field value may appear as HTML anchors, e.g.
-//   <a data-attachment-id="12345">akasa.jpg</a>
-// or as structured attachment/file objects; one field can hold several files.
+// Card-art check, keyed on a Rocketlane projectId. The caller is a Rocketlane
+// "Form completed" HTTP automation on the custom-card-request form. Its payload
+// carries projectId and a few dropdown answers, but NOT the file-upload
+// answers — so there are no attachment IDs to scan for. projectId is the one
+// thing we can rely on (from body.projectId or scraped off the raw text).
 //
 // Two stages, in order, before any analysis or delivery runs:
-//   Stage 1 — resolve the attachment ID(s) for this submission (scan the raw
-//             payload for data-attachment-id anchors and the parsed JSON for
-//             attachment/file objects).
-//   Stage 2 — download each attachment's bytes from Rocketlane
+//   Stage 1 — resolve the card-art attachment ID for this submission. Explicit
+//             IDs in the payload/query win (manual curl / future richer
+//             webhook); otherwise we resolve from Rocketlane by projectId —
+//             the newest upload on the project's "Custom Card Request" task is
+//             this submission's card art (see resolveLatestCardArt). We analyze
+//             the card art only, never the logo/icon.
+//   Stage 2 — download the attachment's bytes from Rocketlane
 //             (GET /api/v1/attachments/{id}/download).
 // Both stages are awaited synchronously so the HTTP response reflects whether
 // the download succeeded. Only once bytes are in hand do we spawn the
-// (slow) analyze → store → deliver flow per attachment in the background.
+// (slow) analyze → store → deliver flow in the background.
 
 function secretsMatch(a, b) {
   if (!a || !b) return false;
@@ -236,13 +235,35 @@ export async function POST(request) {
     return Response.json({ error: 'Missing or unresolved projectId' }, { status: 400 });
   }
 
-  // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
-  const attachmentIds = extractAttachmentIds(rawBody, body, qsAttachmentId, body?.attachmentId);
+  // ── Stage 1: resolve the card-art attachment ID ────────────────────
+  // First honor any explicit attachment IDs carried in the payload/query (a
+  // manual curl or a future richer webhook). The Rocketlane "Form completed"
+  // webhook, however, does NOT include file-upload answers — so normally
+  // nothing is found here and we resolve the card art from Rocketlane by
+  // projectId instead: the newest upload on the project's "Custom Card Request"
+  // task is this submission's card art (see resolveLatestCardArt). We
+  // deliberately analyze only the card art, never the logo/icon.
+  let attachmentIds = extractAttachmentIds(rawBody, body, qsAttachmentId, body?.attachmentId);
   if (attachmentIds.length === 0) {
-    // No attachment requirement for now: acknowledge with 200 so Rocketlane
-    // doesn't retry/error. Nothing to download or analyze, so we stop here.
-    console.warn(`[card-art-check] 200 no attachment IDs found for project ${projectId} — skipping analysis. body:`, rawBody.slice(0, 2000));
-    return Response.json({ ok: true, queued: false, projectId, reason: 'No attachment IDs found in payload' });
+    try {
+      const resolved = await resolveLatestCardArt(projectId);
+      if (resolved) {
+        attachmentIds = [resolved.attachmentId];
+        console.log(
+          `[card-art-check] project=${projectId} resolved card art from task ${resolved.taskId}: ` +
+          `attachment ${resolved.attachmentId} "${resolved.filename}" ` +
+          `(submission had ${resolved.submission.length} file(s): ${resolved.submission.map((f) => f.filename).join(', ')})`
+        );
+      }
+    } catch (err) {
+      console.error(`[card-art-check] resolveLatestCardArt failed for project ${projectId}:`, err);
+    }
+  }
+  if (attachmentIds.length === 0) {
+    // Nothing to analyze (no card-art task/upload found). Acknowledge with 200
+    // so Rocketlane doesn't retry/error, and stop here.
+    console.warn(`[card-art-check] 200 no card-art attachment resolved for project ${projectId} — skipping analysis. body:`, rawBody.slice(0, 2000));
+    return Response.json({ ok: true, queued: false, projectId, reason: 'No card-art attachment resolved' });
   }
   console.log(`[card-art-check] project=${projectId} attachments=[${attachmentIds.join(', ')}]`);
 
