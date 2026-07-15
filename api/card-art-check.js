@@ -4,7 +4,8 @@ import { runAnalysis } from '../lib/pipeline.js';
 import { storeReport } from '../lib/blob-report.js';
 import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
-import { getProjectName, downloadAttachment, resolveLatestCardArt } from '../lib/rocketlane.js';
+import { getProjectName, downloadAttachment, resolveLatestSubmission } from '../lib/rocketlane.js';
+import { getImageSize } from '../lib/image-size.js';
 
 // Card-art check, keyed on a Rocketlane projectId. The caller is a Rocketlane
 // "Form completed" HTTP automation on the custom-card-request form. Its payload
@@ -12,17 +13,21 @@ import { getProjectName, downloadAttachment, resolveLatestCardArt } from '../lib
 // answers — so there are no attachment IDs to scan for. projectId is the one
 // thing we can rely on (from body.projectId or scraped off the raw text).
 //
-// Two stages, in order, before any analysis or delivery runs:
-//   Stage 1 — resolve the card-art attachment ID for this submission. Explicit
-//             IDs in the payload/query win (manual curl / future richer
-//             webhook); otherwise we resolve from Rocketlane by projectId —
-//             the newest upload on the project's "Custom Card Request" task is
-//             this submission's card art (see resolveLatestCardArt). We analyze
-//             the card art only, never the logo/icon.
-//   Stage 2 — download the attachment's bytes from Rocketlane
+// Stages, in order, before any analysis or delivery runs:
+//   Stage 1 — resolve the attachment ID(s) for this submission. Explicit IDs in
+//             the payload/query win (manual curl / future richer webhook);
+//             otherwise we resolve from Rocketlane by projectId — the newest
+//             cluster of uploads on the project's "Custom Card Request" task is
+//             this submission (see resolveLatestSubmission), typically the card
+//             art plus a logo/icon.
+//   Stage 2 — download each attachment's bytes from Rocketlane
 //             (GET /api/v1/attachments/{id}/download).
-// Both stages are awaited synchronously so the HTTP response reflects whether
-// the download succeeded. Only once bytes are in hand do we spawn the
+//   Stage 3 — when we auto-resolved a multi-file submission, pick the card art
+//             by image dimensions (it's 1536-wide; the logo/icon is tiny) and
+//             analyze only that one. Neither upload order nor byte size is
+//             reliable for this — pixel area is.
+// The download stage is awaited synchronously so the HTTP response reflects
+// whether it succeeded. Only once bytes are in hand do we spawn the
 // (slow) analyze → store → deliver flow in the background.
 
 function secretsMatch(a, b) {
@@ -144,8 +149,22 @@ function projectIdFromRawBody(rawBody) {
   return undefined;
 }
 
+// From a submission's downloaded files ({ attachmentId, buffer, filename }),
+// pick the card art. The card-art design is large (form spec: 1536-wide) and
+// the logo/icon is small, so we choose the greatest pixel area. Byte size is a
+// last-resort tiebreak for files whose dimensions we can't read (e.g. vector
+// .ai/.eps/.pdf), where the design is still typically the heavier file.
+function pickCardArtByDimensions(files) {
+  const scored = files.map((f) => {
+    const size = getImageSize(f.buffer);
+    return { f, area: size ? size.width * size.height : 0, bytes: f.buffer.length };
+  });
+  scored.sort((a, b) => b.area - a.area || b.bytes - a.bytes);
+  return scored[0].f;
+}
+
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
-// background (waitUntil) after Stage 2 has confirmed the bytes exist.
+// background (waitUntil) after the download stage has confirmed the bytes exist.
 async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride }) {
   try {
     const cardType = inferCardType(filename, cardTypeOverride);
@@ -235,28 +254,29 @@ export async function POST(request) {
     return Response.json({ error: 'Missing or unresolved projectId' }, { status: 400 });
   }
 
-  // ── Stage 1: resolve the card-art attachment ID ────────────────────
+  // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
   // First honor any explicit attachment IDs carried in the payload/query (a
-  // manual curl or a future richer webhook). The Rocketlane "Form completed"
-  // webhook, however, does NOT include file-upload answers — so normally
-  // nothing is found here and we resolve the card art from Rocketlane by
-  // projectId instead: the newest upload on the project's "Custom Card Request"
-  // task is this submission's card art (see resolveLatestCardArt). We
-  // deliberately analyze only the card art, never the logo/icon.
+  // manual curl or a future richer webhook) — those are analyzed as-is. The
+  // Rocketlane "Form completed" webhook, however, does NOT include file-upload
+  // answers, so normally nothing is found here and we resolve the submission's
+  // files from Rocketlane by projectId (see resolveLatestSubmission). When we
+  // auto-resolve, `pickCardArtByDimensions` runs after download (Stage 3) to
+  // isolate the card art from the logo/icon.
   let attachmentIds = extractAttachmentIds(rawBody, body, qsAttachmentId, body?.attachmentId);
+  let autoResolved = false;
   if (attachmentIds.length === 0) {
     try {
-      const resolved = await resolveLatestCardArt(projectId);
+      const resolved = await resolveLatestSubmission(projectId);
       if (resolved) {
-        attachmentIds = [resolved.attachmentId];
+        attachmentIds = resolved.submission.map((f) => f.attachmentId);
+        autoResolved = true;
         console.log(
-          `[card-art-check] project=${projectId} resolved card art from task ${resolved.taskId}: ` +
-          `attachment ${resolved.attachmentId} "${resolved.filename}" ` +
-          `(submission had ${resolved.submission.length} file(s): ${resolved.submission.map((f) => f.filename).join(', ')})`
+          `[card-art-check] project=${projectId} resolved latest submission from task ${resolved.taskId}: ` +
+          `${resolved.submission.length} file(s): ${resolved.submission.map((f) => `${f.attachmentId}:${f.filename}`).join(', ')}`
         );
       }
     } catch (err) {
-      console.error(`[card-art-check] resolveLatestCardArt failed for project ${projectId}:`, err);
+      console.error(`[card-art-check] resolveLatestSubmission failed for project ${projectId}:`, err);
     }
   }
   if (attachmentIds.length === 0) {
@@ -290,6 +310,23 @@ export async function POST(request) {
     );
   }
 
+  // ── Stage 3: isolate the card art (auto-resolved multi-file only) ───
+  // A custom-card-request submission carries the card art plus a logo/icon. The
+  // card art is the design (1536-wide); the logo/icon is tiny. Pick by pixel
+  // area, which cleanly separates them regardless of upload order or byte size.
+  // Explicit payload/query IDs are never filtered — those are analyzed as given.
+  let toAnalyze = downloaded;
+  if (autoResolved && downloaded.length > 1) {
+    const cardArt = pickCardArtByDimensions(downloaded);
+    const dims = getImageSize(cardArt.buffer);
+    console.log(
+      `[card-art-check] selected card art ${cardArt.attachmentId} "${cardArt.filename}"` +
+      `${dims ? ` (${dims.width}x${dims.height})` : ''} from ${downloaded.length} submission files; ` +
+      `skipping ${downloaded.filter((d) => d !== cardArt).map((d) => `${d.attachmentId}:${d.filename}`).join(', ')}`
+    );
+    toAnalyze = [cardArt];
+  }
+
   // Project name is needed for delivery (Slack channel resolution), not for the
   // download — fetch it once, but never let a lookup failure block the flow.
   let projectName;
@@ -299,9 +336,9 @@ export async function POST(request) {
     console.error(`[card-art-check] getProjectName failed for project ${projectId} — proceeding without name:`, err);
   }
 
-  // Stages 1–2 are done. Only now kick off analyze → store → deliver per
-  // attachment, in the background.
-  for (const { attachmentId, buffer, filename } of downloaded) {
+  // Resolution is done. Only now kick off analyze → store → deliver for each
+  // selected attachment, in the background.
+  for (const { attachmentId, buffer, filename } of toAnalyze) {
     waitUntil(analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride }));
   }
 
@@ -309,6 +346,7 @@ export async function POST(request) {
     ok: true,
     queued: true,
     projectId,
+    analyzing: toAnalyze.map((d) => d.attachmentId),
     downloaded: downloaded.map((d) => d.attachmentId),
     failed: failed.map((f) => f.attachmentId),
   });
