@@ -33,7 +33,7 @@ async function main() {
   const agent = await anthropic.beta.agents.create({
     name: 'card-art-checker',
     description: 'Analyzes virtual card art for compliance with Visa Digital Card Brand Standards and Rain internal requirements',
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-8',
     system: systemPrompt,
     tools: [
       { type: 'agent_toolset_20260401' },

@@ -441,7 +441,7 @@ const anthropic = new Anthropic({
 const agent = await anthropic.beta.agents.create({
   name: 'card-art-checker',
   description: 'Analyzes virtual card art for compliance with Visa Digital Card Brand Standards and Rain internal requirements',
-  model: 'claude-sonnet-4-6',
+  model: 'claude-opus-4-8',
   instructions: AGENT_SYSTEM_PROMPT, // See "Agent System Prompt" section below
   tools: [
     { type: 'bash' },
@@ -844,7 +844,7 @@ When the Vercel Function posts to the customer's Slack channel:
 | Vercel (Hobby) | Upload page hosting + card-check function | $0 |
 | Vercel Blob (Free tier) | PDF report storage (permanent, 1 GB) | $0 |
 | Claude Managed Agent runtime | $0.08/session-hour | ~$2-5/mo at moderate volume |
-| Anthropic API tokens | Sonnet 4.6 input/output per session | ~$5-15/mo at moderate volume |
+| Anthropic API tokens | Opus 4.8 input/output per session | ~$15-40/mo at moderate volume |
 | Slack API | Free tier (no cost for channel search, join, post) | $0 |
 | Rocketlane API | Included in Rocketlane plan | $0 |
 | **Total** | | **~$7-20/mo** |
