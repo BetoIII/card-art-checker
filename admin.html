@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rain — Card Art Checker Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Base */
+      --rain-black: #000000;
+      --rain-dark-gray: #121212;
+      --rain-white: #FFFFFF;
+      --rain-light-gray: #D8DCDF;
+      --rain-off-white: #EDEDED;
+
+      /* Functional UI */
+      --rain-hot-pink: #FF2FB6;
+      --rain-cta-pink: #E84670;
+      --rain-sidebar-navy: #1B2559;
+      --rain-active-blue: #3B5BDB;
+      --rain-status-green: #40C057;
+      --rain-status-red: #E84142;
+      --rain-status-amber: #D9A400;
+      --rain-container-dark: #1A1A2E;
+      --rain-border-dark: #2A2A3E;
+
+      /* Accent / Gradients */
+      --rain-gradient-green-cyan: linear-gradient(135deg, #EEEEEE 0%, #71FFFF 48%, #71FF7D 100%);
+
+      /* Typography */
+      --rain-font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --rain-mono: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+
+      /* Spacing */
+      --rain-radius-sm: 4px;
+      --rain-radius-md: 8px;
+      --rain-radius-lg: 12px;
+      --rain-radius-pill: 9999px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--rain-font);
+      background: var(--rain-white);
+      color: var(--rain-black);
+      padding: 24px;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      position: relative;
+      padding-top: 20px;
+    }
+    .container::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: var(--rain-gradient-green-cyan);
+      border-radius: 2px;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 20px; font-weight: 600; }
+    .page-head .sub {
+      font-size: 12px;
+      color: var(--rain-dark-gray);
+      letter-spacing: 0.4px;
+    }
+
+    /* ── Service status ─────────────────────────────────────── */
+    .status-card {
+      border: 1px solid var(--rain-light-gray);
+      border-radius: var(--rain-radius-lg);
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--rain-light-gray);
+      flex-shrink: 0;
+    }
+    .status-dot.ok { background: var(--rain-status-green); box-shadow: 0 0 0 4px rgba(64,192,87,0.15); }
+    .status-dot.warn { background: var(--rain-status-amber); box-shadow: 0 0 0 4px rgba(217,164,0,0.15); }
+    .status-dot.down { background: var(--rain-status-red); box-shadow: 0 0 0 4px rgba(232,65,66,0.15); }
+    .status-label { font-size: 15px; font-weight: 600; }
+    .status-meta {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--rain-dark-gray);
+      letter-spacing: 0.4px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .env-chips {
+      margin-top: 12px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .env-chip {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      padding: 3px 10px;
+      border-radius: var(--rain-radius-pill);
+      border: 1px solid var(--rain-light-gray);
+      color: var(--rain-dark-gray);
+    }
+    .env-chip.ok { border-color: rgba(64,192,87,0.5); color: #237a36; background: rgba(64,192,87,0.07); }
+    .env-chip.missing { border-color: rgba(232,65,66,0.5); color: var(--rain-status-red); background: rgba(232,65,66,0.06); }
+
+    /* ── Runs ───────────────────────────────────────────────── */
+    .runs-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .runs-head h2 { font-size: 15px; font-weight: 600; }
+    .refresh-btn {
+      appearance: none;
+      border: 1px solid var(--rain-light-gray);
+      background: var(--rain-white);
+      color: var(--rain-dark-gray);
+      font-family: var(--rain-font);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--rain-radius-pill);
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .refresh-btn:hover { border-color: var(--rain-black); color: var(--rain-black); }
+
+    .table-wrap {
+      border: 1px solid var(--rain-light-gray);
+      border-radius: var(--rain-radius-lg);
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--rain-dark-gray);
+      background: var(--rain-off-white);
+      padding: 10px 12px;
+      white-space: nowrap;
+    }
+    tbody tr.run-row {
+      border-top: 1px solid var(--rain-off-white);
+      cursor: pointer;
+    }
+    tbody tr.run-row:hover { background: rgba(59, 91, 219, 0.04); }
+    tbody td {
+      padding: 10px 12px;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    td.wrap { white-space: normal; max-width: 260px; overflow-wrap: anywhere; }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      padding: 3px 10px;
+      border-radius: var(--rain-radius-pill);
+      white-space: nowrap;
+    }
+    .badge.src-rocketlane { background: rgba(59, 91, 219, 0.1); color: var(--rain-active-blue); }
+    .badge.src-dock { background: rgba(255, 47, 182, 0.09); color: #B01F7E; }
+    .badge.src-upload { background: rgba(64, 192, 87, 0.1); color: #237a36; }
+    .badge.src-unknown { background: var(--rain-off-white); color: var(--rain-dark-gray); }
+
+    .badge.st-running { background: rgba(59, 91, 219, 0.1); color: var(--rain-active-blue); }
+    .badge.st-completed { background: rgba(64, 192, 87, 0.1); color: #237a36; }
+    .badge.st-failed { background: rgba(232, 65, 66, 0.09); color: var(--rain-status-red); }
+    .badge.st-skipped { background: var(--rain-off-white); color: var(--rain-dark-gray); }
+
+    .badge.v-pass { background: rgba(64, 192, 87, 0.1); color: #237a36; }
+    .badge.v-fail { background: rgba(232, 65, 66, 0.09); color: var(--rain-status-red); }
+
+    .pulse {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      margin-right: 5px;
+      animation: pulse 1.2s ease-in-out infinite;
+      vertical-align: 1px;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+    .muted { color: var(--rain-dark-gray); opacity: 0.65; }
+    a.report-link { color: var(--rain-active-blue); font-weight: 600; text-decoration: none; }
+    a.report-link:hover { text-decoration: underline; }
+
+    /* Expanded detail */
+    tr.detail-row td {
+      background: #FAFAFB;
+      border-top: 1px solid var(--rain-off-white);
+      padding: 14px 16px 18px;
+      white-space: normal;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .detail-block h3 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--rain-dark-gray);
+      margin-bottom: 6px;
+    }
+    .kv { font-size: 12.5px; line-height: 1.7; overflow-wrap: anywhere; }
+    .kv b { font-weight: 600; }
+    .timeline { list-style: none; font-size: 12.5px; }
+    .timeline li {
+      display: flex;
+      gap: 8px;
+      padding: 3px 0;
+      align-items: baseline;
+    }
+    .timeline .t { font-family: var(--rain-mono); font-size: 11px; color: var(--rain-dark-gray); opacity: 0.7; flex-shrink: 0; }
+    .timeline .icon { width: 14px; text-align: center; flex-shrink: 0; }
+    .timeline .icon.done { color: var(--rain-status-green); }
+    .timeline .icon.pending { color: var(--rain-status-amber); }
+    .timeline .icon.error { color: var(--rain-status-red); }
+    .error-box {
+      margin-top: 4px;
+      font-family: var(--rain-mono);
+      font-size: 12px;
+      color: var(--rain-status-red);
+      background: rgba(232, 65, 66, 0.06);
+      border: 1px solid rgba(232, 65, 66, 0.25);
+      border-radius: var(--rain-radius-md);
+      padding: 8px 10px;
+      overflow-wrap: anywhere;
+    }
+
+    .empty {
+      padding: 32px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--rain-dark-gray);
+      letter-spacing: 0.4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="page-head">
+      <h1>Card Art Checker — Admin</h1>
+      <span class="sub" id="refresh-note">loading…</span>
+    </div>
+
+    <!-- Service status -->
+    <div class="status-card" id="status-card">
+      <div class="status-row">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Checking…</span>
+        <span class="status-meta" id="status-meta"></span>
+      </div>
+      <div class="env-chips" id="env-chips"></div>
+    </div>
+
+    <!-- Run log -->
+    <div class="runs-head">
+      <h2>Runs</h2>
+      <button class="refresh-btn" id="refresh-btn">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Source</th>
+            <th>Project</th>
+            <th>File</th>
+            <th>Type</th>
+            <th>Verdict</th>
+            <th>Run</th>
+            <th>Duration</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody id="runs-body">
+          <tr><td colspan="9" class="empty">Loading runs…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const REFRESH_SECS = 30;
+    // Env vars required for the pipeline to run; Slack is optional (delivery
+    // degrades to 'skipped'), Dock secret only gates the Dock webhook.
+    const REQUIRED_ENV = ['ROCKETLANE_API_KEY', 'ROCKETLANE_WEBHOOK_SECRET', 'ANTHROPIC_API_KEY', 'AGENT_ID', 'ENV_ID', 'SPEC_SCRIPT_FILE_ID', 'BLOB_READ_WRITE_TOKEN'];
+    const OPTIONAL_ENV = ['SLACK_BOT_TOKEN', 'DOCK_WEBHOOK_SECRET'];
+
+    const SOURCE_LABELS = {
+      rocketlane: 'Rocketlane webhook',
+      dock: 'Dock webhook',
+      upload: 'Manual upload',
+    };
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    function relTime(iso) {
+      if (!iso) return '—';
+      const diff = Date.now() - new Date(iso).getTime();
+      const s = Math.round(diff / 1000);
+      if (s < 60) return `${s}s ago`;
+      const m = Math.round(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.round(m / 60);
+      if (h < 48) return `${h}h ago`;
+      return `${Math.round(h / 24)}d ago`;
+    }
+    const absTime = (iso) => iso ? new Date(iso).toLocaleString() : '—';
+    const clockTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : '';
+
+    function fmtDuration(run) {
+      const ms = run.durationMs ?? (run.status === 'running' && run.startedAt ? Date.now() - new Date(run.startedAt).getTime() : null);
+      if (ms == null) return '—';
+      if (ms < 1000) return `${ms}ms`;
+      const s = ms / 1000;
+      if (s < 90) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+      return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+    }
+
+    // ── Service status ──────────────────────────────────────
+    async function loadHealth() {
+      const dot = document.getElementById('status-dot');
+      const label = document.getElementById('status-label');
+      const meta = document.getElementById('status-meta');
+      const chips = document.getElementById('env-chips');
+      const t0 = performance.now();
+      try {
+        const res = await fetch('/api/health', { cache: 'no-store' });
+        const latency = Math.round(performance.now() - t0);
+        const health = await res.json();
+        const env = health.env || {};
+        const missing = REQUIRED_ENV.filter((k) => !env[k]);
+
+        if (!res.ok || !health.ok) {
+          dot.className = 'status-dot down'; label.textContent = 'Service down';
+        } else if (missing.length) {
+          dot.className = 'status-dot warn'; label.textContent = 'Degraded — missing configuration';
+        } else {
+          dot.className = 'status-dot ok'; label.textContent = 'Operational';
+        }
+        meta.innerHTML = `<span>API latency ${latency}ms</span><span>checked ${new Date().toLocaleTimeString()}</span>`;
+        chips.innerHTML = [...REQUIRED_ENV, ...OPTIONAL_ENV.filter((k) => k in env)]
+          .map((k) => {
+            const ok = !!env[k];
+            const optional = OPTIONAL_ENV.includes(k);
+            return `<span class="env-chip ${ok ? 'ok' : 'missing'}" title="${optional ? 'optional' : 'required'}">${esc(k)}${ok ? '' : optional ? ' (optional, unset)' : ' MISSING'}</span>`;
+          }).join('');
+      } catch (err) {
+        dot.className = 'status-dot down';
+        label.textContent = 'Service unreachable';
+        meta.innerHTML = `<span>${esc(err.message)}</span>`;
+        chips.innerHTML = '';
+      }
+    }
+
+    // ── Runs ────────────────────────────────────────────────
+    let expanded = new Set();
+
+    function sourceBadge(run) {
+      const src = SOURCE_LABELS[run.source] ? run.source : 'unknown';
+      return `<span class="badge src-${src}">${esc(SOURCE_LABELS[run.source] || run.source || 'unknown')}</span>`;
+    }
+
+    function statusBadge(run) {
+      const st = ['running', 'completed', 'failed', 'skipped'].includes(run.status) ? run.status : 'running';
+      const pulse = st === 'running' ? '<span class="pulse"></span>' : '';
+      return `<span class="badge st-${st}">${pulse}${esc(run.status)}</span>`;
+    }
+
+    function verdictBadge(run) {
+      if (!run.results || !run.results.length) return '<span class="muted">—</span>';
+      return run.results.map((r) => {
+        if (r.error) return '<span class="badge v-fail">ERROR</span>';
+        if (r.status === 'pass') return '<span class="badge v-pass">APPROVED</span>';
+        if (r.status === 'fail') return '<span class="badge v-fail">REQUIRES CHANGES</span>';
+        return `<span class="badge">${esc(r.status || '—')}</span>`;
+      }).join(' ');
+    }
+
+    function runFile(run) {
+      if (run.selected) return run.selected.filename;
+      if (run.file) return run.file;
+      if (run.results?.length) return run.results.map((r) => r.filename).filter(Boolean).join(', ');
+      if (run.downloads?.length) return run.downloads.map((d) => d.filename).filter(Boolean).join(', ');
+      if (run.attachmentResolution?.files?.length) return run.attachmentResolution.files.map((f) => f.filename).join(', ');
+      return '';
+    }
+
+    function runProject(run) {
+      if (run.projectName) return `${run.projectName} (${run.projectId ?? '?'})`;
+      if (run.projectId) return `project ${run.projectId}`;
+      if (run.dock) return [run.dock.workspace, run.dock.account ? `acct ${run.dock.account}` : null].filter(Boolean).join(' — ') || '—';
+      return '—';
+    }
+
+    function reportLinks(run) {
+      const links = (run.results || []).filter((r) => r.pdfUrl)
+        .map((r) => `<a class="report-link" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">PDF</a>`);
+      return links.length ? links.join(' ') : '<span class="muted">—</span>';
+    }
+
+    function detailHtml(run) {
+      const blocks = [];
+
+      const trig = run.trigger || {};
+      blocks.push(`<div class="detail-block"><h3>Trigger</h3><div class="kv">
+        <b>Source:</b> ${esc(SOURCE_LABELS[run.source] || run.source)}<br>
+        <b>Endpoint:</b> ${esc(trig.endpoint || '—')}<br>
+        ${trig.description ? `<b>Via:</b> ${esc(trig.description)}<br>` : ''}
+        ${trig.eventId ? `<b>Event:</b> ${esc(trig.eventId)}<br>` : ''}
+        ${trig.occurredAt ? `<b>Occurred:</b> ${esc(trig.occurredAt)}<br>` : ''}
+        ${trig.userAgent ? `<b>User-Agent:</b> ${esc(trig.userAgent)}<br>` : ''}
+        <b>Run ID:</b> ${esc(run.runId)}<br>
+        <b>Started:</b> ${esc(absTime(run.startedAt))}
+      </div></div>`);
+
+      if (run.dock) {
+        blocks.push(`<div class="detail-block"><h3>Dock submission</h3><div class="kv">
+          ${run.dock.workspace ? `<b>Workspace:</b> ${esc(run.dock.workspace)}<br>` : ''}
+          ${run.dock.account ? `<b>Account:</b> ${esc(run.dock.account)}<br>` : ''}
+          ${run.dock.user ? `<b>User:</b> ${esc(run.dock.user)}<br>` : ''}
+          ${run.dock.form ? `<b>Form:</b> ${esc(run.dock.form)}` : ''}
+        </div></div>`);
+      }
+
+      if (run.attachmentResolution) {
+        const ar = run.attachmentResolution;
+        const files = ar.files ? ar.files.map((f) => `${f.attachmentId}: ${esc(f.filename)}`).join('<br>') : (ar.ids || []).join(', ');
+        blocks.push(`<div class="detail-block"><h3>Attachment resolution</h3><div class="kv">
+          <b>Mode:</b> ${esc(ar.mode)}${ar.taskId ? ` (task ${esc(ar.taskId)})` : ''}<br>${files}
+        </div></div>`);
+      }
+
+      if (run.downloads?.length) {
+        blocks.push(`<div class="detail-block"><h3>Downloads</h3><div class="kv">${run.downloads.map((d) =>
+          d.ok
+            ? `✓ ${d.attachmentId ? `${esc(d.attachmentId)}: ` : ''}${esc(d.filename)} (${(d.bytes / 1024).toFixed(0)} KB)`
+            : `✗ ${d.attachmentId ? `${esc(d.attachmentId)}: ` : ''}${esc(d.error || 'failed')}`
+        ).join('<br>')}</div></div>`);
+      }
+
+      if (run.selected) {
+        blocks.push(`<div class="detail-block"><h3>Selected card art</h3><div class="kv">
+          ${esc(run.selected.filename)}${run.selected.width ? ` (${run.selected.width}×${run.selected.height})` : ''}
+          ${run.selected.attachmentId ? `<br><b>Attachment:</b> ${esc(run.selected.attachmentId)}` : ''}
+        </div></div>`);
+      }
+
+      if (run.results?.length) {
+        blocks.push(`<div class="detail-block"><h3>Results</h3><div class="kv">${run.results.map((r) => {
+          if (r.error) return `✗ ${esc(r.filename || r.attachmentId || '')}: <span style="color: var(--rain-status-red)">${esc(r.error)}</span>`;
+          const delivery = r.delivery ? `<br><b>Delivery:</b> ${esc(typeof r.delivery === 'string' ? r.delivery : Object.entries(r.delivery).map(([k, v]) => `${k}: ${v}`).join(', '))}` : '';
+          return `<b>${esc(r.filename || r.attachmentId || '')}</b> — ${r.status === 'pass' ? 'APPROVED' : 'REQUIRES CHANGES'}<br>${esc(r.summary || '')}${r.pdfUrl ? `<br><a class="report-link" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">Open PDF report</a>` : ''}${delivery}`;
+        }).join('<hr style="border:0;border-top:1px solid var(--rain-off-white);margin:8px 0">')}</div></div>`);
+      }
+
+      if (run.events?.length) {
+        blocks.push(`<div class="detail-block"><h3>Timeline</h3><ul class="timeline">${run.events.map((e) => {
+          const cls = e.status === 'done' ? 'done' : e.status === 'error' ? 'error' : 'pending';
+          const icon = e.status === 'done' ? '✓' : e.status === 'error' ? '✗' : '◌';
+          return `<li><span class="t">${esc(clockTime(e.t))}</span><span class="icon ${cls}">${icon}</span><span><b>${esc(e.step)}</b> — ${esc(e.message)}</span></li>`;
+        }).join('')}</ul></div>`);
+      }
+
+      if (run.error) blocks.push(`<div class="detail-block"><h3>Error</h3><div class="error-box">${esc(run.error)}</div></div>`);
+      if (run.skipReason) blocks.push(`<div class="detail-block"><h3>Skipped</h3><div class="kv">${esc(run.skipReason)}</div></div>`);
+
+      return `<div class="detail-grid">${blocks.join('')}</div>`;
+    }
+
+    function renderRuns(runs) {
+      const tbody = document.getElementById('runs-body');
+      if (!runs.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs recorded yet. Runs appear here once a webhook or upload triggers the pipeline.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = runs.map((run) => {
+        const isOpen = expanded.has(run.runId);
+        return `
+          <tr class="run-row" data-run="${esc(run.runId)}">
+            <td title="${esc(absTime(run.startedAt))}">${esc(relTime(run.startedAt))}</td>
+            <td>${sourceBadge(run)}</td>
+            <td class="wrap">${esc(runProject(run))}</td>
+            <td class="wrap">${esc(runFile(run)) || '<span class="muted">—</span>'}</td>
+            <td>${esc(run.cardType || run.cardTypeOverride || '—')}</td>
+            <td>${verdictBadge(run)}</td>
+            <td>${statusBadge(run)}</td>
+            <td>${esc(fmtDuration(run))}</td>
+            <td>${reportLinks(run)}</td>
+          </tr>
+          ${isOpen ? `<tr class="detail-row"><td colspan="9">${detailHtml(run)}</td></tr>` : ''}`;
+      }).join('');
+
+      tbody.querySelectorAll('tr.run-row').forEach((row) => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('a')) return; // let report links click through
+          const id = row.dataset.run;
+          expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+          renderRuns(lastRuns);
+        });
+      });
+    }
+
+    let lastRuns = [];
+    async function loadRuns() {
+      const tbody = document.getElementById('runs-body');
+      try {
+        const res = await fetch('/api/admin/runs?limit=100', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { runs } = await res.json();
+        lastRuns = runs;
+        renderRuns(runs);
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">Failed to load runs: ${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    // ── Refresh loop ────────────────────────────────────────
+    let countdown = REFRESH_SECS;
+    async function refreshAll() {
+      countdown = REFRESH_SECS;
+      await Promise.all([loadHealth(), loadRuns()]);
+    }
+    setInterval(() => {
+      countdown -= 1;
+      document.getElementById('refresh-note').textContent = `auto-refresh in ${countdown}s`;
+      if (countdown <= 0) refreshAll();
+    }, 1000);
+    document.getElementById('refresh-btn').addEventListener('click', refreshAll);
+    refreshAll();
+  </script>
+</body>
+</html>

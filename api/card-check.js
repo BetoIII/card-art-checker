@@ -3,6 +3,7 @@ import { runAnalysis } from '../lib/pipeline.js';
 import { storeReport } from '../lib/blob-report.js';
 import { inferCardType, extOf } from '../lib/card-type.js';
 import { getProjectName } from '../lib/rocketlane.js';
+import { createRunLog } from '../lib/run-log.js';
 
 // ── Multipart parser ─────────────────────────────────────────────────
 
@@ -109,11 +110,23 @@ export async function POST(request) {
     return new Response('Bad request: expected multipart/form-data', { status: 400 });
   }
 
+  // Record the run for the /admin dashboard. Progress events mirror the SSE
+  // stream; only 'progress' events are persisted (agent deltas are too chatty).
+  const runLog = createRunLog({
+    source: 'upload',
+    trigger: {
+      endpoint: '/api/card-check',
+      description: 'Manual upload via /upload',
+      userAgent: request.headers.get('user-agent') || undefined,
+    },
+  });
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event, data) => {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        if (event === 'progress') runLog.event(data.step, data.message, data.status);
       };
 
       try {
@@ -121,10 +134,12 @@ export async function POST(request) {
 
         const { file, fileName, backFile, backFileName, projectId, cardType } = await parseMultipart(request);
         send('progress', { step: 'upload', message: 'File received', status: 'done' });
+        runLog.set({ projectId, cardType, file: fileName, ...(backFileName ? { backFile: backFileName } : {}) });
 
         send('progress', { step: 'rocketlane', message: 'Looking up project details...', status: 'pending' });
         const projectName = await getProjectName(projectId);
         send('progress', { step: 'rocketlane', message: `Project: ${projectName}`, status: 'done' });
+        runLog.set({ projectName });
 
         const { pdfBuffer, status, summary } = await runAnalysis({
           file,
@@ -153,8 +168,19 @@ export async function POST(request) {
             cardType,
           },
         });
+        runLog.addResult({
+          filename: fileName,
+          cardType,
+          status,
+          summary,
+          pdfUrl,
+          // Slack delivery is a separate client-triggered call (/api/card-deliver).
+          delivery: { slack: 'client-triggered' },
+        });
+        await runLog.finish();
       } catch (err) {
         send('error', { message: err.message || 'An unexpected error occurred', step: err.step });
+        await runLog.fail(err);
       } finally {
         controller.close();
       }

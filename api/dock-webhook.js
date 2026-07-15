@@ -4,6 +4,7 @@ import { runAnalysis } from '../lib/pipeline.js';
 import { storeReport } from '../lib/blob-report.js';
 import { inferCardType } from '../lib/card-type.js';
 import { extractCardArtFile, cardTypeFromForm } from '../lib/dock.js';
+import { createRunLog } from '../lib/run-log.js';
 
 // Receives Dock (dock.us) webhook events — currently subscribed to
 // workspace.form.submitted. Verifies the X-Dock-Signature HMAC, then runs the
@@ -61,7 +62,7 @@ function verifySignature({ signature, candidates }) {
 // PDF report to Blob. Delivery (Slack/Rocketlane) is intentionally left out:
 // Dock gives us an account/workspace, not a Rocketlane projectId, so customer
 // delivery needs an account→project mapping that doesn't exist yet.
-async function processDockSubmission({ assoc, eventId }) {
+async function processDockSubmission({ assoc, eventId, runLog }) {
   try {
     const questions = assoc.formQuestions;
     const responses = assoc.formQuestionResponses;
@@ -69,29 +70,37 @@ async function processDockSubmission({ assoc, eventId }) {
     const cardArt = extractCardArtFile(questions, responses);
     if (!cardArt) {
       console.warn(`[dock-webhook] ${eventId}: no card-art file in submission — nothing to analyze`);
+      await runLog.skip('No card-art file in submission');
       return;
     }
 
     const cardType = inferCardType(cardArt.fileName, cardTypeFromForm(questions, responses));
     if (!cardType) {
       console.error(`[dock-webhook] ${eventId}: could not infer card type for ${cardArt.fileName} — aborting`);
+      await runLog.fail(`Could not infer card type for "${cardArt.fileName}"`);
       return;
     }
 
+    runLog.set({ file: cardArt.fileName, cardType });
     console.log(`[dock-webhook] ${eventId}: downloading card art "${cardArt.fileName}" (${cardType})`);
     const res = await fetch(cardArt.url);
     if (!res.ok) {
       console.error(`[dock-webhook] ${eventId}: card-art download failed HTTP ${res.status} (signed URL may have expired)`);
+      await runLog.fail(`Card-art download failed HTTP ${res.status} (signed URL may have expired)`);
       return;
     }
     const buffer = Buffer.from(await res.arrayBuffer());
+    runLog.set({ downloads: [{ filename: cardArt.fileName, bytes: buffer.length, ok: true }] });
 
     const { pdfBuffer, status, summary } = await runAnalysis({
       file: buffer,
       fileName: cardArt.fileName,
       cardType,
       onProgress: (event, data) => {
-        if (event === 'progress') console.log(`[dock-webhook] ${eventId}: ${data.step}: ${data.message} (${data.status})`);
+        if (event === 'progress') {
+          console.log(`[dock-webhook] ${eventId}: ${data.step}: ${data.message} (${data.status})`);
+          runLog.event(data.step, data.message, data.status);
+        }
       },
     });
 
@@ -102,8 +111,18 @@ async function processDockSubmission({ assoc, eventId }) {
     console.log(`[dock-webhook] ${eventId}: summary: ${summary}`);
     // TODO: deliver pdfUrl to the customer once account→Rocketlane-project
     // mapping exists (see lib/delivery.js + [[project-overview]]).
+    runLog.addResult({
+      filename: cardArt.fileName,
+      cardType,
+      status,
+      summary,
+      pdfUrl,
+      delivery: { slack: 'skipped (no Dock account → Rocketlane project mapping)' },
+    });
+    await runLog.finish();
   } catch (err) {
     console.error(`[dock-webhook] ${eventId}: processDockSubmission error:`, err);
+    await runLog.fail(err);
   }
 }
 
@@ -181,8 +200,26 @@ export async function POST(request) {
       questions: assoc.formQuestions,
       responses: assoc.formQuestionResponses,
     }));
+    const runLog = createRunLog({
+      source: 'dock',
+      trigger: {
+        endpoint: '/api/dock-webhook',
+        description: 'Dock workspace.form.submitted webhook',
+        eventId: event.id,
+        occurredAt: event.occurredAt,
+        userAgent: request.headers.get('user-agent') || undefined,
+      },
+    });
+    runLog.set({
+      dock: {
+        workspace: assoc.workspace?.name,
+        account: assoc.account?.id,
+        user: assoc.user?.email,
+        form: assoc.workspaceForm?.title,
+      },
+    });
     // Ack immediately; run the (slow) analysis pipeline in the background.
-    waitUntil(processDockSubmission({ assoc, eventId: event.id }));
+    waitUntil(processDockSubmission({ assoc, eventId: event.id, runLog }));
   } else {
     console.log('[dock-webhook] payload:', rawBody.slice(0, 2000));
   }

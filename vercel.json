@@ -21,6 +21,7 @@
   },
   "rewrites": [
     { "source": "/upload", "destination": "/upload.html" },
+    { "source": "/admin", "destination": "/admin.html" },
     { "source": "/api/card-art-check/:projectId", "destination": "/api/card-art-check?projectId=:projectId" }
   ]
 }

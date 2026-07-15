@@ -6,6 +6,7 @@ import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
 import { getProjectName, downloadAttachment, resolveLatestSubmission } from '../lib/rocketlane.js';
 import { getImageSize } from '../lib/image-size.js';
+import { createRunLog } from '../lib/run-log.js';
 
 // Card-art check, keyed on a Rocketlane projectId. The caller is a Rocketlane
 // "Form completed" HTTP automation on the custom-card-request form. Its payload
@@ -165,12 +166,14 @@ function pickCardArtByDimensions(files) {
 
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
 // background (waitUntil) after the download stage has confirmed the bytes exist.
-async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride }) {
+// Returns true on success so the caller can settle the run log's final status.
+async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, runLog }) {
   try {
     const cardType = inferCardType(filename, cardTypeOverride);
     if (!cardType) {
       console.error(`[card-art-check] could not infer card type for ${filename} (attachment ${attachmentId}) — aborting`);
-      return;
+      runLog?.addResult({ attachmentId, filename, error: `Could not infer card type for "${filename}"` });
+      return false;
     }
 
     const { pdfBuffer, status, summary } = await runAnalysis({
@@ -178,7 +181,10 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
       fileName: filename,
       cardType,
       onProgress: (event, data) => {
-        if (event === 'progress') console.log(`[card-art-check] ${data.step}: ${data.message} (${data.status})`);
+        if (event === 'progress') {
+          console.log(`[card-art-check] ${data.step}: ${data.message} (${data.status})`);
+          runLog?.event(data.step, data.message, data.status);
+        }
       },
     });
 
@@ -194,8 +200,12 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
       cardType,
     });
     console.log(`[card-art-check] delivered attachment ${attachmentId}:`, delivery);
+    runLog?.addResult({ attachmentId, filename, cardType, status, summary, pdfUrl, delivery });
+    return true;
   } catch (err) {
     console.error(`[card-art-check] analyzeAndDeliver error (attachment ${attachmentId}, project ${projectId}):`, err);
+    runLog?.addResult({ attachmentId, filename, error: String(err?.message || err) });
+    return false;
   }
 }
 
@@ -213,6 +223,17 @@ export async function POST(request) {
   if (!secretsMatch(bearer, expected) && !secretsMatch(xHeader, expected)) {
     return new Response('Unauthorized', { status: 401 });
   }
+
+  // Authenticated request — record it as a run for the /admin dashboard.
+  // Everything past this point (including 400s and skips) is a run.
+  const runLog = createRunLog({
+    source: 'rocketlane',
+    trigger: {
+      endpoint: '/api/card-art-check',
+      description: 'Rocketlane form-completed webhook',
+      userAgent: request.headers.get('user-agent') || undefined,
+    },
+  });
 
   // Read the raw body once: Stage 1 regexes attachment IDs out of it, and we
   // also JSON-parse it for projectId when the query string didn't carry one.
@@ -251,8 +272,10 @@ export async function POST(request) {
 
   if (!looksLikeId(projectId)) {
     console.warn('[card-art-check] 400 projectId missing or unresolved — qs:', JSON.stringify({ qsProjectId }), 'body:', rawBody.slice(0, 2000));
+    await runLog.fail('Missing or unresolved projectId');
     return Response.json({ error: 'Missing or unresolved projectId' }, { status: 400 });
   }
+  runLog.set({ projectId, cardTypeOverride });
 
   // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
   // First honor any explicit attachment IDs carried in the payload/query (a
@@ -270,6 +293,13 @@ export async function POST(request) {
       if (resolved) {
         attachmentIds = resolved.submission.map((f) => f.attachmentId);
         autoResolved = true;
+        runLog.set({
+          attachmentResolution: {
+            mode: 'auto-resolved',
+            taskId: resolved.taskId,
+            files: resolved.submission.map((f) => ({ attachmentId: f.attachmentId, filename: f.filename })),
+          },
+        });
         console.log(
           `[card-art-check] project=${projectId} resolved latest submission from task ${resolved.taskId}: ` +
           `${resolved.submission.length} file(s): ${resolved.submission.map((f) => `${f.attachmentId}:${f.filename}`).join(', ')}`
@@ -277,12 +307,16 @@ export async function POST(request) {
       }
     } catch (err) {
       console.error(`[card-art-check] resolveLatestSubmission failed for project ${projectId}:`, err);
+      runLog.event('resolve', `resolveLatestSubmission failed: ${String(err?.message || err)}`, 'error');
     }
+  } else {
+    runLog.set({ attachmentResolution: { mode: 'explicit', ids: attachmentIds } });
   }
   if (attachmentIds.length === 0) {
     // Nothing to analyze (no card-art task/upload found). Acknowledge with 200
     // so Rocketlane doesn't retry/error, and stop here.
     console.warn(`[card-art-check] 200 no card-art attachment resolved for project ${projectId} — skipping analysis. body:`, rawBody.slice(0, 2000));
+    await runLog.skip('No card-art attachment resolved');
     return Response.json({ ok: true, queued: false, projectId, reason: 'No card-art attachment resolved' });
   }
   console.log(`[card-art-check] project=${projectId} attachments=[${attachmentIds.join(', ')}]`);
@@ -301,9 +335,17 @@ export async function POST(request) {
     }
   }
 
+  runLog.set({
+    downloads: [
+      ...downloaded.map((d) => ({ attachmentId: d.attachmentId, filename: d.filename, bytes: d.buffer.length, ok: true })),
+      ...failed.map((f) => ({ attachmentId: f.attachmentId, ok: false, error: f.error })),
+    ],
+  });
+
   // Nothing downloaded → surface the failure to Rocketlane; don't start any
   // analysis or delivery.
   if (downloaded.length === 0) {
+    await runLog.fail('All attachment downloads failed');
     return Response.json(
       { error: 'All attachment downloads failed', projectId, failed },
       { status: 502 }
@@ -324,6 +366,13 @@ export async function POST(request) {
       `${dims ? ` (${dims.width}x${dims.height})` : ''} from ${downloaded.length} submission files; ` +
       `skipping ${downloaded.filter((d) => d !== cardArt).map((d) => `${d.attachmentId}:${d.filename}`).join(', ')}`
     );
+    runLog.set({
+      selected: {
+        attachmentId: cardArt.attachmentId,
+        filename: cardArt.filename,
+        ...(dims ? { width: dims.width, height: dims.height } : {}),
+      },
+    });
     toAnalyze = [cardArt];
   }
 
@@ -332,15 +381,21 @@ export async function POST(request) {
   let projectName;
   try {
     projectName = await getProjectName(projectId);
+    runLog.set({ projectName });
   } catch (err) {
     console.error(`[card-art-check] getProjectName failed for project ${projectId} — proceeding without name:`, err);
   }
 
   // Resolution is done. Only now kick off analyze → store → deliver for each
-  // selected attachment, in the background.
-  for (const { attachmentId, buffer, filename } of toAnalyze) {
-    waitUntil(analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride }));
-  }
+  // selected attachment, in the background. The run log settles once every
+  // attachment's flow finishes — one wrapper promise so waitUntil keeps the
+  // function alive through the final blob write.
+  waitUntil((async () => {
+    const outcomes = await Promise.all(toAnalyze.map(({ attachmentId, buffer, filename }) =>
+      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, runLog })
+    ));
+    await runLog.finish(outcomes.every(Boolean) ? 'completed' : 'failed');
+  })());
 
   return Response.json({
     ok: true,
