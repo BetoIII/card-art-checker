@@ -237,6 +237,7 @@ export async function POST(request) {
       userAgent: request.headers.get('user-agent') || undefined,
     },
   });
+  runLog.armWatchdog(300_000); // keep in sync with config.maxDuration below
 
   // Read the raw body once: Stage 1 regexes attachment IDs out of it, and we
   // also JSON-parse it for projectId when the query string didn't carry one.

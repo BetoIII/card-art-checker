@@ -210,6 +210,7 @@ export async function POST(request) {
         userAgent: request.headers.get('user-agent') || undefined,
       },
     });
+    runLog.armWatchdog(300_000); // keep in sync with config.maxDuration below
     runLog.set({
       dock: {
         workspace: assoc.workspace?.name,

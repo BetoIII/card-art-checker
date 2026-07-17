@@ -123,12 +123,20 @@ export async function POST(request) {
       userAgent: request.headers.get('user-agent') || undefined,
     },
   });
+  runLog.armWatchdog(300_000); // keep in sync with config.maxDuration below
+  request.signal?.addEventListener('abort', () => {
+    runLog.abandon('Client disconnected before the run finished');
+  });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event, data) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        // enqueue throws once the client has cancelled the stream — the run
+        // log must still get its terminal write, so never let that propagate.
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch { /* client gone; keep the pipeline + run log going */ }
         if (event === 'progress') runLog.event(data.step, data.message, data.status);
       };
 
@@ -186,8 +194,11 @@ export async function POST(request) {
         send('error', { message: err.message || 'An unexpected error occurred', step: err.step });
         await runLog.fail(err);
       } finally {
-        controller.close();
+        try { controller.close(); } catch { /* already closed/cancelled */ }
       }
+    },
+    cancel() {
+      runLog.abandon('Client disconnected before the run finished');
     },
   });
 
