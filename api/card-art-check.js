@@ -5,6 +5,7 @@ import { storeReport } from '../lib/blob-report.js';
 import { deliverReport } from '../lib/delivery.js';
 import { inferCardType } from '../lib/card-type.js';
 import { getProjectName, downloadAttachment, resolveLatestSubmission } from '../lib/rocketlane.js';
+import { identifySlackChannel } from '../lib/slack-identify.js';
 import { getImageSize } from '../lib/image-size.js';
 import { createRunLog } from '../lib/run-log.js';
 
@@ -167,7 +168,7 @@ function pickCardArtByDimensions(files) {
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
 // background (waitUntil) after the download stage has confirmed the bytes exist.
 // Returns true on success so the caller can settle the run log's final status.
-async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, runLog }) {
+async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog }) {
   try {
     const cardType = inferCardType(filename, cardTypeOverride);
     if (!cardType) {
@@ -198,6 +199,8 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
       status,
       summary,
       cardType,
+      channelPromise,
+      runLog,
     });
     console.log(`[card-art-check] delivered attachment ${attachmentId}:`, delivery);
     runLog?.addResult({ attachmentId, filename, cardType, status, summary, pdfUrl, delivery });
@@ -386,13 +389,18 @@ export async function POST(request) {
     console.error(`[card-art-check] getProjectName failed for project ${projectId} — proceeding without name:`, err);
   }
 
+  // Start Slack channel identification now, concurrent with the multi-minute
+  // analysis — deliverReport awaits it after the analysis completes.
+  // identifySlackChannel never rejects, so the shared promise is safe to hold.
+  const channelPromise = identifySlackChannel({ projectId, projectName, runLog });
+
   // Resolution is done. Only now kick off analyze → store → deliver for each
   // selected attachment, in the background. The run log settles once every
   // attachment's flow finishes — one wrapper promise so waitUntil keeps the
   // function alive through the final blob write.
   waitUntil((async () => {
     const outcomes = await Promise.all(toAnalyze.map(({ attachmentId, buffer, filename }) =>
-      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, runLog })
+      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog })
     ));
     await runLog.finish(outcomes.every(Boolean) ? 'completed' : 'failed');
   })());

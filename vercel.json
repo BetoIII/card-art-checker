@@ -17,6 +17,9 @@
     },
     "api/dock-webhook.js": {
       "maxDuration": 300
+    },
+    "api/card-deliver.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [

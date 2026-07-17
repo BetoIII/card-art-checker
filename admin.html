@@ -494,7 +494,7 @@
       if (run.results?.length) {
         blocks.push(`<div class="detail-block"><h3>Results</h3><div class="kv">${run.results.map((r) => {
           if (r.error) return `✗ ${esc(r.filename || r.attachmentId || '')}: <span style="color: var(--rain-status-red)">${esc(r.error)}</span>`;
-          const delivery = r.delivery ? `<br><b>Delivery:</b> ${esc(typeof r.delivery === 'string' ? r.delivery : Object.entries(r.delivery).map(([k, v]) => `${k}: ${v}`).join(', '))}` : '';
+          const delivery = r.delivery ? `<br><b>Delivery:</b> ${esc(typeof r.delivery === 'string' ? r.delivery : Object.entries(r.delivery).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', '))}` : '';
           return `<b>${esc(r.filename || r.attachmentId || '')}</b> — ${r.status === 'pass' ? 'APPROVED' : 'REQUIRES CHANGES'}<br>${esc(r.summary || '')}${r.pdfUrl ? `<br><a class="report-link" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">Open PDF report</a>` : ''}${delivery}`;
         }).join('<hr style="border:0;border-top:1px solid var(--rain-off-white);margin:8px 0">')}</div></div>`);
       }

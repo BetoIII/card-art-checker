@@ -15,6 +15,9 @@ export async function POST(request) {
   }
 }
 
+// 300s: delivery now runs the slack-identifier sub-agent inline, and a cold
+// conversations.list pagination of a large workspace under Tier-2 rate
+// limiting can take 60-90s before the LLM turns even start.
 export const config = {
-  maxDuration: 60,
+  maxDuration: 300,
 };
