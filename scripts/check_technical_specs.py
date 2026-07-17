@@ -22,9 +22,16 @@ Usage:
     # Physical:
     python3 check_technical_specs.py <front_file> --card-type physical [--back <back_file>]
 
+    # Annotated results PDF (either card type) — pass the visual-inspection
+    # results and the script renders the full Card Art Checker Results page:
+    python3 check_technical_specs.py <file> --card-type <type> \
+        --visual-results-file results.json --output-dir /path
+
 Outputs JSON with technical check results; virtual also emits RGB color
 suggestions. Physical emits a rendered_preview_path that the visual turn
-and the PDF report can use as a raster preview.
+and the PDF report can use as a raster preview. With --visual-results[-file],
+virtual renders the single-card annotated report and physical renders the
+front/back review panes with the same status/spec/visual sections.
 """
 
 import sys
@@ -76,6 +83,7 @@ STATUS_COLORS = {
     "warning": COLOR_WARNING,
     "estimated": COLOR_ESTIMATED,
     "unverified": COLOR_UNVERIFIED,
+    "not submitted": COLOR_UNVERIFIED,
 }
 
 STATUS_LABELS = {
@@ -84,6 +92,7 @@ STATUS_LABELS = {
     "warning": "WARN",
     "estimated": "EST.",
     "unverified": "N/V",
+    "not submitted": "N/S",
 }
 
 
@@ -709,6 +718,10 @@ def _draw_table(draw, x, y, width, headers, rows, col_ratios, fonts,
                 elif "EST" in cell_text.upper():
                     cell_color = COLOR_ESTIMATED
                     cell_font = fonts['header']
+                elif cell_text.upper().startswith("N/"):
+                    # N/V (not verifiable) and N/S (not submitted) render gray
+                    cell_color = COLOR_UNVERIFIED
+                    cell_font = fonts['header']
 
             # Last column with wrapping enabled
             if ci == last_col and wrapped is not None:
@@ -1164,6 +1177,398 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     return output_path
 
 
+PHYSICAL_CHECK_ORDER = ["file_format", "cr80_aspect_ratio", "min_resolution",
+                        "bleed_zone", "color_mode", "layers_present"]
+PHYSICAL_CHECK_LABELS = {
+    "file_format": "File Format (.ai/.eps/.png)",
+    "cr80_aspect_ratio": "CR80 Aspect Ratio (~1.586:1)",
+    "min_resolution": f"Min Resolution (>= {PHYSICAL_MIN_RENDERED_WIDTH_PX}px wide)",
+    "bleed_zone": "56px Bleed Zone (Visa Brand Mark)",
+    "color_mode": "Color Mode (CMYK/PMS)",
+    "layers_present": "Layers Present",
+}
+
+
+def _physical_check_status(ck):
+    """Map a physical tech-check dict to a table status string."""
+    if ck.get("borderline"):
+        return "warning"
+    passed = ck.get("passed")
+    if passed is True:
+        return "pass"
+    if passed is False:
+        return "fail"
+    return "unverified"  # passed: None — e.g. color mode / layers on PNG input
+
+
+def generate_physical_results_image(tech_result, visual_checks,
+                                    overall_status, overall_description,
+                                    output_path, display_width=1536):
+    """
+    Generate the full Physical Card Art Checker Results image as a single page.
+
+    Layout (top to bottom):
+    1. Art Checker Results — status badge + description
+    2. Card Art Review Pane (Front) — rendered preview with 56px quiet-zone
+       overlay, numbered markers, and a File Info panel on the right
+    3. Card Art Review Pane (Back) — same, when a back file was submitted;
+       otherwise a "not submitted" note strip
+    4. Spec Check — per-side technical check tables
+    5. Visual Check — table with a Ref column linking to the markers
+
+    Args:
+        tech_result: full dict from check_physical() —
+            {card_type, front: {side, file, source_format, checks{...},
+             rendered_preview_path}, back: {...}|None, errors}
+        visual_checks: list of dicts, each with:
+            'name': str — check name
+            'result': 'pass'|'fail'|'warning'|'not submitted'
+            'notes': str (optional)
+            'marker_x': float 0.0-1.0 (optional — relative to that side's preview)
+            'marker_y': float 0.0-1.0 (optional)
+            'marker_side': 'front'|'back' (optional — defaults to front)
+        overall_status: str — 'APPROVED', 'REQUIRES CHANGES', or 'APPROVED WITH NOTES'
+        overall_description: str — summary text
+        output_path: str — path to save the PDF (or PNG)
+        display_width: int — width previews are scaled to (56px overlay and
+            marker positions scale by the same factor)
+    """
+    DISPLAY_W = display_width
+    quiet_zone = VISA_MARK_EDGE_MARGIN
+
+    # --- Fonts ---
+    font_section = _load_font(34, bold=True)
+    font_status = _load_font(36, bold=True)
+    font_desc = _load_font(26)
+    font_table_header = _load_font(22, bold=True)
+    font_table_cell = _load_font(20)
+    font_marker_num = _load_font(18, bold=True)
+    font_card_marker = _load_font(36, bold=True)
+    font_caption = _load_font(28, bold=True)
+    font_subhead = _load_font(26, bold=True)
+    font_info_label = _load_font(26, bold=True)
+    font_info_value = _load_font(22)
+    font_note = _load_font(24)
+    font_legend = _load_font(17)
+
+    # --- Identify markers (location-based warnings/failures) ---
+    markers = []
+    for vc in visual_checks:
+        if vc.get("marker_x") is not None and vc.get("marker_y") is not None:
+            if vc.get("result") in ("fail", "warning"):
+                markers.append(vc)
+    for i, m in enumerate(markers):
+        m["_marker_num"] = i + 1
+
+    # --- Load and scale side previews ---
+    def load_side_preview(side):
+        if not side:
+            return None
+        path = side.get("rendered_preview_path")
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            img = Image.open(path).convert("RGB")
+        except Exception:
+            return None
+        orig_w, orig_h = img.size
+        scale = DISPLAY_W / orig_w
+        disp = img.resize((DISPLAY_W, max(1, round(orig_h * scale))), Image.LANCZOS)
+        return {"disp": disp, "scale": scale, "orig_w": orig_w, "orig_h": orig_h}
+
+    front_side = tech_result.get("front") or {}
+    back_side = tech_result.get("back")
+    front_prev = load_side_preview(front_side)
+    back_prev = load_side_preview(back_side)
+
+    def info_entries(side, prev):
+        """(label, value, color) rows for the File Info panel."""
+        fmt = (side.get("source_format") or "unknown").lower()
+        is_vector = fmt in ("ai", "eps")
+        text_dark = (24, 28, 38)
+        entries = [("Source:", f".{fmt.upper()} ({'vector' if is_vector else 'raster'})", text_dark)]
+        if prev:
+            if is_vector:
+                entries.append(("Rendered:", f"{prev['orig_w']}x{prev['orig_h']} @ {PHYSICAL_RENDER_DPI} DPI", text_dark))
+            else:
+                entries.append(("Supplied:", f"{prev['orig_w']}x{prev['orig_h']} PNG", text_dark))
+        for key, lbl in (("color_mode", "Color mode:"), ("layers_present", "Layers:")):
+            ck = (side.get("checks") or {}).get(key)
+            if not ck:
+                continue
+            status = _physical_check_status(ck)
+            entries.append((lbl, str(ck.get("actual", "")),
+                            STATUS_COLORS.get(status, COLOR_UNVERIFIED)))
+        return entries
+
+    # --- Layout dimensions (mirror the virtual report's geometry) ---
+    padding = 50
+    section_gap = 36
+    section_pad = 28
+    right_panel_w = 500
+    canvas_w = padding + DISPLAY_W + padding + right_panel_w + padding
+    content_w = canvas_w - 2 * padding
+    table_x = padding + 24
+    table_w = content_w - 48
+
+    _tmp = Image.new("RGB", (1, 1))
+    _tmp_draw = ImageDraw.Draw(_tmp)
+
+    # Status section height
+    status_title_h = 48
+    desc_max_w = content_w - 56
+    desc_line_h = 36
+    desc_lines = _wrap_text(_tmp_draw, overall_description, font_desc, desc_max_w)
+    status_section_h = status_title_h + 16 + len(desc_lines) * desc_line_h + section_pad
+
+    # Review pane blocks: ('pane', caption, side, prev) or ('note', text)
+    caption_h = 44
+    note_strip_h = 64
+    pane_blocks = []
+    if front_prev:
+        pane_blocks.append(("pane", "Front", front_side, front_prev))
+    else:
+        pane_blocks.append(("note", "Front preview unavailable (render failed - see Spec Check)", None, None))
+    if back_side is None:
+        pane_blocks.append(("note", "Back: not submitted (optional)", None, None))
+    elif back_prev:
+        pane_blocks.append(("pane", "Back", back_side, back_prev))
+    else:
+        pane_blocks.append(("note", "Back preview unavailable (render failed - see Spec Check)", None, None))
+
+    def pane_height(prev):
+        return section_pad + caption_h + 12 + prev["disp"].height + section_pad
+
+    panes_total_h = 0
+    for kind, _, _, prev in pane_blocks:
+        panes_total_h += (pane_height(prev) if kind == "pane" else note_strip_h) + section_gap
+
+    # Spec Check tables — per side
+    tech_row_h = 52
+    tech_table_title_h = 52
+    tech_headers = ["Check", "Result", "Detail"]
+    tech_col_ratios = [0.28, 0.12, 0.60]
+    table_fonts = {'header': font_table_header, 'cell': font_table_cell,
+                   'marker': font_marker_num}
+
+    def build_spec_rows(side):
+        checks = side.get("checks") or {}
+        rows = []
+        for key in PHYSICAL_CHECK_ORDER:
+            ck = checks.get(key)
+            if ck is None:
+                # bleed_zone is the #1 rejection check — surface its absence
+                # (exception path) instead of silently dropping the row.
+                if key == "bleed_zone":
+                    rows.append({"cells": [PHYSICAL_CHECK_LABELS[key], "N/V",
+                                           "Bleed zone analysis failed - see errors"],
+                                 "status": "unverified"})
+                continue
+            status = _physical_check_status(ck)
+            detail = ck.get("actual", "")
+            if ck.get("note"):
+                detail = ck["note"]
+            rows.append({"cells": [PHYSICAL_CHECK_LABELS.get(key, key),
+                                   STATUS_LABELS[status], detail],
+                         "status": status})
+        return rows
+
+    subhead_h = 44
+    spec_tables = [("Front", build_spec_rows(front_side))]
+    if back_side:
+        spec_tables.append(("Back", build_spec_rows(back_side)))
+    spec_section_h = tech_table_title_h + 10
+    for _, rows in spec_tables:
+        th = _measure_table_height(_tmp_draw, tech_headers, rows, tech_col_ratios,
+                                   table_w, table_fonts, row_height=tech_row_h,
+                                   wrap_last_col=True)
+        spec_section_h += subhead_h + th + 20
+    spec_section_h += 8
+
+    # Visual Check table
+    vis_row_h = 52
+    vis_table_title_h = 52
+    vis_headers = ["Ref", "Check", "Result", "Notes"]
+    vis_col_ratios = [0.04, 0.36, 0.09, 0.51]
+    vis_rows_data = []
+    for vc in visual_checks:
+        status = vc.get("result", "pass")
+        label = STATUS_LABELS.get(status, "N/V")
+        vis_rows_data.append({
+            "cells": ["", vc.get("name", ""), label, vc.get("notes", "")],
+            "status": status,
+            "marker_num": vc.get("_marker_num"),
+        })
+    vis_table_h = _measure_table_height(
+        _tmp_draw, vis_headers, vis_rows_data, vis_col_ratios,
+        table_w, table_fonts, row_height=vis_row_h, wrap_last_col=True)
+    vis_legend_h = 36 if markers else 0
+    vis_section_h = vis_table_title_h + 10 + vis_table_h + 16 + vis_legend_h
+
+    canvas_h = (padding +
+                status_section_h + section_gap +
+                panes_total_h +
+                spec_section_h + section_gap +
+                vis_section_h + padding)
+
+    # --- Canvas background ---
+    canvas_bg = (240, 242, 246)
+    canvas = Image.new("RGB", (canvas_w, canvas_h), canvas_bg)
+    draw = ImageDraw.Draw(canvas)
+
+    # =====================================================================
+    # SECTION: Art Checker Results (status + summary)
+    # =====================================================================
+    current_y = padding
+    status_rect = [padding, current_y,
+                   canvas_w - padding, current_y + status_section_h]
+    draw.rectangle(status_rect, fill=(255, 255, 255), outline=(220, 222, 228))
+
+    sx = padding + section_pad
+    sy = current_y + 20
+    draw.text((sx, sy), "Art Checker Results", fill=(24, 28, 38), font=font_section)
+
+    status_upper = overall_status.upper()
+    if "APPROVED" in status_upper and "NOTES" in status_upper:
+        badge_color = COLOR_WARNING
+        badge_text = "APPROVED WITH NOTES"
+    elif "APPROVED" in status_upper:
+        badge_color = COLOR_PASS
+        badge_text = "APPROVED"
+    else:
+        badge_color = COLOR_FAIL
+        badge_text = "REQUIRES CHANGES"
+
+    badge_bbox = draw.textbbox((0, 0), badge_text, font=font_status)
+    badge_w = badge_bbox[2] - badge_bbox[0] + 40
+    badge_h = badge_bbox[3] - badge_bbox[1] + 22
+    badge_x = canvas_w - padding - section_pad - badge_w
+    badge_y = sy - 2
+    draw.rectangle([badge_x, badge_y, badge_x + badge_w, badge_y + badge_h],
+                   fill=badge_color)
+    draw.text((badge_x + 20, badge_y + 9), badge_text, fill=(255, 255, 255), font=font_status)
+    sy += status_title_h + 12
+
+    for line in desc_lines:
+        draw.text((sx, sy), line, fill=(28, 32, 42), font=font_desc)
+        sy += desc_line_h
+
+    current_y += status_section_h + section_gap
+
+    # =====================================================================
+    # SECTION: Card Art Review Panes (Front / Back)
+    # =====================================================================
+    for kind, caption, side, prev in pane_blocks:
+        if kind == "note":
+            note_rect = [padding, current_y,
+                         canvas_w - padding, current_y + note_strip_h]
+            draw.rectangle(note_rect, fill=(255, 255, 255), outline=(220, 222, 228))
+            nb = draw.textbbox((0, 0), caption, font=font_note)
+            draw.text((padding + section_pad,
+                       current_y + (note_strip_h - (nb[3] - nb[1])) // 2),
+                      caption, fill=(110, 114, 126), font=font_note)
+            current_y += note_strip_h + section_gap
+            continue
+
+        p_h = pane_height(prev)
+        pane_rect = [padding, current_y, canvas_w - padding, current_y + p_h]
+        draw.rectangle(pane_rect, fill=(255, 255, 255), outline=(220, 222, 228))
+
+        draw.text((padding + section_pad, current_y + section_pad),
+                  caption, fill=(24, 28, 38), font=font_caption)
+
+        img_x = padding + section_pad
+        img_y = current_y + section_pad + caption_h + 12
+        disp = prev["disp"]
+        canvas.paste(disp, (img_x, img_y))
+
+        # 56px quiet zone, scaled to the displayed preview
+        quiet_disp = max(1, round(quiet_zone * prev["scale"]))
+        quiet_rect = [
+            img_x + quiet_disp, img_y + quiet_disp,
+            img_x + DISPLAY_W - quiet_disp, img_y + disp.height - quiet_disp,
+        ]
+        _draw_dashed_rect(draw, quiet_rect, color=(255, 0, 0), width=3, dash_len=18, gap_len=12)
+
+        # Markers for this side
+        side_label = caption.lower()
+        for m in markers:
+            if (m.get("marker_side") or "front").lower() != side_label:
+                continue
+            mx = img_x + int(float(m["marker_x"]) * DISPLAY_W)
+            my = img_y + int(float(m["marker_y"]) * disp.height)
+            _draw_marker(draw, mx, my, m["_marker_num"], m["result"], font_card_marker, size=68)
+
+        # File Info panel (right of preview)
+        info_x = img_x + DISPLAY_W + 40
+        info_max_w = canvas_w - padding - section_pad - info_x
+        iy = img_y + 8
+        for lbl, val, col in info_entries(side, prev):
+            draw.text((info_x, iy), lbl, fill=(24, 28, 38), font=font_info_label)
+            iy += 34
+            for line in _wrap_text(draw, val, font_info_value, info_max_w - 12):
+                draw.text((info_x + 12, iy), line, fill=col, font=font_info_value)
+                iy += 30
+            iy += 14
+
+        current_y += p_h + section_gap
+
+    # =====================================================================
+    # SECTION: Spec Check (per side)
+    # =====================================================================
+    spec_bg_rect = [padding, current_y,
+                    canvas_w - padding, current_y + spec_section_h]
+    draw.rectangle(spec_bg_rect, fill=(255, 255, 255), outline=(220, 222, 228))
+
+    ty = current_y + 16
+    draw.text((padding + section_pad, ty), "Spec Check", fill=(24, 28, 38), font=font_section)
+    ty += tech_table_title_h
+
+    for side_label, rows in spec_tables:
+        draw.text((table_x, ty), side_label, fill=(24, 28, 38), font=font_subhead)
+        ty += subhead_h
+        consumed = _draw_table(draw, table_x, ty, table_w,
+                               tech_headers, rows,
+                               col_ratios=tech_col_ratios,
+                               fonts=table_fonts,
+                               row_height=tech_row_h,
+                               wrap_last_col=True)
+        ty += consumed + 20
+
+    current_y += spec_section_h + section_gap
+
+    # =====================================================================
+    # SECTION: Visual Check
+    # =====================================================================
+    vis_bg_rect = [padding, current_y,
+                   canvas_w - padding, current_y + vis_section_h]
+    draw.rectangle(vis_bg_rect, fill=(255, 255, 255), outline=(220, 222, 228))
+
+    vy = current_y + 16
+    draw.text((padding + section_pad, vy), "Visual Check", fill=(24, 28, 38), font=font_section)
+    vy += vis_table_title_h
+
+    _draw_table(draw, table_x, vy, table_w,
+                vis_headers, vis_rows_data,
+                col_ratios=vis_col_ratios,
+                fonts=table_fonts,
+                row_height=vis_row_h,
+                wrap_last_col=True)
+
+    if markers:
+        legend_y = vy + vis_table_h + 8
+        legend_text = "Numbered markers on the front/back panes above correspond to the Ref column in this table."
+        draw.text((table_x + 8, legend_y), legend_text,
+                  fill=(80, 84, 96), font=font_legend)
+
+    # Save as PDF or PNG
+    if output_path.lower().endswith(".pdf"):
+        canvas.save(output_path, "PDF", resolution=150)
+    else:
+        canvas.save(output_path, "PNG")
+    return output_path
+
+
 # ─────────────────────────────────────────────────────────────────
 # Physical card checks (vector: .ai / .eps)
 # ─────────────────────────────────────────────────────────────────
@@ -1516,26 +1921,42 @@ def main():
     parser.add_argument("--back", default=None,
                         help="Physical only — optional path to back-of-card .ai, .eps, or .png file")
     parser.add_argument("--output-dir", help="Directory to save the output review image / rendered previews", default=None)
-    parser.add_argument("--visual-results", help="JSON string with visual inspection results (virtual only)", default=None)
-    parser.add_argument("--visual-results-file", help="Path to JSON file with visual inspection results (virtual only)", default=None)
+    parser.add_argument("--visual-results", help="JSON string with visual inspection results", default=None)
+    parser.add_argument("--visual-results-file", help="Path to JSON file with visual inspection results", default=None)
     args = parser.parse_args()
 
-    # Physical path — short-circuit (no results-image generation for physical).
-    if args.card_type == "physical":
-        result = check_physical(args.image_path, back_path=args.back, out_dir=args.output_dir)
-        print(json.dumps(result, indent=2))
-        return
-
-    # Virtual path — existing behavior unchanged below.
-    result = check_image(args.image_path)
-
-    # If visual results provided, generate the full results image
+    # If visual results provided, the full results image is generated too.
     visual_data = None
     if args.visual_results:
         visual_data = json.loads(args.visual_results)
     elif args.visual_results_file:
         with open(args.visual_results_file, "r") as f:
             visual_data = json.load(f)
+
+    # Physical path.
+    if args.card_type == "physical":
+        result = check_physical(args.image_path, back_path=args.back, out_dir=args.output_dir)
+        if visual_data:
+            try:
+                out_dir = args.output_dir or os.path.dirname(os.path.abspath(args.image_path))
+                os.makedirs(out_dir, exist_ok=True)
+                base_name = os.path.splitext(os.path.basename(args.image_path))[0]
+                results_path = os.path.join(out_dir, f"{base_name}_card_art_checker_results.pdf")
+                generate_physical_results_image(
+                    result,
+                    visual_data.get("visual_checks", []),
+                    visual_data.get("overall_status", "REQUIRES CHANGES"),
+                    visual_data.get("overall_description", ""),
+                    results_path)
+                result["results_image"] = results_path
+                print(f"Results image saved to: {results_path}", file=sys.stderr)
+            except Exception as e:
+                result["errors"].append(f"Results image generation failed: {e}")
+        print(json.dumps(result, indent=2))
+        return
+
+    # Virtual path — existing behavior unchanged below.
+    result = check_image(args.image_path)
 
     if visual_data:
         try:
