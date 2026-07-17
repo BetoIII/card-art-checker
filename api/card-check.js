@@ -20,6 +20,7 @@ function parseMultipart(request) {
     const fileNames = { file: '', backFile: '' };
     let projectId = '';
     let cardType = '';
+    let slackDelivery = true;
 
     bb.on('file', (fieldname, stream, info) => {
       const key = fieldname === 'backFile' ? 'backFile' : 'file';
@@ -30,6 +31,7 @@ function parseMultipart(request) {
     bb.on('field', (name, value) => {
       if (name === 'projectId') projectId = value;
       else if (name === 'cardType') cardType = (value || '').trim().toLowerCase();
+      else if (name === 'slackDelivery') slackDelivery = !/^(false|0|no|off)$/i.test((value || '').trim());
     });
 
     bb.on('finish', () => {
@@ -78,6 +80,7 @@ function parseMultipart(request) {
         backFileName: fileNames.backFile,
         projectId,
         cardType: resolvedCardType,
+        slackDelivery,
       });
     });
 
@@ -132,7 +135,7 @@ export async function POST(request) {
       try {
         send('progress', { step: 'upload', message: 'Receiving file...', status: 'pending' });
 
-        const { file, fileName, backFile, backFileName, projectId, cardType } = await parseMultipart(request);
+        const { file, fileName, backFile, backFileName, projectId, cardType, slackDelivery } = await parseMultipart(request);
         send('progress', { step: 'upload', message: 'File received', status: 'done' });
         runLog.set({ projectId, cardType, file: fileName, ...(backFileName ? { backFile: backFileName } : {}) });
 
@@ -166,6 +169,7 @@ export async function POST(request) {
             status,
             summary,
             cardType,
+            slackDelivery,
           },
         });
         runLog.addResult({

@@ -682,10 +682,10 @@
         </div>
 
         <div class="field">
-          <label class="options-row" for="skip-delivery">
-            <input type="checkbox" id="skip-delivery">
+          <label class="options-row" for="slack-delivery">
+            <input type="checkbox" id="slack-delivery" checked>
             <span class="opt-text">
-              <strong>Skip delivery</strong> &mdash; analyze only, don't post to Slack or Rocketlane
+              <strong>Slack delivery</strong> &mdash; post the report to the partner's Slack channel. Uncheck to receive the PDF report only.
             </span>
           </label>
         </div>
@@ -752,7 +752,7 @@
     const submitBtn = document.getElementById('submit-btn');
     const form = document.getElementById('upload-form');
     const projectIdInput = document.getElementById('project-id');
-    const skipDeliveryInput = document.getElementById('skip-delivery');
+    const slackDeliveryInput = document.getElementById('slack-delivery');
     const progressSection = document.getElementById('progress-section');
     const progressSteps = document.getElementById('progress-steps');
     const agentOutput = document.getElementById('agent-output');
@@ -793,9 +793,13 @@
       if (cardType === 'physical' && selectedBackFile) {
         html += ` \\\n  <span class="flag">-F</span> <span class="str">"backFile=@${escapeHtml(selectedBackFile.name)}"</span>`;
       }
+      if (!slackDeliveryInput.checked) {
+        html += ` \\\n  <span class="flag">-F</span> <span class="str">"slackDelivery=false"</span>`;
+      }
       curlText.innerHTML = html;
     }
     projectIdInput.addEventListener('input', () => { updateCurl(); updateSubmitState(); });
+    slackDeliveryInput.addEventListener('change', updateCurl);
     updateCurl();
 
     // ── Card type toggle ──
@@ -999,7 +1003,7 @@
       if (submitBtn.disabled) return;
 
       const projectId = projectIdInput.value.trim();
-      const skipDelivery = skipDeliveryInput.checked;
+      const slackDelivery = slackDeliveryInput.checked;
 
       // Reset UI
       submitBtn.disabled = true;
@@ -1020,6 +1024,7 @@
       formData.append('cardType', cardType);
       formData.append('file', selectedFile);
       formData.append('projectId', projectId);
+      formData.append('slackDelivery', String(slackDelivery));
       if (cardType === 'physical' && selectedBackFile) {
         formData.append('backFile', selectedBackFile);
       }
@@ -1052,7 +1057,7 @@
             try {
               const payload = JSON.parse(data);
               logRawEvent(eventType, payload);
-              handleEvent(eventType, payload, { skipDelivery });
+              handleEvent(eventType, payload, { slackDelivery });
             } catch { /* skip malformed */ }
           }
         }
@@ -1100,10 +1105,10 @@
         }
         case 'complete':
           showResult(payload.status, payload.summary, payload.pdfUrl);
-          if (payload.delivery && !opts.skipDelivery) {
-            triggerDelivery(payload.delivery);
-          } else if (opts.skipDelivery) {
-            upsertStep('delivery_skipped', 'Delivery skipped (analyze-only mode)', 'done');
+          // slackDelivery rides the delivery payload either way — the API is
+          // the arbiter, so an unchecked box still exercises /api/card-deliver.
+          if (payload.delivery) {
+            triggerDelivery({ ...payload.delivery, slackDelivery: opts.slackDelivery });
           }
           break;
         case 'error':
@@ -1139,7 +1144,8 @@
     }
 
     async function triggerDelivery(delivery) {
-      upsertStep('slack_deliver', 'Posting to Slack...', 'pending');
+      const label = delivery.slackDelivery === false ? 'Delivering (Slack off)...' : 'Posting to Slack...';
+      upsertStep('slack_deliver', label, 'pending');
       try {
         const res = await fetch('/api/card-deliver', {
           method: 'POST',
@@ -1149,12 +1155,15 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Delivery failed');
 
-        if (data.results.slack === 'ok') {
+        const slack = data.results.slack;
+        if (slack === 'ok') {
           upsertStep('slack_deliver', 'Posted to Slack', 'done');
-        } else if (data.results.slack === 'skipped') {
+        } else if (slack === 'skipped: slack delivery disabled by request') {
+          upsertStep('slack_deliver', 'Slack delivery off — PDF report only', 'done');
+        } else if (slack === 'skipped') {
           upsertStep('slack_deliver', 'Slack not configured — skipping', 'done');
         } else {
-          upsertStep('slack_deliver', data.results.slack, 'warn');
+          upsertStep('slack_deliver', slack, 'warn');
         }
       } catch (err) {
         upsertStep('slack_deliver', `Delivery error: ${err.message}`, 'warn');
