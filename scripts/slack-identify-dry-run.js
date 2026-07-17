@@ -24,20 +24,36 @@ const BOT_ID = process.env.ROCKETLANE_SLACK_BOT_ID || 'U07DS8F9STS';
 
 async function listBotChannels() {
   const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+  let types = 'public_channel,private_channel';
   const channels = [];
   let cursor;
   let pages = 0;
-  do {
-    const result = await slack.conversations.list({
-      types: 'public_channel,private_channel',
-      exclude_archived: false,
-      limit: 200,
-      cursor,
-    });
+  while (true) {
+    let result;
+    try {
+      result = await slack.conversations.list({
+        types,
+        exclude_archived: false,
+        limit: 200,
+        cursor,
+      });
+    } catch (err) {
+      // Same fallback as lib/slack-identify.js: no groups:read → public only.
+      if (err.data?.error === 'missing_scope' && types.includes('private_channel')) {
+        console.warn(`(bot lacks ${err.data.needed ?? 'groups:read'} — listing public channels only)\n`);
+        types = 'public_channel';
+        cursor = undefined;
+        channels.length = 0;
+        pages = 0;
+        continue;
+      }
+      throw err;
+    }
     pages++;
     channels.push(...(result.channels ?? []));
     cursor = result.response_metadata?.next_cursor;
-  } while (cursor);
+    if (!cursor) break;
+  }
 
   const mine = channels.filter((c) => c.creator === BOT_ID);
   console.log(`Paginated ${pages} page(s), ${channels.length} channels total; ${mine.length} created by ${BOT_ID}:\n`);
