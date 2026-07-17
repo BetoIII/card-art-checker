@@ -1416,8 +1416,8 @@ def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dic
     return side_result
 
 
-def check_physical(front_path: str, back_path: str | None = None,
-                   out_dir: str | None = None) -> dict:
+def check_physical(front_path: str, back_path: "str | None" = None,
+                   out_dir: "str | None" = None) -> dict:
     """
     Run technical checks on a physical card submission.
     Front is required; back is optional.

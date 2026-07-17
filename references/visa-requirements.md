@@ -132,6 +132,34 @@ The following must NOT appear on digital card art:
 
 ---
 
+## Product Identifier Requirement (Rain)
+
+Every Rain-issued card **must** display a Visa product identifier in the product
+lockup with the Visa Brand Mark. Rain no longer offers the Classic tier, so a product
+identifier is **always required** — there is no valid case where it can be absent.
+
+- **Required identifier — one of four**:
+  - Consumer cards: `Visa Platinum`, `Visa Signature`, or `Visa Infinite`
+  - Business / corporate cards: `Corporate`
+- **Anchoring**: The identifier must be placed directly below or immediately adjacent
+  to the Visa Brand Mark, in the **same upper corner** (upper-left or upper-right).
+- **Reserved zone**: The identifier must never be placed in the lower-left
+  personalization-reserved zone.
+- **Disassociation**: The identifier must not be in the opposite corner from the
+  Brand Mark, or separated from it by unrelated graphic elements.
+- **Canonical text** (case-insensitive match, casing deviations are a warning):
+  `Visa Platinum`, `Visa Signature`, `Visa Infinite`, `Corporate`.
+- **Failure conditions**:
+  1. No identifier visible on the card.
+  2. Identifier in the opposite corner from the Brand Mark.
+  3. Identifier in the lower-left personalization zone.
+  4. Identifier separated from the Brand Mark by unrelated artwork.
+
+> Tier-match validation (identifier text matches the provisioned product tier) is
+> sourced from the program record and is not part of this presence-and-placement check.
+
+---
+
 ## Display Rules
 
 - Must appear in full color on color-capable screens
