@@ -1573,13 +1573,44 @@ def generate_physical_results_image(tech_result, visual_checks,
 # Physical card checks (vector: .ai / .eps)
 # ─────────────────────────────────────────────────────────────────
 
+def _find_cached_render(vector_path: str, out_dir: str) -> "str | None":
+    """
+    Look for a previous Ghostscript render of this vector file so repeat runs
+    in the same (persistent) sandbox skip the expensive re-render. A cached
+    render is valid when it is non-empty and at least as new as the source
+    (the source is a read-only mount, so it can't have changed mid-session).
+    Checked locations: the requested out_dir, then alongside the source file
+    (where a --output-dir-less first run wrote it).
+    """
+    base = os.path.splitext(os.path.basename(vector_path))[0]
+    candidates = [
+        os.path.join(out_dir, f"{base}_render.png"),
+        os.path.join(os.path.dirname(os.path.abspath(vector_path)), f"{base}_render.png"),
+    ]
+    try:
+        src_mtime = os.path.getmtime(vector_path)
+    except OSError:
+        return None
+    for path in candidates:
+        try:
+            if os.path.getsize(path) > 0 and os.path.getmtime(path) >= src_mtime:
+                return path
+        except OSError:
+            continue
+    return None
+
+
 def _render_vector_to_png(vector_path: str, out_dir: str) -> str:
     """
     Rasterize a .ai or .eps file to PNG using Ghostscript.
     Adobe Illustrator saves .ai files PDF-compatible by default, so gs handles both.
+    Reuses a cached render from an earlier run in the same sandbox when present.
     Returns the absolute path to the rendered PNG.
     """
     import subprocess
+    cached = _find_cached_render(vector_path, out_dir)
+    if cached:
+        return cached
     base = os.path.splitext(os.path.basename(vector_path))[0]
     out_path = os.path.join(out_dir, f"{base}_render.png")
     cmd = [

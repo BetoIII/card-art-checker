@@ -62,7 +62,7 @@ function verifySignature({ signature, candidates }) {
 // PDF report to Blob. Delivery (Slack/Rocketlane) is intentionally left out:
 // Dock gives us an account/workspace, not a Rocketlane projectId, so customer
 // delivery needs an account→project mapping that doesn't exist yet.
-async function processDockSubmission({ assoc, eventId, runLog }) {
+async function processDockSubmission({ assoc, eventId, runLog, deadlineAt }) {
   try {
     const questions = assoc.formQuestions;
     const responses = assoc.formQuestionResponses;
@@ -96,6 +96,7 @@ async function processDockSubmission({ assoc, eventId, runLog }) {
       file: buffer,
       fileName: cardArt.fileName,
       cardType,
+      deadlineAt,
       onProgress: (event, data) => {
         if (event === 'progress') {
           console.log(`[dock-webhook] ${eventId}: ${data.step}: ${data.message} (${data.status})`);
@@ -127,6 +128,11 @@ async function processDockSubmission({ assoc, eventId, runLog }) {
 }
 
 export async function POST(request) {
+  // Vercel kills the function at maxDuration (300s); this deadline lets the
+  // pipeline degrade gracefully instead of dying mid-step. It covers the
+  // waitUntil background work too — that shares the same function lifetime.
+  const deadlineAt = Date.now() + 280_000;
+
   const secret = process.env.DOCK_WEBHOOK_SECRET;
   if (!secret) {
     console.error('[dock-webhook] DOCK_WEBHOOK_SECRET is not set — refusing to process');
@@ -220,7 +226,7 @@ export async function POST(request) {
       },
     });
     // Ack immediately; run the (slow) analysis pipeline in the background.
-    waitUntil(processDockSubmission({ assoc, eventId: event.id, runLog }));
+    waitUntil(processDockSubmission({ assoc, eventId: event.id, runLog, deadlineAt }));
   } else {
     console.log('[dock-webhook] payload:', rawBody.slice(0, 2000));
   }

@@ -108,6 +108,11 @@ function parseMultipart(request) {
 // ── Main handler ─────────────────────────────────────────────────────
 
 export async function POST(request) {
+  // Vercel kills the function at maxDuration (300s). Give the pipeline a
+  // slightly earlier deadline so it can degrade (skip the annotated-PDF turn,
+  // fail fast with a real error) instead of dying mid-step with no output.
+  const deadlineAt = Date.now() + 280_000;
+
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {
     return new Response('Bad request: expected multipart/form-data', { status: 400 });
@@ -159,6 +164,7 @@ export async function POST(request) {
           backFileName,
           cardType,
           onProgress: send,
+          deadlineAt,
         });
 
         send('progress', { step: 'blob_upload', message: 'Storing report...', status: 'pending' });

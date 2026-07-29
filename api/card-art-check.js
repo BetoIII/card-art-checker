@@ -168,7 +168,7 @@ function pickCardArtByDimensions(files) {
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
 // background (waitUntil) after the download stage has confirmed the bytes exist.
 // Returns true on success so the caller can settle the run log's final status.
-async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog }) {
+async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt }) {
   try {
     const cardType = inferCardType(filename, cardTypeOverride);
     if (!cardType) {
@@ -181,6 +181,7 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
       file: buffer,
       fileName: filename,
       cardType,
+      deadlineAt,
       onProgress: (event, data) => {
         if (event === 'progress') {
           console.log(`[card-art-check] ${data.step}: ${data.message} (${data.status})`);
@@ -213,6 +214,11 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
 }
 
 export async function POST(request) {
+  // Vercel kills the function at maxDuration (300s); this deadline lets the
+  // pipeline degrade gracefully instead of dying mid-step. It covers the
+  // waitUntil background work too — that shares the same function lifetime.
+  const deadlineAt = Date.now() + 280_000;
+
   const expected = process.env.ROCKETLANE_WEBHOOK_SECRET;
   if (!expected) {
     console.error('[card-art-check] ROCKETLANE_WEBHOOK_SECRET is not set — refusing to process');
@@ -401,7 +407,7 @@ export async function POST(request) {
   // function alive through the final blob write.
   waitUntil((async () => {
     const outcomes = await Promise.all(toAnalyze.map(({ attachmentId, buffer, filename }) =>
-      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog })
+      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt })
     ));
     await runLog.finish(outcomes.every(Boolean) ? 'completed' : 'failed');
   })());

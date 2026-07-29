@@ -49,6 +49,10 @@ async function main() {
       type: 'cloud',
       packages: {
         pip: ['Pillow', 'reportlab', 'numpy'],
+        // Ghostscript renders .ai/.eps physical card art; pre-installing it
+        // here (cached across sessions) saves 1-2 minutes per physical run
+        // vs. the agent apt-get installing it inside the sandbox.
+        apt: ['ghostscript'],
       },
       networking: { type: 'limited', allowed_hosts: [], allow_package_managers: true },
     },
