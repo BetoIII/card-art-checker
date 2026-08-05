@@ -224,7 +224,9 @@ def check_bleed_zone(img):
     false distance readings.
 
     Returns a dict with per-edge measurements and an overall pass/fail.
-    FAIL if distance < 56px, WARN if 56-58px (borderline).
+    The verdict is driven by the strict distances (nearest mark pixel to the
+    edge, anti-aliased letter tips included): FAIL below 56px, BORDERLINE at
+    exactly 56px.
     """
     gray = np.array(img.convert("L"), dtype=float)
     h, w = gray.shape
@@ -388,6 +390,19 @@ def check_bleed_zone(img):
             if gap > GAP_TOLERANCE:
                 break
 
+    # Expand leftward from center to find the mark's left edge (bounds the
+    # strict scan below so decorative elements to the left stay excluded)
+    mark_left_col = center_col
+    gap = 0
+    for c in range(center_col - 1, -1, -1):
+        if sub_cols[c]:
+            mark_left_col = c
+            gap = 0
+        else:
+            gap += 1
+            if gap > GAP_TOLERANCE:
+                break
+
     # Convert to card-level coordinates
     mark_top_y = search_y1 + mark_top_row
     mark_bottom_y = search_y1 + mark_bottom_row
@@ -403,11 +418,38 @@ def check_bleed_zone(img):
     right_distance = w - mark_right_x - 1
     top_distance = near_distance  # alias for output
 
-    # === Pass / borderline / fail determination ===
-    near_fail = near_distance < m
-    right_fail = right_distance < m
-    near_borderline = m <= near_distance <= BORDERLINE_MAX
-    right_borderline = m <= right_distance <= BORDERLINE_MAX
+    # === Strict measurement: nearest mark pixel to each edge ===
+    # The per-line minimums above skip anti-aliased fringes — right for locating
+    # the mark body, but they understate how close individual letter tips get to
+    # the edge (a per-pixel re-measure finds 56px where the line-filtered pass
+    # reports 58px). Re-scan the contiguous mark's bounding box, padded a few px,
+    # at a moderate threshold with no per-line minimums so anti-aliased tips
+    # count. The pass/borderline/fail verdict is driven by these strict numbers.
+    STRICT_PAD = 6
+    strict_thr = min(200.0, mark_thr) if is_dark_bg else max(100.0, mark_thr)
+    strict_r1 = max(0, mark_top_row - STRICT_PAD)
+    strict_r2 = min(focused.shape[0], mark_bottom_row + STRICT_PAD + 1)
+    strict_c1 = max(0, mark_left_col - STRICT_PAD)
+    strict_c2 = min(focused.shape[1], mark_right_col + STRICT_PAD + 1)
+    strict_box = focused[strict_r1:strict_r2, strict_c1:strict_c2]
+    strict_mask = strict_box > strict_thr if is_dark_bg else strict_box < strict_thr
+    if np.any(strict_mask):
+        ys, xs = np.where(strict_mask)
+        strict_top_y = search_y1 + strict_r1 + int(ys.min())
+        strict_bottom_y = search_y1 + strict_r1 + int(ys.max())
+        strict_right_x = search_x1 + strict_c1 + int(xs.max())
+        strict_near = (
+            strict_top_y if corner == "upper-right" else h - strict_bottom_y - 1
+        )
+        strict_right = w - strict_right_x - 1
+    else:
+        strict_near, strict_right = near_distance, right_distance
+
+    # === Pass / borderline / fail determination (strict numbers) ===
+    near_fail = strict_near < m
+    right_fail = strict_right < m
+    near_borderline = m <= strict_near <= BORDERLINE_MAX
+    right_borderline = m <= strict_right <= BORDERLINE_MAX
 
     passed = not (near_fail or right_fail)
     borderline = near_borderline or right_borderline
@@ -417,38 +459,42 @@ def check_bleed_zone(img):
     detail_parts = []
     if near_fail:
         detail_parts.append(
-            f"{near_label} edge: {near_distance}px (FAIL — must be >= {m}px)"
+            f"{near_label} edge: {strict_near}px strict (FAIL — must be >= {m}px)"
         )
     elif near_borderline:
         detail_parts.append(
-            f"{near_label} edge: {near_distance}px (BORDERLINE — only "
-            f"{near_distance - m + 1}px above the {m}px minimum; "
+            f"{near_label} edge: {strict_near}px strict (BORDERLINE — only "
+            f"{strict_near - m + 1}px above the {m}px minimum; "
             f"Visa may reject borderline placements)"
         )
 
     if right_fail:
         detail_parts.append(
-            f"Right edge: {right_distance}px (FAIL — must be >= {m}px)"
+            f"Right edge: {strict_right}px strict (FAIL — must be >= {m}px)"
         )
     elif right_borderline:
         detail_parts.append(
-            f"Right edge: {right_distance}px (BORDERLINE — only "
-            f"{right_distance - m + 1}px above the {m}px minimum; "
+            f"Right edge: {strict_right}px strict (BORDERLINE — only "
+            f"{strict_right - m + 1}px above the {m}px minimum; "
             f"Visa may reject borderline placements)"
         )
 
+    measured = (
+        f"{near_label}: {strict_near}px, Right: {strict_right}px "
+        f"(strict, anti-aliased letter tips included; line-filtered mark body: "
+        f"{near_label.lower()} {near_distance}px, right {right_distance}px)"
+    )
     if not passed:
         note = (
             f"FAIL — Visa Brand Mark is too close to the card edge. "
-            f"{near_label}: {near_distance}px, Right: {right_distance}px "
-            f"(minimum: {m}px). "
+            f"{measured} (minimum: {m}px). "
             f"This is the #1 reason for Visa card art rejection. "
             + " | ".join(detail_parts)
         )
     elif borderline:
         note = (
             f"BORDERLINE — Visa Brand Mark margin is at exactly the {m}px minimum. "
-            f"{near_label}: {near_distance}px, Right: {right_distance}px. "
+            f"{measured}. "
             f"Visa may reject placements with zero safety buffer — recommend "
             f"increasing margin to at least {m + 2}px. "
             + " | ".join(detail_parts)
@@ -456,15 +502,15 @@ def check_bleed_zone(img):
     else:
         note = (
             f"Visa Brand Mark margins are within spec. "
-            f"{near_label}: {near_distance}px, Right: {right_distance}px "
-            f"(minimum: {m}px)."
+            f"{measured} (minimum: {m}px)."
         )
 
+    strict_near_key = "strict_top_px" if corner == "upper-right" else "strict_bottom_px"
     return {
         "passed": passed,
         "borderline": borderline,
         "actual": (
-            f"{near_label}: {near_distance}px, Right: {right_distance}px"
+            f"{near_label}: {strict_near}px, Right: {strict_right}px"
             if passed else "Content within margin zone"
         ),
         "note": note,
@@ -473,6 +519,9 @@ def check_bleed_zone(img):
         "top_distance": top_distance,
         "right_distance": right_distance,
         "min_distance": min(near_distance, right_distance),
+        strict_near_key: strict_near,
+        "strict_right_px": strict_right,
+        "strict_min_px": min(strict_near, strict_right),
         "background_median": round(bg_median, 1),
         "mark_threshold": round(mark_thr, 1),
     }
