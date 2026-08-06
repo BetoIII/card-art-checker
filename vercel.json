@@ -20,6 +20,10 @@
     },
     "api/card-deliver.js": {
       "maxDuration": 300
+    },
+    "api/spec-check.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{node_modules/**,public/**,*.html,prompts/**}"
     }
   },
   "rewrites": [

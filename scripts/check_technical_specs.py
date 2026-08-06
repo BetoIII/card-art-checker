@@ -43,11 +43,13 @@ import textwrap
 try:
     from PIL import Image, ImageDraw, ImageFont
     import numpy as np
-except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow", "numpy", "-q"])
-    from PIL import Image, ImageDraw, ImageFont
-    import numpy as np
+except ImportError as e:
+    # No runtime self-install: every environment this runs in (agent sandbox,
+    # Vercel function via requirements.txt, local venv) pre-installs the deps.
+    raise ImportError(
+        "Pillow and numpy are required — install them in the host environment "
+        "(pip install Pillow numpy)"
+    ) from e
 
 
 REQUIRED_WIDTH = 1536
@@ -527,14 +529,25 @@ def check_bleed_zone(img):
     }
 
 
+_FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+
+
 def _load_font(size, bold=False):
-    """Try to load a system font at the given size. Returns ImageFont."""
+    """Try to load a font at the given size. Returns ImageFont.
+
+    Vendored fonts (scripts/fonts/) come first so the layout is identical
+    everywhere the script runs — agent sandbox, Vercel function, local dev —
+    with system fonts as fallback. Without a TrueType hit, PIL's tiny bitmap
+    default font would wreck the annotated report layout.
+    """
     bold_fonts = [
+        os.path.join(_FONTS_DIR, "DejaVuSans-Bold.ttf"),
         "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
         "/System/Library/Fonts/Helvetica Bold.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     ]
     regular_fonts = [
+        os.path.join(_FONTS_DIR, "DejaVuSans.ttf"),
         "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
         "/System/Library/Fonts/SFNSText.ttf",
@@ -1218,8 +1231,9 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
         draw.text((table_x + 8, legend_y), legend_text,
                   fill=(80, 84, 96), font=font_legend)
 
-    # Save as PDF or PNG
-    if output_path.lower().endswith(".pdf"):
+    # Save as PDF or PNG. output_path may also be a file-like object
+    # (e.g. BytesIO from api/spec-check.py) — always saved as PDF then.
+    if hasattr(output_path, "write") or output_path.lower().endswith(".pdf"):
         canvas.save(output_path, "PDF", resolution=150)
     else:
         canvas.save(output_path, "PNG")
@@ -1610,8 +1624,9 @@ def generate_physical_results_image(tech_result, visual_checks,
         draw.text((table_x + 8, legend_y), legend_text,
                   fill=(80, 84, 96), font=font_legend)
 
-    # Save as PDF or PNG
-    if output_path.lower().endswith(".pdf"):
+    # Save as PDF or PNG. output_path may also be a file-like object
+    # (e.g. BytesIO from api/spec-check.py) — always saved as PDF then.
+    if hasattr(output_path, "write") or output_path.lower().endswith(".pdf"):
         canvas.save(output_path, "PDF", resolution=150)
     else:
         canvas.save(output_path, "PNG")
