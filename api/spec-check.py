@@ -51,9 +51,67 @@ class handler(BaseHTTPRequestHandler):
                 return self._handle_virtual(mode, body)
             if mode == "render-physical":
                 return self._handle_render_physical(body)
+            if mode == "gs-probe":
+                return self._handle_gs_probe(body)
             return self._json(400, {"error": f"Unknown mode: {mode}"})
         except Exception as e:  # surface the reason; the caller has a pdf-lib fallback
             return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _handle_gs_probe(self, body):
+        # SPIKE (spike/gs-on-vercel): measure vendored-Ghostscript feasibility
+        # on Vercel — can the physical tech specs run off-session? Renders a
+        # posted .ai/.eps with scripts/bin/gs-1000-linux-x86_64 and times both
+        # the raw render and (when it fits) full check_physical().
+        import platform
+        import shutil
+        import subprocess
+        import time
+
+        info = {
+            "machine": platform.machine(),
+            "python": platform.python_version(),
+            "libc": "-".join(platform.libc_ver()),
+        }
+        if not body.get("vector_b64"):
+            return self._json(200, {"probe": info, "note": "no vector_b64 — platform info only"})
+
+        data = base64.b64decode(body["vector_b64"])
+        dpi = int(body.get("dpi") or 455)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "front.ai")
+            with open(src, "wb") as f:
+                f.write(data)
+            # Copy + chmod so the bundler's file-mode handling can't bite.
+            gs_path = os.path.join(tmp, "gs")
+            shutil.copy(os.path.join(_REPO_ROOT, "scripts", "bin", "gs-1000-linux-x86_64"), gs_path)
+            os.chmod(gs_path, 0o755)
+
+            out = os.path.join(tmp, "render.png")
+            t0 = time.time()
+            proc = subprocess.run(
+                [gs_path, "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET",
+                 f"-r{dpi}", "-sDEVICE=png16m", f"-sOutputFile={out}", src],
+                capture_output=True, timeout=280,
+            )
+            gs_seconds = round(time.time() - t0, 1)
+            result = {"probe": info, "dpi": dpi, "gs_seconds": gs_seconds, "returncode": proc.returncode}
+            if proc.returncode != 0:
+                result["stderr"] = proc.stderr.decode("utf-8", "replace")[:400]
+                return self._json(200, result)
+            img = specs.Image.open(out)
+            result["render"] = {"size": list(img.size), "bytes": os.path.getsize(out)}
+
+            # Full-fidelity timing: check_physical() end to end with the
+            # vendored gs on PATH (its internal per-render timeout is 60s,
+            # so skip when the raw render alone already blows that).
+            if gs_seconds < 55:
+                os.environ["PATH"] = tmp + os.pathsep + os.environ.get("PATH", "")
+                t0 = time.time()
+                tech = specs.check_physical(src, out_dir=tmp)
+                result["check_physical_seconds"] = round(time.time() - t0, 1)
+                result["bleed_zone"] = (tech.get("front") or {}).get("checks", {}).get("bleed_zone", {}).get("actual")
+                result["zoom_crops"] = sorted((tech.get("front") or {}).get("zoom_crops", {}).keys())
+            return self._json(200, result)
 
     def _handle_virtual(self, mode, body):
         if (body.get("card_type") or "virtual") != "virtual":

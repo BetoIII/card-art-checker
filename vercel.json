@@ -22,7 +22,7 @@
       "maxDuration": 300
     },
     "api/spec-check.py": {
-      "maxDuration": 60,
+      "maxDuration": 300,
       "excludeFiles": "{node_modules/**,public/**,*.html,prompts/**}"
     }
   },
