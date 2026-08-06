@@ -33,7 +33,10 @@ async function main() {
   const agent = await anthropic.beta.agents.create({
     name: 'card-art-checker',
     description: 'Analyzes virtual card art for compliance with Visa Digital Card Brand Standards and Rain internal requirements',
-    model: 'claude-opus-4-8',
+    // effort=high (not the xhigh default): xhigh visual-inspection turns ran
+    // 170-200s, starving the annotated-PDF step of its 90s minimum before the
+    // 300s function kill. See lib/pipeline.js RESULTS_PDF_MIN_MS.
+    model: { id: 'claude-opus-4-8', effort: { type: 'high' } },
     system: systemPrompt,
     tools: [
       { type: 'agent_toolset_20260401' },
