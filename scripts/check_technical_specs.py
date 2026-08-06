@@ -35,6 +35,7 @@ front/back review panes with the same status/spec/visual sections.
 """
 
 import sys
+import io
 import json
 import os
 import argparse
@@ -526,6 +527,43 @@ def check_bleed_zone(img):
         "strict_min_px": min(strict_near, strict_right),
         "background_median": round(bg_median, 1),
         "mark_threshold": round(mark_thr, 1),
+    }
+
+
+def generate_zoom_crops(img, bleed_result=None):
+    """
+    Pre-rendered zoom crops for the visual-inspection agent (virtual cards).
+
+    Replaces the agent's own PIL cropping/zooming rounds with cheap `read`
+    calls: the brand-mark corner (2x), the issuer corner (2x), and the
+    lower-left personalization zone (native). The brand-mark crop follows
+    the corner check_bleed_zone localized (upper-right or lower-right).
+
+    Returns {name: PNG bytes}.
+    """
+    w, h = img.size
+    rgb = img.convert("RGB")
+    corner = (bleed_result or {}).get("mark_corner") or "upper-right"
+
+    def _png(box, scale=1):
+        region = rgb.crop(box)
+        if scale != 1:
+            region = region.resize(
+                (region.width * scale, region.height * scale), Image.LANCZOS
+            )
+        buf = io.BytesIO()
+        region.save(buf, "PNG")
+        return buf.getvalue()
+
+    if corner == "lower-right":
+        brand_box = (int(w * 0.62), int(h * 0.60), w, h)
+    else:
+        brand_box = (int(w * 0.62), 0, w, int(h * 0.40))
+
+    return {
+        "brand_mark": _png(brand_box, scale=2),
+        "issuer": _png((0, 0, int(w * 0.45), int(h * 0.40)), scale=2),
+        "lower_left": _png((0, int(h * 0.55), int(w * 0.50), h)),
     }
 
 

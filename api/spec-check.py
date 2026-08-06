@@ -66,7 +66,22 @@ class handler(BaseHTTPRequestHandler):
                 result = specs.check_image(image_path)
 
                 if mode == "check":
-                    return self._json(200, {"tech_specs": result})
+                    # Zoom crops ride along so the pipeline can mount them as
+                    # session resources — the agent reads them instead of
+                    # writing its own PIL cropping code. Best-effort: a crop
+                    # failure must not sink the tech specs.
+                    crops = {}
+                    try:
+                        crops = {
+                            name: base64.b64encode(png).decode("ascii")
+                            for name, png in specs.generate_zoom_crops(
+                                specs.Image.open(image_path),
+                                result.get("checks", {}).get("bleed_zone"),
+                            ).items()
+                        }
+                    except Exception as e:
+                        result.setdefault("errors", []).append(f"Crop generation failed: {e}")
+                    return self._json(200, {"tech_specs": result, "crops": crops})
 
                 visual = body.get("visual_results") or {}
                 img = specs.Image.open(image_path)
