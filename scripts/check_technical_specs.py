@@ -1951,6 +1951,24 @@ def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dic
     except Exception as e:
         side_result["errors"].append(f"Bleed zone analysis failed: {e}")
 
+    # Zoom crops for the visual turn (front only — the crop boxes are tuned
+    # to the front layout: brand-mark corner, issuer corner, lower-left
+    # zone). Written next to the rendered preview so the in-session agent
+    # reads them directly; paths ride along in the result JSON as
+    # `zoom_crops`. Best effort — a crop failure must not sink the checks.
+    if side_label == "front":
+        try:
+            crops = generate_zoom_crops(img, side_result["checks"].get("bleed_zone"))
+            crop_paths = {}
+            for name, png in crops.items():
+                crop_path = os.path.join(out_dir, f"{side_label}_crop_{name}.png")
+                with open(crop_path, "wb") as f:
+                    f.write(png)
+                crop_paths[name] = crop_path
+            side_result["zoom_crops"] = crop_paths
+        except Exception as e:
+            side_result["errors"].append(f"Crop generation failed: {e}")
+
     return side_result
 
 
