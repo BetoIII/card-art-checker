@@ -1,10 +1,14 @@
 /**
- * One-time setup script — creates the Claude Managed Agent and Environment.
+ * Setup script — creates (or updates) the Claude Managed Agent and Environment.
  *
  * Usage:
+ *   # One-time creation (outputs AGENT_ID, ENV_ID for Vercel env vars):
  *   ANTHROPIC_API_KEY=sk-ant-... node scripts/setup-agent.js
  *
- * Outputs the AGENT_ID, ENV_ID, and SPEC_SCRIPT_FILE_ID to add to Vercel env vars.
+ *   # Push prompts/agent-system-prompt.md to the LIVE agent (run after every
+ *   # prompt edit — the live agent is otherwise stale; repeat per environment
+ *   # if AGENT_ID differs between the two card-art-env deployments):
+ *   ANTHROPIC_API_KEY=... AGENT_ID=agent_... node scripts/setup-agent.js --update
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -19,7 +23,27 @@ const anthropic = new Anthropic({
   defaultHeaders: { 'anthropic-beta': 'managed-agents-2026-04-01' },
 });
 
+async function updateAgent() {
+  const agentId = process.env.AGENT_ID;
+  if (!agentId) {
+    throw new Error('AGENT_ID env var is required for --update (pull it with: vercel env pull)');
+  }
+  const systemPrompt = readFileSync(
+    resolve(__dirname, '../prompts/agent-system-prompt.md'),
+    'utf-8'
+  );
+  console.log(`Updating agent ${agentId} system prompt from prompts/agent-system-prompt.md...`);
+  // Omitted fields (model, tools, name) are preserved; only the system
+  // prompt is replaced. Each update creates a new agent version — running
+  // sessions keep their pinned version, new sessions pick up the latest.
+  const agent = await anthropic.beta.agents.update(agentId, { system: systemPrompt });
+  console.log(`Updated. Agent is now at version ${agent.version}.`);
+}
+
 async function main() {
+  if (process.argv.includes('--update')) {
+    return updateAgent();
+  }
   console.log('Setting up Card Art Checker agent...\n');
 
   // 1. Read agent system prompt

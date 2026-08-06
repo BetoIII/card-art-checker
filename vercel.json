@@ -10,13 +10,16 @@
   ],
   "functions": {
     "api/card-check.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "assets/templates/**"
     },
     "api/card-art-check.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "assets/templates/**"
     },
     "api/dock-webhook.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "assets/templates/**"
     },
     "api/card-deliver.js": {
       "maxDuration": 300

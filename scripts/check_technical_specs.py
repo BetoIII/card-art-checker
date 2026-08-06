@@ -63,6 +63,19 @@ VISA_MARK_EDGE_MARGIN = 56  # pixels — applies ONLY to the Visa Brand Mark
 # --- Physical card constants (CR80, per ISO/IEC 7810) ---
 CR80_ASPECT_RATIO = 3.375 / 2.125            # ≈ 1.5882
 CR80_ASPECT_TOLERANCE = 0.05                 # ±5% tolerance
+# CR80 / ID-1 trim size in PDF points (85.60 x 53.98 mm). Rain's canonical
+# physical templates carry these exact dims in their TrimBox, with an 18pt
+# (0.25") bleed on every side (MediaBox = BleedBox = trim + 2x18pt).
+CR80_TRIM_LONG_PT = 242.65
+CR80_TRIM_SHORT_PT = 153.01
+TRIM_TOLERANCE_PT = 2.0
+MIN_BLEED_PT = 9.0        # 1/8" — industry minimum; below this is a FAIL
+CANONICAL_BLEED_PT = 18.0  # 0.25" — Rain's canonical templates; below is a WARN
+# Visa Brand Mark quiet zone for PHYSICAL cards, in render pixels at 455 DPI,
+# measured from the TRIM edge. Rain's canonical templates place the mark
+# 52-54px (~3mm) from trim, so the physical threshold is calibrated to pass
+# them; virtual keeps the original 56px@1536w digital-template rule.
+PHYSICAL_MARK_EDGE_MARGIN = 50
 PHYSICAL_MIN_RENDERED_WIDTH_PX = 1000         # minimum usable raster width
 PHYSICAL_VECTOR_EXTS = {".ai", ".eps"}
 PHYSICAL_RASTER_EXTS = {".png"}
@@ -207,12 +220,22 @@ def _density_filter(mask, kernel=12, min_neighbors=8):
     return mask & (density >= min_neighbors)
 
 
-def check_bleed_zone(img):
+def check_bleed_zone(img, trim_offsets=None, margin_px=None):
     """
     Measure the pixel distance from the Visa Brand Mark to card edges.
 
-    The Visa Brand Mark must be at least 56px from the nearest card edges.
-    This is the #1 reason for Visa card art rejection.
+    The Visa Brand Mark must be at least 56px (at the canonical 1536px-wide
+    scale) from the nearest card edges. This is the #1 reason for Visa card
+    art rejection.
+
+    trim_offsets: optional {left, right, top, bottom} pixel offsets of the
+    TrimBox inside the raster (from _check_physical_side's PDF-box pass).
+    When given, the analysis crops to the trim rectangle first, so every
+    distance is measured from the TRIM edge — files with bleed would
+    otherwise report margins inflated by the bleed width.
+
+    margin_px: optional quiet-zone size in pixels of THIS raster's scale
+    (56px at 455 DPI ≈ 0.123"). Defaults to VISA_MARK_EDGE_MARGIN.
 
     The algorithm uses a two-pass approach:
     1. LOCALIZATION: Finds the Visa mark center in a safe interior zone using
@@ -232,25 +255,42 @@ def check_bleed_zone(img):
     exactly 56px.
     """
     gray = np.array(img.convert("L"), dtype=float)
+    if trim_offsets:
+        full_h, full_w = gray.shape
+        t = trim_offsets
+        gray = gray[
+            max(0, int(t.get("top") or 0)):full_h - max(0, int(t.get("bottom") or 0)),
+            max(0, int(t.get("left") or 0)):full_w - max(0, int(t.get("right") or 0)),
+        ]
     h, w = gray.shape
-    m = VISA_MARK_EDGE_MARGIN  # 56px
-    BORDERLINE_MAX = 56  # only warn at exactly 56px (Visa approves 57+px routinely)
+    m = int(margin_px or VISA_MARK_EDGE_MARGIN)
+    BORDERLINE_MAX = m  # only warn at exactly the minimum (Visa approves min+1 routinely)
     MIN_MARK_PIXELS_PER_LINE = 8  # min mark pixels in a row/col to count as content
 
-    # Determine background from the card interior (exclude outer 100px to avoid logos)
-    interior = gray[100:h - 100, 100:w - 100]
+    # Determine background from the card interior (exclude the outer ~10% to
+    # avoid logos). Proportional so 455-DPI renders and vertical cards sample
+    # the same relative interior as the original 1536x969 tuning.
+    iy, ix = max(1, round(h * 0.10)), max(1, round(w * 0.065))
+    interior = gray[iy:h - iy, ix:w - ix]
     bg_median = float(np.median(interior))
     is_dark_bg = bg_median < 128
 
     # === PASS 1: Locate the Visa Brand Mark in a safe interior zone ===
-    # Search both upper-right and lower-right corners (mark can be in either)
+    # Search both upper-right and lower-right corners (mark can be in either).
+    # Window sizes are proportional to the raster (tuned on 1536x969: inset
+    # 40px ≈ 3-4%, band 250x400px ≈ 26%) so any render scale or orientation
+    # searches the same relative corner region.
+    inset_y = max(10, round(h * 0.04))
+    inset_x = max(10, round(w * 0.026))
+    band_h = round(h * 0.26)
+    band_w = round(w * 0.30)
     candidates = []
     for corner in ["upper-right", "lower-right"]:
         if corner == "upper-right":
-            sy1, sy2 = 40, min(250, h // 2)
+            sy1, sy2 = inset_y, min(band_h, h // 2)
         else:
-            sy1, sy2 = max(h // 2, h - 250), h - 40
-        sx1, sx2 = max(w // 2, w - 400), w - 40
+            sy1, sy2 = max(h // 2, h - band_h), h - inset_y
+        sx1, sx2 = max(w // 2, w - band_w), w - inset_x
         if sy2 <= sy1 or sx2 <= sx1:
             continue
 
@@ -294,9 +334,11 @@ def check_bleed_zone(img):
     # picks up decorative patterns like concentric circles and line art),
     # we expand outward from the localized mark center and stop at gaps.
     # This isolates the contiguous mark text from nearby decorative elements.
-    search_y1 = max(0, cy - 120)
-    search_y2 = min(h, cy + 120)
-    search_x1 = max(0, cx - 200)
+    pad_y = max(120, round(h * 0.13))
+    pad_x = max(200, round(w * 0.13))
+    search_y1 = max(0, cy - pad_y)
+    search_y2 = min(h, cy + pad_y)
+    search_x1 = max(0, cx - pad_x)
     search_x2 = w  # extend right to measure right-edge distance
 
     if corner == "upper-right":
@@ -525,25 +567,44 @@ def check_bleed_zone(img):
         strict_near_key: strict_near,
         "strict_right_px": strict_right,
         "strict_min_px": min(strict_near, strict_right),
+        "margin_px": m,
+        "measured_from": "trim" if trim_offsets else "render_edge",
         "background_median": round(bg_median, 1),
         "mark_threshold": round(mark_thr, 1),
     }
 
 
-def generate_zoom_crops(img, bleed_result=None):
+def generate_zoom_crops(img, bleed_result=None, side="front", trim_offsets=None):
     """
-    Pre-rendered zoom crops for the visual-inspection agent (virtual cards).
+    Pre-rendered zoom crops for the visual-inspection agent.
 
     Replaces the agent's own PIL cropping/zooming rounds with cheap `read`
-    calls: the brand-mark corner (2x), the issuer corner (2x), and the
-    lower-left personalization zone (native). The brand-mark crop follows
-    the corner check_bleed_zone localized (upper-right or lower-right).
+    calls. Crop boxes are fractions of the TRIM rectangle when trim_offsets
+    is given (physical vectors carry bleed — cropping the full render would
+    shift every zone), of the full image otherwise (virtual PNGs).
+
+    Front: the brand-mark corner (2x, follows the corner check_bleed_zone
+    localized), the issuer corner (2x), and the lower-left zone (native).
+    Back (physical): the magstripe band zone (native) and the issuer-text
+    zone (2x) per Rain's standardized back.
 
     Returns {name: PNG bytes}.
     """
     w, h = img.size
     rgb = img.convert("RGB")
     corner = (bleed_result or {}).get("mark_corner") or "upper-right"
+
+    t = trim_offsets or {}
+    tx = int(t.get("left") or 0)
+    ty = int(t.get("top") or 0)
+    tw = w - tx - int(t.get("right") or 0)
+    th = h - ty - int(t.get("bottom") or 0)
+    if tw <= 0 or th <= 0:
+        tx, ty, tw, th = 0, 0, w, h
+
+    def _box(fx1, fy1, fx2, fy2):
+        return (tx + int(tw * fx1), ty + int(th * fy1),
+                tx + int(tw * fx2), ty + int(th * fy2))
 
     def _png(box, scale=1):
         region = rgb.crop(box)
@@ -555,15 +616,25 @@ def generate_zoom_crops(img, bleed_result=None):
         region.save(buf, "PNG")
         return buf.getvalue()
 
+    if side == "back":
+        return {
+            "magstripe": _png(_box(0.0, 0.0, 1.0, 0.30)),
+            "issuer_text": _png(_box(0.0, 0.18, 0.70, 0.50), scale=2),
+        }
+
+    # Front. The brand-mark crop follows the detected corner; vertical
+    # fronts keep the lockup lower-right (canonical templates).
     if corner == "lower-right":
-        brand_box = (int(w * 0.62), int(h * 0.60), w, h)
-    else:
-        brand_box = (int(w * 0.62), 0, w, int(h * 0.40))
+        brand_box = _box(0.55, 0.55, 1.0, 1.0)
+    elif corner == "upper-left":
+        brand_box = _box(0.0, 0.0, 0.45, 0.45)
+    else:  # upper-right
+        brand_box = _box(0.55, 0.0, 1.0, 0.45)
 
     return {
         "brand_mark": _png(brand_box, scale=2),
-        "issuer": _png((0, 0, int(w * 0.45), int(h * 0.40)), scale=2),
-        "lower_left": _png((0, int(h * 0.55), int(w * 0.50), h)),
+        "issuer": _png(_box(0.0, 0.0, 0.45, 0.40), scale=2),
+        "lower_left": _png(_box(0.0, 0.55, 0.50, 1.0)),
     }
 
 
@@ -1278,13 +1349,18 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     return output_path
 
 
-PHYSICAL_CHECK_ORDER = ["file_format", "cr80_aspect_ratio", "min_resolution",
-                        "bleed_zone", "color_mode", "layers_present"]
+PHYSICAL_CHECK_ORDER = ["file_format", "trim_size", "bleed_margin",
+                        "cr80_aspect_ratio", "min_resolution",
+                        "bleed_zone", "magstripe_band", "color_mode",
+                        "layers_present"]
 PHYSICAL_CHECK_LABELS = {
     "file_format": "File Format (.ai/.eps/.png)",
+    "trim_size": "Trim Size (CR80 3.370\"x2.125\")",
+    "bleed_margin": "Bleed Margin (>= 1/8\", 0.25\" canonical)",
     "cr80_aspect_ratio": "CR80 Aspect Ratio (~1.586:1)",
     "min_resolution": f"Min Resolution (>= {PHYSICAL_MIN_RENDERED_WIDTH_PX}px wide)",
-    "bleed_zone": "56px Bleed Zone (Visa Brand Mark)",
+    "bleed_zone": "Visa Brand Mark Quiet Zone",
+    "magstripe_band": "Magstripe Band (back)",
     "color_mode": "Color Mode (CMYK/PMS)",
     "layers_present": "Layers Present",
 }
@@ -1394,12 +1470,17 @@ def generate_physical_results_image(tech_result, visual_checks,
         text_dark = (24, 28, 38)
         entries = [("Source:", f".{fmt.upper()} ({'vector' if is_vector else 'raster'})", text_dark)]
         if prev:
+            dpi = side.get("render_dpi") or PHYSICAL_RENDER_DPI
             if is_vector:
-                entries.append(("Rendered:", f"{prev['orig_w']}x{prev['orig_h']} @ {PHYSICAL_RENDER_DPI} DPI", text_dark))
+                entries.append(("Rendered:", f"{prev['orig_w']}x{prev['orig_h']} @ {dpi:g} DPI", text_dark))
             else:
                 entries.append(("Supplied:", f"{prev['orig_w']}x{prev['orig_h']} PNG", text_dark))
-        for key, lbl in (("color_mode", "Color mode:"), ("layers_present", "Layers:")):
-            ck = (side.get("checks") or {}).get(key)
+        if side.get("orientation"):
+            entries.append(("Orientation:", side["orientation"].capitalize(), text_dark))
+        checks = side.get("checks") or {}
+        for key, lbl in (("trim_size", "Trim:"), ("bleed_margin", "Bleed:"),
+                         ("color_mode", "Color mode:"), ("layers_present", "Layers:")):
+            ck = checks.get(key)
             if not ck:
                 continue
             status = _physical_check_status(ck)
@@ -1438,7 +1519,15 @@ def generate_physical_results_image(tech_result, visual_checks,
     if back_side is None:
         pane_blocks.append(("note", "Back: not submitted (optional)", None, None))
     elif back_prev:
-        pane_blocks.append(("pane", "Back", back_side, back_prev))
+        # The canonical back is always horizontal, even under a vertical
+        # front — label it so a mixed-orientation report doesn't read as an
+        # inconsistency.
+        back_caption = (
+            "Back (standardized horizontal back)"
+            if (front_side.get("orientation") == "vertical")
+            else "Back"
+        )
+        pane_blocks.append(("pane", back_caption, back_side, back_prev))
     else:
         pane_blocks.append(("note", "Back preview unavailable (render failed - see Spec Check)", None, None))
 
@@ -1465,7 +1554,8 @@ def generate_physical_results_image(tech_result, visual_checks,
             if ck is None:
                 # bleed_zone is the #1 rejection check — surface its absence
                 # (exception path) instead of silently dropping the row.
-                if key == "bleed_zone":
+                # Backs never run it (the Visa mark lives on the front).
+                if key == "bleed_zone" and (side.get("side") or "front") == "front":
                     rows.append({"cells": [PHYSICAL_CHECK_LABELS[key], "N/V",
                                            "Bleed zone analysis failed - see errors"],
                                  "status": "unverified"})
@@ -1588,16 +1678,34 @@ def generate_physical_results_image(tech_result, visual_checks,
         disp = prev["disp"]
         canvas.paste(disp, (img_x, img_y))
 
-        # 56px quiet zone, scaled to the displayed preview
-        quiet_disp = max(1, round(quiet_zone * prev["scale"]))
+        # Trim line (solid blue, when the source carried a TrimBox) and the
+        # Visa Brand Mark quiet zone (dashed red) inset from the TRIM edge —
+        # not the render edge, which includes bleed on canonical templates.
+        scale = prev["scale"]
+        t = side.get("trim_offset_px") or {}
+        t_l = round((t.get("left") or 0) * scale)
+        t_r = round((t.get("right") or 0) * scale)
+        t_t = round((t.get("top") or 0) * scale)
+        t_b = round((t.get("bottom") or 0) * scale)
+        if any((t_l, t_r, t_t, t_b)):
+            trim_rect = [
+                img_x + t_l, img_y + t_t,
+                img_x + DISPLAY_W - t_r, img_y + disp.height - t_b,
+            ]
+            draw.rectangle(trim_rect, outline=(30, 100, 220), width=3)
+        side_quiet = ((side.get("checks") or {}).get("bleed_zone") or {}).get(
+            "margin_px") or quiet_zone
+        quiet_disp = max(1, round(side_quiet * scale))
         quiet_rect = [
-            img_x + quiet_disp, img_y + quiet_disp,
-            img_x + DISPLAY_W - quiet_disp, img_y + disp.height - quiet_disp,
+            img_x + t_l + quiet_disp, img_y + t_t + quiet_disp,
+            img_x + DISPLAY_W - t_r - quiet_disp,
+            img_y + disp.height - t_b - quiet_disp,
         ]
         _draw_dashed_rect(draw, quiet_rect, color=(255, 0, 0), width=3, dash_len=18, gap_len=12)
 
-        # Markers for this side
-        side_label = caption.lower()
+        # Markers for this side (side dict carries the canonical side name —
+        # captions may be decorated, e.g. "Back (standardized horizontal back)")
+        side_label = (side.get("side") or caption.split(" ")[0]).lower()
         for m in markers:
             if (m.get("marker_side") or "front").lower() != side_label:
                 continue
@@ -1680,52 +1788,76 @@ def generate_physical_results_image(tech_result, visual_checks,
 # Physical card checks (vector: .ai / .eps)
 # ─────────────────────────────────────────────────────────────────
 
-def _find_cached_render(vector_path: str, out_dir: str) -> "str | None":
+def _render_base(vector_path: str) -> str:
+    """Output-file base for a vector's page renders. '%' is stripped because
+    gs treats the OutputFile argument as a format string. A short identity
+    hash (path + size + mtime) keeps distinct sources with the same basename
+    — e.g. vertical/Signature.ai vs horizontal/Signature.ai — from colliding
+    in a shared cache/output directory."""
+    import hashlib
+    base = os.path.splitext(os.path.basename(vector_path))[0].replace("%", "_")
+    try:
+        st = os.stat(vector_path)
+        ident = f"{os.path.abspath(vector_path)}|{st.st_size}|{st.st_mtime_ns}"
+    except OSError:
+        ident = os.path.abspath(vector_path)
+    return f"{base}_{hashlib.sha1(ident.encode()).hexdigest()[:8]}"
+
+
+def _collect_page_renders(directory: str, base: str, src_mtime: float) -> "list[str]":
+    """Ordered page renders ({base}_render_<n>.png) in a directory, valid when
+    every page file is non-empty and at least as new as the source. Returns []
+    when no valid, gap-free page sequence starting at 1 exists."""
+    prefix = f"{base}_render_"
+    pages = {}
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    for name in names:
+        if not (name.startswith(prefix) and name.endswith(".png")):
+            continue
+        num = name[len(prefix):-len(".png")]
+        if not num.isdigit():
+            continue
+        path = os.path.join(directory, name)
+        try:
+            if os.path.getsize(path) > 0 and os.path.getmtime(path) >= src_mtime:
+                pages[int(num)] = path
+        except OSError:
+            return []
+    if not pages or set(pages) != set(range(1, len(pages) + 1)):
+        return []
+    return [pages[n] for n in sorted(pages)]
+
+
+def _render_vector_pages(vector_path: str, out_dir: str) -> "list[str]":
     """
-    Look for a previous Ghostscript render of this vector file so repeat runs
-    in the same (persistent) sandbox skip the expensive re-render. A cached
-    render is valid when it is non-empty and at least as new as the source
-    (the source is a read-only mount, so it can't have changed mid-session).
-    Checked locations: the requested out_dir, then alongside the source file
-    (where a --output-dir-less first run wrote it).
+    Rasterize every page of a .ai or .eps file to PNGs using Ghostscript.
+    Adobe Illustrator saves .ai files PDF-compatible by default, so gs handles
+    both — and Rain's canonical physical templates are 2-page files (page 1 =
+    front, page 2 = back), so pages must render to separate outputs: a single
+    -sOutputFile makes gs overwrite page 1 with page 2.
+    Reuses cached page renders from an earlier run in the same sandbox.
+    Returns the ordered list of absolute page-PNG paths.
     """
-    base = os.path.splitext(os.path.basename(vector_path))[0]
-    candidates = [
-        os.path.join(out_dir, f"{base}_render.png"),
-        os.path.join(os.path.dirname(os.path.abspath(vector_path)), f"{base}_render.png"),
-    ]
+    import subprocess
+    base = _render_base(vector_path)
     try:
         src_mtime = os.path.getmtime(vector_path)
     except OSError:
-        return None
-    for path in candidates:
-        try:
-            if os.path.getsize(path) > 0 and os.path.getmtime(path) >= src_mtime:
-                return path
-        except OSError:
-            continue
-    return None
-
-
-def _render_vector_to_png(vector_path: str, out_dir: str) -> str:
-    """
-    Rasterize a .ai or .eps file to PNG using Ghostscript.
-    Adobe Illustrator saves .ai files PDF-compatible by default, so gs handles both.
-    Reuses a cached render from an earlier run in the same sandbox when present.
-    Returns the absolute path to the rendered PNG.
-    """
-    import subprocess
-    cached = _find_cached_render(vector_path, out_dir)
-    if cached:
-        return cached
-    base = os.path.splitext(os.path.basename(vector_path))[0]
-    out_path = os.path.join(out_dir, f"{base}_render.png")
+        src_mtime = 0.0
+    for directory in (out_dir, os.path.dirname(os.path.abspath(vector_path))):
+        cached = _collect_page_renders(directory, base, src_mtime)
+        if cached:
+            return cached
+    out_pattern = os.path.join(out_dir, f"{base}_render_%d.png")
     cmd = [
         "gs",
         "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET",
         f"-r{PHYSICAL_RENDER_DPI}",
         "-sDEVICE=png16m",
-        f"-sOutputFile={out_path}",
+        f"-sOutputFile={out_pattern}",
         vector_path,
     ]
     try:
@@ -1738,59 +1870,240 @@ def _render_vector_to_png(vector_path: str, out_dir: str) -> str:
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode("utf-8", errors="ignore") if e.stderr else ""
         raise RuntimeError(f"Ghostscript render failed: {stderr[:400]}")
-    if not os.path.exists(out_path):
+    pages = _collect_page_renders(out_dir, base, src_mtime)
+    if not pages:
         raise RuntimeError("Ghostscript completed but produced no PNG output")
-    return out_path
+    return pages
+
+
+# PMS numbers the card vendors offer for manufactured elements (card core,
+# magstripe, decorative edge) — from the designers' "Card Core and Magstripe
+# Color Options" sheet. Advisory only: these are ordering options, not
+# artwork pass/fail criteria.
+VENDOR_PMS_NUMBERS = {
+    # Vendor 1 core / magstripe
+    "1805", "114", "1595", "2301", "2144", "287",
+    "8640", "877", "7484", "2955", "180",
+    # Vendor 2 core / magstripe / decorative edge
+    "361", "165", "193", "1255", "8385", "295", "341", "342",
+    "108", "2035", "511", "7462", "561", "425", "419", "802", "803", "806",
+}
+
+
+def _iter_flate_streams(data: bytes, max_streams: int = 300,
+                        max_total_bytes: int = 40_000_000):
+    """Yield decompressed FlateDecode stream payloads (bounded for the 60s
+    serverless budget). Non-Flate or corrupt streams are skipped."""
+    import re
+    import zlib
+    total = 0
+    count = 0
+    for m in re.finditer(rb"stream\r?\n", data):
+        if count >= max_streams or total >= max_total_bytes:
+            return
+        # The stream dict immediately precedes the `stream` keyword.
+        dict_window = data[max(0, m.start() - 600):m.start()]
+        if b"/FlateDecode" not in dict_window:
+            continue
+        end = data.find(b"endstream", m.end())
+        if end == -1:
+            continue
+        payload = data[m.end():end]
+        try:
+            out = zlib.decompress(payload)
+        except zlib.error:
+            try:
+                out = zlib.decompressobj().decompress(payload, 8_000_000)
+            except zlib.error:
+                continue
+        count += 1
+        total += len(out)
+        yield out
+
+
+def _pdf_name_to_text(raw: bytes) -> str:
+    """Decode a PDF name token (with #XX escapes) to text."""
+    import re
+    return re.sub(
+        rb"#([0-9A-Fa-f]{2})", lambda m: bytes([int(m.group(1), 16)]), raw
+    ).decode("latin-1", "replace")
 
 
 def _detect_color_mode(vector_path: str) -> dict:
     """
-    Heuristic color-mode detection for .ai/.eps.
-    - .eps: parse PostScript for 'setcmykcolor', 'DeviceCMYK', 'DeviceRGB',
-      or '%%DocumentProcessColors: (Cyan Magenta Yellow Black)'.
-    - .ai: files are PDF-compatible; look for '/DeviceCMYK' or '/DeviceRGB'
-      markers in the first ~200 KB of the binary stream.
-    Returns { actual, passed, note }. passed=True if CMYK detected.
+    Color-mode detection for .ai/.eps.
+
+    Preferred path (PDF-compatible .ai): decompress content streams and look
+    at what actually draws — CMYK operators (k/K), RGB operators (rg/RG),
+    and /Separation spot-ink colorants (enumerated by name, with vendor PMS
+    cross-referencing as an advisory note).
+    Fallback (.eps / undecidable): the original byte-marker heuristic.
+
+    Returns { actual, passed, note, spot_inks }. passed=True when drawing is
+    CMYK/spot; False when RGB drawing operators are found.
     """
+    import re
     try:
         with open(vector_path, "rb") as f:
-            head = f.read(200_000)
+            data = f.read()
     except Exception as e:
         return {"passed": None, "actual": "unknown",
                 "required": "CMYK or PMS",
                 "note": f"Could not read file for color-mode detection: {e}"}
 
-    text = head.decode("latin-1", errors="ignore")
+    sep_re = re.compile(rb"/Separation\s*/([^\s/\[\]<>()]+)")
+    rgb_op_re = re.compile(rb"[\d.]\s+(?:rg|RG)[\s]")
+    cmyk_op_re = re.compile(rb"[\d.]\s+(?:k|K)[\s]")
+    devrgb_re = re.compile(rb"/DeviceRGB\b")
+
+    spot_inks = set()
+    rgb_ops = 0
+    cmyk_ops = 0
+    device_rgb = 0
+    scanned_any = False
+
+    for chunk in (data, *(_iter_flate_streams(data))):
+        scanned_any = True
+        for m in sep_re.finditer(chunk):
+            name = _pdf_name_to_text(m.group(1)).strip()
+            # 'All' is the registration pseudo-colorant, not an ink.
+            if name and name.lower() != "all":
+                spot_inks.add(name)
+        rgb_ops += len(rgb_op_re.findall(chunk))
+        cmyk_ops += len(cmyk_op_re.findall(chunk))
+        device_rgb += len(devrgb_re.findall(chunk))
+
+    spot_list = sorted(spot_inks)
+    result_extra = {"spot_inks": spot_list}
+
+    def _pms_note():
+        if not spot_list:
+            return ""
+        detected_nums = set()
+        for ink in spot_list:
+            detected_nums.update(re.findall(r"\b(\d{3,4})\b", ink))
+        matched = sorted(detected_nums & VENDOR_PMS_NUMBERS)
+        note = f" Spot inks: {', '.join(spot_list)}."
+        if matched:
+            note += (f" PMS {', '.join(matched)} appear(s) in the card vendors' "
+                     "core/magstripe/edge options — if intended as a manufactured "
+                     "element color, confirm the choice on the order.")
+        return note
+
+    if rgb_ops and not cmyk_ops and not spot_list:
+        # Rain's own canonical templates are RGB-mode Illustrator documents,
+        # so RGB drawing is a warning (convert before production), not a fail
+        # — template-derived submissions would otherwise always fail.
+        return {"passed": True, "borderline": True,
+                "actual": f"RGB ({rgb_ops} RGB drawing ops)",
+                "required": "CMYK or PMS at production",
+                "note": ("Artwork draws in RGB (as Rain's canonical templates "
+                         "do). Confirm the file is converted to CMYK/PMS with "
+                         "the card vendor before production."), **result_extra}
+    if (cmyk_ops or spot_list) and not rgb_ops and not device_rgb:
+        actual = "CMYK" + (" + spot inks" if spot_list else "")
+        return {"passed": True, "actual": actual,
+                "required": "CMYK or PMS",
+                "note": ("Drawing operations are CMYK/spot — matches the "
+                         "print-ready requirement." + _pms_note()), **result_extra}
+    if cmyk_ops and (rgb_ops or device_rgb):
+        return {"passed": True, "borderline": True,
+                "actual": f"CMYK ({cmyk_ops} ops) + RGB ({rgb_ops or device_rgb} refs)",
+                "required": "CMYK or PMS",
+                "note": ("Mostly CMYK with some RGB references — likely embedded "
+                         "RGB assets. Confirm all placed images are converted to "
+                         "CMYK before production." + _pms_note()), **result_extra}
+
+    # Nothing conclusive in the streams — fall back to byte markers.
+    text = data[:200_000].decode("latin-1", errors="ignore")
     has_cmyk = any(m in text for m in ("setcmykcolor", "DeviceCMYK",
                                         "DocumentProcessColors: (Cyan",
                                         "/DeviceN", "CMYK"))
     has_rgb = any(m in text for m in ("setrgbcolor", "DeviceRGB", "RGB"))
-
     if has_cmyk and not has_rgb:
         return {"passed": True, "actual": "CMYK",
                 "required": "CMYK or PMS",
-                "note": "CMYK color space detected in vector header"}
-    if has_cmyk and has_rgb:
-        return {"passed": True, "actual": "CMYK + RGB markers",
-                "required": "CMYK or PMS",
-                "note": ("Both CMYK and RGB color markers detected — likely CMYK "
-                         "primary with embedded RGB assets. Manual verification "
-                         "recommended to ensure all color is CMYK/PMS.")}
-    if has_rgb:
-        return {"passed": False, "actual": "RGB",
-                "required": "CMYK or PMS",
-                "note": "Only RGB color space detected. Physical cards must use CMYK or PMS."}
-    return {"passed": None, "actual": "unknown",
+                "note": "CMYK color space detected in vector header", **result_extra}
+    if has_rgb and not has_cmyk:
+        return {"passed": True, "borderline": True, "actual": "RGB",
+                "required": "CMYK or PMS at production",
+                "note": ("Only RGB color markers detected (Rain's canonical "
+                         "templates are also RGB-mode). Confirm conversion to "
+                         "CMYK/PMS with the card vendor before production."),
+                **result_extra}
+    return {"passed": None,
+            "actual": "undetermined" + (" + spot inks" if spot_list else ""),
             "required": "CMYK or PMS",
-            "note": "Could not determine color mode from file header."}
+            "note": ("Could not conclusively determine the drawing color mode — "
+                     "verify the document color mode is CMYK before production."
+                     + _pms_note()), **result_extra}
+
+
+# Layer names in Rain's canonical physical templates (verified across all 24
+# designer .ai files): four shared structural layers plus exactly one
+# tier-name layer that identifies which of the 12 Visa products the template
+# is for (the Debit template's tier layer is uppercased "DEBIT").
+CANONICAL_COMMON_LAYERS = {
+    "Background Artwork [PLACE DESIGN HERE]",
+    "Card Back Info",
+    "Instructions",
+    "Specs & Outline [DO NOT PRINT]",
+}
+CANONICAL_NONPRINT_LAYERS = {"Specs & Outline [DO NOT PRINT]", "Instructions"}
+CANONICAL_TIER_LAYERS = {
+    "DEBIT": "Debit",
+    "Business Debit": "Business Debit",
+    "Corporate": "Corporate",
+    "Platinum": "Platinum",
+    "Platinum Business": "Platinum Business",
+    "Platinum Corporate": "Platinum Corporate",
+    "Signature": "Signature",
+    "Signature Business": "Signature Business",
+    "Signature Corporate": "Signature Corporate",
+    "Infinite": "Infinite",
+    "Infinite Business": "Infinite Business",
+    "Infinite Corporate": "Infinite Corporate",
+}
+
+
+def _extract_ocg_layer_names(data: bytes) -> "list[str]":
+    """OCG (PDF layer) names from a PDF-compatible .ai, both dict orderings,
+    literal and hex string forms."""
+    import re
+    lit = rb"\(((?:[^()\\]|\\.)*)\)"
+    hexs = rb"<([0-9A-Fa-f\s]+)>"
+    patterns = [
+        rb"/Name\s*" + lit + rb"\s*/Type\s*/OCG",
+        rb"/Type\s*/OCG\s*/Name\s*" + lit,
+        rb"/Name\s*" + hexs + rb"\s*/Type\s*/OCG",
+        rb"/Type\s*/OCG\s*/Name\s*" + hexs,
+    ]
+    names = []
+    for i, pat in enumerate(patterns):
+        for m in re.finditer(pat, data):
+            raw = m.group(1)
+            if i >= 2:  # hex string
+                try:
+                    b = bytes.fromhex(raw.decode("ascii").replace(" ", "").replace("\n", ""))
+                    name = (b[2:].decode("utf-16-be", "replace")
+                            if b[:2] == b"\xfe\xff" else b.decode("latin-1", "replace"))
+                except (ValueError, UnicodeDecodeError):
+                    continue
+            else:
+                name = re.sub(rb"\\(.)", rb"\1", raw).decode("latin-1", "replace")
+            if name and name not in names:
+                names.append(name)
+    return names
 
 
 def _detect_layers(vector_path: str) -> dict:
     """
-    Heuristic layer count for .ai/.eps. Counts:
-      - .eps / .ai: '%AI5_BeginLayer' markers (Illustrator layer comment)
-      - Fallback: number of top-level '/OCG' (Optional Content Groups — PDF layers)
-    Returns { actual, passed (None because it's a heuristic), note }.
+    Layer-structure check for .ai/.eps, aligned with Rain's canonical
+    templates: extracts OCG layer names and validates the canonical set
+    (common structural layers + a tier-name layer). Files with named layers
+    that aren't template-derived fall back to the old count heuristic.
+
+    Returns { actual, passed, borderline, note, layer_names, product_tier }.
     """
     try:
         with open(vector_path, "rb") as f:
@@ -1799,34 +2112,237 @@ def _detect_layers(vector_path: str) -> dict:
         return {"passed": None, "actual": 0,
                 "note": f"Could not read file for layer detection: {e}"}
 
-    text = data.decode("latin-1", errors="ignore")
-    ai_layers = text.count("%AI5_BeginLayer")
-    ocg_layers = text.count("/Type /OCG") + text.count("/Type/OCG")
-    count = max(ai_layers, ocg_layers)
+    names = _extract_ocg_layer_names(data)
+    common_found = CANONICAL_COMMON_LAYERS & set(names)
+    tiers_found = [n for n in names if n in CANONICAL_TIER_LAYERS]
+    product_tier = CANONICAL_TIER_LAYERS[tiers_found[0]] if tiers_found else None
 
+    if len(common_found) >= 3:
+        # Template-derived submission — validate the canonical structure.
+        notes = []
+        missing = CANONICAL_COMMON_LAYERS - common_found
+        nonprint_present = CANONICAL_NONPRINT_LAYERS & set(names)
+        borderline = False
+        if nonprint_present:
+            # Illustrator's per-layer print flag isn't recoverable from the
+            # saved PDF stream, so presence gets a warning, not a fail.
+            borderline = True
+            notes.append(
+                f"Template guide layers present ({', '.join(sorted(nonprint_present))}) — "
+                "confirm they are set to non-printing (or removed) before production."
+            )
+        if "Background Artwork [PLACE DESIGN HERE]" in missing:
+            borderline = True
+            notes.append(
+                "The template's 'Background Artwork [PLACE DESIGN HERE]' layer is "
+                "missing — confirm the design was placed per the template rather "
+                "than flattened."
+            )
+        if product_tier:
+            notes.append(f"Tier layer identifies the product as: {product_tier}.")
+        else:
+            borderline = True
+            notes.append(
+                "No canonical tier layer (e.g. 'Signature', 'DEBIT') found — the "
+                "product identifier cannot be inferred from layers."
+            )
+        return {
+            "passed": True,
+            "borderline": borderline,
+            "actual": f"{len(names)} layers (canonical template structure)",
+            "note": " ".join(notes) or "Canonical template layer structure intact.",
+            "layer_names": names,
+            "product_tier": product_tier,
+        }
+
+    # Non-template files: fall back to the count heuristic.
+    text = data.decode("latin-1", errors="ignore")
+    count = max(text.count("%AI5_BeginLayer"), len(names))
     if count >= 2:
-        note = (f"Detected {count} named layer(s) in the vector file. "
-                "Verify each design element is on its own layer per Visa guidelines.")
-        return {"passed": True, "actual": count, "note": note}
+        return {"passed": True, "actual": count, "layer_names": names,
+                "product_tier": product_tier,
+                "note": (f"Detected {count} named layer(s) (not Rain's canonical "
+                         "template structure). Verify each design element is on "
+                         "its own layer per Visa guidelines — Rain's canonical "
+                         "templates are the preferred starting point.")}
     if count == 1:
-        return {"passed": None, "actual": 1,
+        return {"passed": None, "actual": 1, "layer_names": names,
+                "product_tier": product_tier,
                 "note": ("Only one named layer detected. Visa requires each "
                          "design element on its own layer — manual verification needed.")}
-    return {"passed": None, "actual": 0,
+    return {"passed": None, "actual": 0, "layer_names": names,
+            "product_tier": product_tier,
             "note": ("Could not detect named layers (heuristic only). "
                      "Manual verification required: each design element should be on its own layer.")}
 
 
-def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dict:
+def _extract_page_boxes(vector_path: str) -> "list[dict]":
+    """
+    Per-page PDF boxes for a PDF-compatible .ai (or PDF) file, in page order.
+
+    Illustrator writes page dicts uncompressed, so a targeted regex pass is
+    enough: resolve the catalog's page tree, walk /Kids in order, and pull
+    /MediaBox /TrimBox /BleedBox /ArtBox out of each page object's dict.
+    Values are [x1, y1, x2, y2] floats in points (PDF origin: bottom-left).
+
+    Returns [] for files where the structure can't be resolved (.eps, exotic
+    PDFs with compressed object streams) — callers fall back to
+    rendered-pixel measurement.
+    """
+    import re
+    try:
+        with open(vector_path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return []
+
+    box_re = re.compile(
+        rb"/(MediaBox|TrimBox|BleedBox|ArtBox)\s*\[\s*"
+        rb"(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\]"
+    )
+
+    def _object_window(obj_num: int) -> "bytes | None":
+        m = re.search(rb"(?<![\d])%d\s+0\s+obj\b" % obj_num, data)
+        if not m:
+            return None
+        return data[m.start():m.start() + 4000]
+
+    def _boxes_in(window: bytes) -> dict:
+        found = {}
+        for m in box_re.finditer(window):
+            name = m.group(1).decode("ascii")
+            key = {"MediaBox": "media", "TrimBox": "trim",
+                   "BleedBox": "bleed", "ArtBox": "art"}[name]
+            if key not in found:
+                found[key] = [float(m.group(i)) for i in range(2, 6)]
+        return found
+
+    # Catalog -> root /Pages ref; fall back to any /Type/Pages object.
+    root_ref = None
+    cat = re.search(rb"/Type\s*/Catalog", data)
+    if cat:
+        window = data[max(0, cat.start() - 800):cat.start() + 800]
+        m = re.search(rb"/Pages\s+(\d+)\s+0\s+R", window)
+        if m:
+            root_ref = int(m.group(1))
+
+    def _collect_pages(obj_num: int, depth: int = 0) -> "list[bytes]":
+        if depth > 4:
+            return []
+        window = _object_window(obj_num)
+        if window is None:
+            return []
+        # Trim the window to this object to avoid reading into the next one.
+        end = window.find(b"endobj")
+        if end != -1:
+            window = window[:end]
+        if re.search(rb"/Type\s*/Pages\b", window):
+            kids = re.search(rb"/Kids\s*\[([^\]]*)\]", window)
+            if not kids:
+                return []
+            pages = []
+            for ref in re.finditer(rb"(\d+)\s+0\s+R", kids.group(1)):
+                pages.extend(_collect_pages(int(ref.group(1)), depth + 1))
+            return pages
+        if re.search(rb"/Type\s*/Page\b", window):
+            return [window]
+        return []
+
+    page_windows = []
+    if root_ref is not None:
+        page_windows = _collect_pages(root_ref)
+    if not page_windows:
+        return []
+
+    boxes = []
+    for window in page_windows:
+        found = _boxes_in(window)
+        if "media" not in found:
+            continue
+        found.setdefault("trim", None)
+        found.setdefault("bleed", None)
+        found.setdefault("art", None)
+        boxes.append(found)
+    return boxes
+
+
+def _detect_magstripe_band(img, side_result: dict) -> dict:
+    """
+    Best-effort magstripe detector for physical BACK sides.
+
+    Rain's canonical back places the magstripe ~5.2mm below the trim top,
+    ~8.3mm tall. Looks for a contiguous horizontal band in the 2-18mm zone
+    whose row brightness departs from the card background. Soft verdict:
+    True when found, None (verify visually) when not — never a hard fail,
+    since stripe/background contrast can legitimately be too subtle for a
+    brightness heuristic and the visual agent double-checks.
+    """
+    gray = np.array(img.convert("L"), dtype=float)
+    h, w = gray.shape
+    t = side_result.get("trim_offset_px") or {}
+    top, bottom = int(t.get("top") or 0), int(t.get("bottom") or 0)
+    left, right = int(t.get("left") or 0), int(t.get("right") or 0)
+    trim = gray[top:h - bottom if bottom else h, left:w - right if right else w]
+    th, tw = trim.shape
+    dpi = side_result.get("render_dpi") or PHYSICAL_RENDER_DPI
+    px_per_mm = dpi / 25.4
+
+    y0 = int(round(2.0 * px_per_mm))
+    y1 = min(th, int(round(18.0 * px_per_mm)))
+    if y1 - y0 < 4:
+        return {"passed": None, "actual": "not measurable",
+                "note": "Preview too small to scan for the magstripe band."}
+
+    lower = trim[min(th - 1, int(round(20.0 * px_per_mm))):, :]
+    bg = float(np.median(lower)) if lower.size else float(np.median(trim))
+    rowmean = trim[y0:y1, :].mean(axis=1)
+    band_rows = np.abs(rowmean - bg) > 25
+
+    best = cur = 0
+    band_start = start = None
+    for i, is_band in enumerate(band_rows):
+        if is_band:
+            if start is None:
+                start = i
+            cur += 1
+            if cur > best:
+                best, band_start = cur, start
+        else:
+            cur, start = 0, None
+    band_mm = best / px_per_mm
+
+    if band_mm >= 5.0:
+        top_mm = (y0 + (band_start or 0)) / px_per_mm
+        return {
+            "passed": True,
+            "actual": f"band ~{band_mm:.1f}mm tall starting ~{top_mm:.1f}mm below trim top",
+            "required": "magstripe band near the top of the back (~5mm down, >=6mm tall)",
+            "note": (f"Detected a horizontal band ~{band_mm:.1f}mm tall starting "
+                     f"~{top_mm:.1f}mm below the trim top — consistent with the "
+                     "canonical magstripe placement."),
+        }
+    return {
+        "passed": None,
+        "actual": "no distinct band detected",
+        "required": "magstripe band near the top of the back",
+        "note": ("Could not distinguish a magstripe band from the background in "
+                 "the 2-18mm zone (low contrast is common and not necessarily a "
+                 "problem) — verify visually."),
+    }
+
+
+def _check_physical_side(source_path: str, side_label: str, out_dir: str,
+                         page_index: int = 0) -> dict:
     """
     Run the physical-card technical checks on one side (front or back).
 
     Accepts either:
-      - .ai / .eps  — rasterize via Ghostscript at 455 DPI, run all checks
+      - .ai / .eps  — rasterize via Ghostscript at 455 DPI, run all checks.
+                      page_index selects which rendered page is this side's
+                      raster (Rain's canonical templates are one 2-page file:
+                      page 1 = front, page 2 = back).
       - .png        — use directly as the preview raster; skip vector-only
-                      checks (color mode heuristic, layer count). This
-                      matches how Rain distributes its own physical card
-                      templates (1536×969 PNGs with a defined 56px bleed).
+                      checks (color mode heuristic, layer count).
 
     Returns the per-side result dict, including a rendered preview path and
     — regardless of source format — a bleed_zone check measured against
@@ -1837,9 +2353,13 @@ def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dic
     is_vector = ext in PHYSICAL_VECTOR_EXTS
     is_raster = ext in PHYSICAL_RASTER_EXTS
 
+    file_label = os.path.basename(source_path)
+    if is_vector and page_index > 0:
+        file_label = f"{file_label} (page {page_index + 1})"
+
     side_result = {
         "side": side_label,
-        "file": os.path.basename(source_path),
+        "file": file_label,
         "source_format": ext.lstrip(".") if ext else "unknown",
         "checks": {
             "file_format": {
@@ -1865,7 +2385,15 @@ def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dic
     # Resolve to a raster PNG for bleed/aspect/resolution measurement.
     if is_vector:
         try:
-            preview_path = _render_vector_to_png(source_path, out_dir)
+            pages = _render_vector_pages(source_path, out_dir)
+            side_result["source_pages"] = len(pages)
+            if page_index >= len(pages):
+                side_result["errors"].append(
+                    f"Requested page {page_index + 1} but the file has only "
+                    f"{len(pages)} page(s)"
+                )
+                return side_result
+            preview_path = pages[page_index]
             side_result["rendered_preview_path"] = preview_path
         except Exception as e:
             side_result["errors"].append(str(e))
@@ -1882,22 +2410,117 @@ def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dic
         side_result["errors"].append(f"Could not open raster: {e}")
         return side_result
 
-    # Aspect ratio (CR80 ~1.586:1).
-    actual_ratio = w / h if h else 0
-    ratio_diff = abs(actual_ratio - CR80_ASPECT_RATIO) / CR80_ASPECT_RATIO
-    aspect_ok = ratio_diff <= CR80_ASPECT_TOLERANCE
-    side_result["checks"]["cr80_aspect_ratio"] = {
-        "passed": aspect_ok,
-        "actual": f"{w}x{h} ({actual_ratio:.3f}:1)",
-        "required": f"~{CR80_ASPECT_RATIO:.3f}:1 (±{int(CR80_ASPECT_TOLERANCE*100)}%)",
-        "note": (
-            f"Aspect ratio is within {CR80_ASPECT_TOLERANCE*100:.0f}% of CR80."
-            if aspect_ok else
-            f"Aspect ratio {actual_ratio:.3f}:1 differs from CR80 "
-            f"{CR80_ASPECT_RATIO:.3f}:1 by {ratio_diff*100:.1f}% "
-            f"(>{CR80_ASPECT_TOLERANCE*100:.0f}% tolerance)."
-        ),
-    }
+    # Geometry. Preferred path: the vector's own PDF boxes — Rain's canonical
+    # templates carry an exact CR80 TrimBox inside an 18pt-bleed MediaBox, so
+    # the rendered raster is trim + bleed and its raw aspect ratio is NOT the
+    # CR80 1.586:1. Fallback (raster submissions, box-less vectors): rendered
+    # pixel dimensions, orientation-aware.
+    page_boxes = None
+    if is_vector:
+        try:
+            all_boxes = _extract_page_boxes(source_path)
+            if page_index < len(all_boxes):
+                page_boxes = all_boxes[page_index]
+        except Exception as e:
+            side_result["errors"].append(f"PDF box extraction failed: {e}")
+
+    if page_boxes and page_boxes.get("trim"):
+        media = page_boxes["media"]
+        trim = page_boxes["trim"]
+        trim_w = trim[2] - trim[0]
+        trim_h = trim[3] - trim[1]
+        orientation = "horizontal" if trim_w >= trim_h else "vertical"
+        short_pt, long_pt = sorted((trim_w, trim_h))
+        trim_ok = (abs(long_pt - CR80_TRIM_LONG_PT) <= TRIM_TOLERANCE_PT
+                   and abs(short_pt - CR80_TRIM_SHORT_PT) <= TRIM_TOLERANCE_PT)
+        side_result["checks"]["trim_size"] = {
+            "passed": trim_ok,
+            "actual": (f"TrimBox {trim_w:.1f}x{trim_h:.1f}pt "
+                       f"({trim_w/72:.3f}\"x{trim_h/72:.3f}\", {orientation})"),
+            "required": (f"CR80 {CR80_TRIM_LONG_PT:.0f}x{CR80_TRIM_SHORT_PT:.0f}pt "
+                         f"(3.370\"x2.125\", either orientation, "
+                         f"±{TRIM_TOLERANCE_PT:.0f}pt)"),
+            "note": (
+                f"TrimBox matches the CR80 card size ({orientation})."
+                if trim_ok else
+                f"TrimBox {trim_w:.1f}x{trim_h:.1f}pt does not match the CR80 "
+                f"card size {CR80_TRIM_LONG_PT:.0f}x{CR80_TRIM_SHORT_PT:.0f}pt "
+                f"(±{TRIM_TOLERANCE_PT:.0f}pt, either orientation). Rain's "
+                "canonical templates define the correct artboard."
+            ),
+        }
+
+        margins = {
+            "left": trim[0] - media[0],
+            "bottom": trim[1] - media[1],
+            "right": media[2] - trim[2],
+            "top": media[3] - trim[3],
+        }
+        min_margin = min(margins.values())
+        margins_str = ", ".join(
+            f"{k} {v/72:.3f}\"" for k, v in margins.items()
+        )
+        bleed_fail = min_margin < MIN_BLEED_PT
+        bleed_warn = not bleed_fail and min_margin < CANONICAL_BLEED_PT
+        side_result["checks"]["bleed_margin"] = {
+            "passed": not bleed_fail,
+            "borderline": bleed_warn,
+            "actual": f"min {min_margin/72:.3f}\" ({margins_str})",
+            "required": (f">= {MIN_BLEED_PT/72:.3f}\" per side "
+                         f"({CANONICAL_BLEED_PT/72:.2f}\" per Rain template)"),
+            "note": (
+                f"Bleed margin below the {MIN_BLEED_PT/72:.3f}\" (1/8\") minimum — "
+                "artwork must extend past the trim line on every side. "
+                f"Per-side: {margins_str}."
+                if bleed_fail else
+                f"Bleed margin {min_margin/72:.3f}\" is above the 1/8\" minimum but "
+                f"below the {CANONICAL_BLEED_PT/72:.2f}\" used by Rain's canonical "
+                f"templates — confirm with the card vendor. Per-side: {margins_str}."
+                if bleed_warn else
+                f"Bleed margins match Rain's canonical {CANONICAL_BLEED_PT/72:.2f}\" "
+                f"template spec. Per-side: {margins_str}."
+            ),
+        }
+
+        # True render scale + trim offsets in render pixels (PNG origin is
+        # top-left; PDF boxes are bottom-left) — downstream consumers: the
+        # trim-relative bleed-zone measurement and the report overlay.
+        media_w_pt = media[2] - media[0]
+        dpi = w * 72.0 / media_w_pt if media_w_pt else PHYSICAL_RENDER_DPI
+        px = dpi / 72.0
+        side_result["orientation"] = orientation
+        side_result["render_dpi"] = round(dpi, 1)
+        side_result["trim_offset_px"] = {
+            "left": round(margins["left"] * px),
+            "right": round(margins["right"] * px),
+            "top": round(margins["top"] * px),
+            "bottom": round(margins["bottom"] * px),
+        }
+    else:
+        # Rendered-pixel fallback — orientation-aware: vertical cards are the
+        # transpose of CR80, so compare the long:short ratio.
+        actual_ratio = w / h if h else 0
+        orientation = "horizontal" if w >= h else "vertical"
+        long_short = max(actual_ratio, 1 / actual_ratio) if actual_ratio else 0
+        ratio_diff = abs(long_short - CR80_ASPECT_RATIO) / CR80_ASPECT_RATIO
+        aspect_ok = ratio_diff <= CR80_ASPECT_TOLERANCE
+        side_result["orientation"] = orientation
+        side_result["checks"]["cr80_aspect_ratio"] = {
+            "passed": aspect_ok,
+            "actual": f"{w}x{h} ({actual_ratio:.3f}:1, {orientation})",
+            "required": (f"~{CR80_ASPECT_RATIO:.3f}:1 long:short "
+                         f"(±{int(CR80_ASPECT_TOLERANCE*100)}%, either orientation)"),
+            "note": (
+                f"Aspect ratio is within {CR80_ASPECT_TOLERANCE*100:.0f}% of CR80 "
+                f"({orientation})."
+                if aspect_ok else
+                f"Long:short ratio {long_short:.3f}:1 differs from CR80 "
+                f"{CR80_ASPECT_RATIO:.3f}:1 by {ratio_diff*100:.1f}% "
+                f"(>{CR80_ASPECT_TOLERANCE*100:.0f}% tolerance). If the file "
+                "includes bleed, submit with a proper TrimBox (.ai/.eps saved "
+                "PDF-compatible) so trim and bleed can be measured separately."
+            ),
+        }
 
     # Minimum rendered / supplied resolution.
     min_ok = w >= PHYSICAL_MIN_RENDERED_WIDTH_PX
@@ -1947,32 +2570,56 @@ def _check_physical_side(source_path: str, side_label: str, out_dir: str) -> dic
             ),
         }
 
-    # Bleed zone — the #1 Visa rejection reason. Rain's physical templates
-    # use the same 56px threshold as virtual at 1536-wide. At other widths
-    # the raw VISA_MARK_EDGE_MARGIN still measures absolute pixel distance,
-    # which aligns with the template spec.
-    try:
-        side_result["checks"]["bleed_zone"] = check_bleed_zone(img)
-    except Exception as e:
-        side_result["errors"].append(f"Bleed zone analysis failed: {e}")
-
-    # Zoom crops for the visual turn (front only — the crop boxes are tuned
-    # to the front layout: brand-mark corner, issuer corner, lower-left
-    # zone). Written next to the rendered preview so the in-session agent
-    # reads them directly; paths ride along in the result JSON as
-    # `zoom_crops`. Best effort — a crop failure must not sink the checks.
+    # Quiet zone — the #1 Visa rejection reason. Front only: the check finds
+    # the Visa Brand Mark, which lives on the front; on the canonical back it
+    # would latch onto the magstripe band and report a false failure. When
+    # the vector carried a TrimBox, measure from the TRIM edge (bleed would
+    # otherwise inflate the margins) and scale the pixel threshold to this
+    # raster's true DPI. Raster/box-less submissions keep the legacy
+    # full-image behavior.
     if side_label == "front":
         try:
-            crops = generate_zoom_crops(img, side_result["checks"].get("bleed_zone"))
-            crop_paths = {}
-            for name, png in crops.items():
-                crop_path = os.path.join(out_dir, f"{side_label}_crop_{name}.png")
-                with open(crop_path, "wb") as f:
-                    f.write(png)
-                crop_paths[name] = crop_path
-            side_result["zoom_crops"] = crop_paths
+            trim_offsets = side_result.get("trim_offset_px")
+            margin = None
+            if trim_offsets:
+                dpi = side_result.get("render_dpi") or PHYSICAL_RENDER_DPI
+                margin = max(1, round(
+                    PHYSICAL_MARK_EDGE_MARGIN * dpi / PHYSICAL_RENDER_DPI))
+            side_result["checks"]["bleed_zone"] = check_bleed_zone(
+                img, trim_offsets=trim_offsets, margin_px=margin)
         except Exception as e:
-            side_result["errors"].append(f"Crop generation failed: {e}")
+            side_result["errors"].append(f"Bleed zone analysis failed: {e}")
+    else:
+        # Canonical backs carry a magstripe near the trim top — soft detector
+        # (pass or verify-visually, never fail).
+        try:
+            side_result["checks"]["magstripe_band"] = _detect_magstripe_band(
+                img, side_result)
+        except Exception as e:
+            side_result["errors"].append(f"Magstripe detection failed: {e}")
+
+    # Zoom crops for the visual turn — trim-relative and orientation-aware.
+    # Front: brand-mark corner, issuer corner, lower-left zone. Back:
+    # magstripe band, issuer-text zone. Written next to the rendered preview
+    # so the in-session agent reads them directly; paths ride along in the
+    # result JSON as `zoom_crops`. Best effort — a crop failure must not
+    # sink the checks.
+    try:
+        crops = generate_zoom_crops(
+            img,
+            side_result["checks"].get("bleed_zone"),
+            side=side_label,
+            trim_offsets=side_result.get("trim_offset_px"),
+        )
+        crop_paths = {}
+        for name, png in crops.items():
+            crop_path = os.path.join(out_dir, f"{side_label}_crop_{name}.png")
+            with open(crop_path, "wb") as f:
+                f.write(png)
+            crop_paths[name] = crop_path
+        side_result["zoom_crops"] = crop_paths
+    except Exception as e:
+        side_result["errors"].append(f"Crop generation failed: {e}")
 
     return side_result
 
@@ -1981,19 +2628,38 @@ def check_physical(front_path: str, back_path: "str | None" = None,
                    out_dir: "str | None" = None) -> dict:
     """
     Run technical checks on a physical card submission.
-    Front is required; back is optional.
+    Front is required; back is optional. A multi-page vector front (Rain's
+    canonical templates are one 2-page .ai: page 1 = front, page 2 = back)
+    supplies the back automatically when no separate back file is given.
     """
     render_dir = out_dir or os.path.dirname(os.path.abspath(front_path))
     os.makedirs(render_dir, exist_ok=True)
 
+    front = _check_physical_side(front_path, "front", render_dir)
     result = {
         "card_type": "physical",
-        "front": _check_physical_side(front_path, "front", render_dir),
+        "front": front,
         "back": None,
         "errors": [],
     }
+    front_pages = front.get("source_pages") or 1
     if back_path:
         result["back"] = _check_physical_side(back_path, "back", render_dir)
+        if front_pages >= 2:
+            result["errors"].append(
+                f"Front file has {front_pages} pages AND a separate back file was "
+                "submitted — the separate back file was used; the front file's "
+                "extra pages were ignored."
+            )
+    elif front_pages >= 2:
+        # Page renders are cached, so this re-entry costs no second gs run.
+        result["back"] = _check_physical_side(front_path, "back", render_dir,
+                                              page_index=1)
+    if front_pages >= 3:
+        result["errors"].append(
+            f"Front file has {front_pages} pages — expected 2 (front, back). "
+            "Only pages 1-2 were checked."
+        )
     return result
 
 

@@ -174,14 +174,20 @@ class handler(BaseHTTPRequestHandler):
                 # pipeline rewrites these to session mount paths.
                 side["rendered_preview_path"] = None
 
+            # Crops from BOTH sides, keys namespaced by side (front_brand_mark,
+            # back_issuer_text, ...) so the session mounts don't collide.
             crops = {}
-            front = tech.get("front") or {}
-            for name, crop_path in (front.get("zoom_crops") or {}).items():
-                if os.path.exists(crop_path):
-                    with open(crop_path, "rb") as f:
-                        crops[name] = base64.b64encode(f.read()).decode("ascii")
-            if "zoom_crops" in front:
-                front["zoom_crops"] = {}
+            for side_key in ("front", "back"):
+                side = tech.get(side_key)
+                if not isinstance(side, dict):
+                    continue
+                for name, crop_path in (side.get("zoom_crops") or {}).items():
+                    if crop_path and os.path.exists(crop_path):
+                        with open(crop_path, "rb") as f:
+                            crops[f"{side_key}_{name}"] = base64.b64encode(
+                                f.read()).decode("ascii")
+                if "zoom_crops" in side:
+                    side["zoom_crops"] = {}
 
             return self._json(200, {"tech_specs": tech, "previews": previews, "crops": crops})
 
