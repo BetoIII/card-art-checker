@@ -4,27 +4,29 @@ Vercel Python function wrapping scripts/check_technical_specs.py.
 Runs the deterministic spec work OUTSIDE the agent session so the session
 spends its time budget on visual inspection only:
 
-  POST {"mode": "check",  "image_b64": ...}                     (virtual)
+  POST {"mode": "check", "image_url": ...}                      (virtual)
     -> JSON {"tech_specs": {...}, "crops": {...}}   (check_image() output)
 
-  POST {"mode": "render", "image_b64": ..., "visual_results": {...}}
+  POST {"mode": "render", "image_url": ..., "visual_results": {...}}
     -> application/pdf              (annotated virtual results report)
 
   POST {"mode": "render-physical", "tech_results": {...},
         "previews": {"front": b64, "back": b64?}, "visual_results": {...}}
     -> application/pdf              (annotated physical results report)
 
-The caller is lib/pipeline.js (same deployment, self-call). Physical tech
-specs stay in-session — .ai/.eps rendering needs the sandbox's Ghostscript —
-but the annotated physical report only composes the ALREADY-rendered preview
-PNGs, so render-physical needs no Ghostscript.
+The caller is lib/pipeline.js (same deployment, self-call). Source files
+arrive as Vercel Blob URLs (`image_url`) because the platform rejects
+request bodies over ~4.5MB — inline `image_b64` is still accepted for
+small payloads and local harness tests.
 """
 import base64
 import io
 import json
 import os
+import re
 import sys
 import tempfile
+import urllib.request
 
 from http.server import BaseHTTPRequestHandler
 
@@ -32,6 +34,32 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 
 import check_technical_specs as specs  # noqa: E402
+
+# The endpoint is publicly reachable in prod, so URL fetches are pinned to
+# the deployment's own Blob store family — not an open proxy.
+_BLOB_URL_RE = re.compile(r"^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/")
+
+
+def _load_source_bytes(body, url_key="image_url", b64_key="image_b64"):
+    """Resolve a source file from a Blob URL or inline base64.
+
+    Returns (bytes, error_message) — exactly one is set.
+    """
+    if body.get(b64_key):
+        try:
+            return base64.b64decode(body[b64_key]), None
+        except (ValueError, TypeError):
+            return None, f"{b64_key} is not valid base64"
+    url = body.get(url_key)
+    if not url:
+        return None, f"{url_key} (Vercel Blob URL) or {b64_key} is required"
+    if not _BLOB_URL_RE.match(url):
+        return None, f"{url_key} must be a public Vercel Blob URL"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as res:
+            return res.read(), None
+    except Exception as e:
+        return None, f"Could not fetch {url_key}: {type(e).__name__}: {e}"
 
 
 class handler(BaseHTTPRequestHandler):
@@ -57,14 +85,10 @@ class handler(BaseHTTPRequestHandler):
 
     def _handle_virtual(self, mode, body):
         if (body.get("card_type") or "virtual") != "virtual":
-            return self._json(400, {"error": "check/render modes are virtual-only (physical tech specs need the in-session Ghostscript path)"})
-        if not body.get("image_b64"):
-            return self._json(400, {"error": "image_b64 is required"})
-
-        try:
-            image_bytes = base64.b64decode(body["image_b64"])
-        except (ValueError, TypeError):
-            return self._json(400, {"error": "image_b64 is not valid base64"})
+            return self._json(400, {"error": "check/render modes are virtual-only"})
+        image_bytes, err = _load_source_bytes(body)
+        if err:
+            return self._json(400, {"error": err})
 
         # Basename only; the name flows into the report header and temp path.
         file_name = os.path.basename(body.get("file_name") or "card-art.png") or "card-art.png"
