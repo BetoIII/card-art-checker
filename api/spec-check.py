@@ -7,6 +7,12 @@ spends its time budget on visual inspection only:
   POST {"mode": "check", "image_url": ...}                      (virtual)
     -> JSON {"tech_specs": {...}, "crops": {...}}   (check_image() output)
 
+  POST {"mode": "check", "card_type": "physical", "image_url": ...,
+        "back_url": ...?}
+    -> JSON {"tech_specs": {...}, "previews": {...}, "crops": {...}}
+       (check_physical() output; .ai/.eps rendered with the vendored
+        Ghostscript at scripts/bin/ — previews downscaled to <=1536w)
+
   POST {"mode": "render", "image_url": ..., "visual_results": {...}}
     -> application/pdf              (annotated virtual results report)
 
@@ -15,9 +21,9 @@ spends its time budget on visual inspection only:
     -> application/pdf              (annotated physical results report)
 
 The caller is lib/pipeline.js (same deployment, self-call). Source files
-arrive as Vercel Blob URLs (`image_url`) because the platform rejects
-request bodies over ~4.5MB — inline `image_b64` is still accepted for
-small payloads and local harness tests.
+arrive as Vercel Blob URLs (`image_url`/`back_url`) because the platform
+rejects request bodies over ~4.5MB — inline `image_b64`/`back_b64` is
+still accepted for small payloads and local harness tests.
 """
 import base64
 import io
@@ -38,6 +44,34 @@ import check_technical_specs as specs  # noqa: E402
 # The endpoint is publicly reachable in prod, so URL fetches are pinned to
 # the deployment's own Blob store family — not an open proxy.
 _BLOB_URL_RE = re.compile(r"^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/")
+
+
+_GS_VENDOR = os.path.join(_REPO_ROOT, "scripts", "bin", "gs-1000-linux-x86_64")
+_gs_dir = None
+
+
+def _ensure_vendored_gs_on_path():
+    """Expose the vendored Ghostscript binary as `gs` on PATH.
+
+    The bundle filesystem may drop the exec bit, so the binary is copied to
+    a writable temp dir once per instance and chmod'd there. No-ops when a
+    system gs already exists (local dev with brew/apt ghostscript) or when
+    the vendored binary is absent/not-Linux (local macOS harness).
+    """
+    global _gs_dir
+    import shutil
+    if shutil.which("gs"):
+        return
+    if _gs_dir and os.path.exists(os.path.join(_gs_dir, "gs")):
+        return
+    if not os.path.exists(_GS_VENDOR) or sys.platform != "linux":
+        return
+    gs_dir = tempfile.mkdtemp(prefix="gsbin-")
+    gs_path = os.path.join(gs_dir, "gs")
+    shutil.copy(_GS_VENDOR, gs_path)
+    os.chmod(gs_path, 0o755)
+    os.environ["PATH"] = gs_dir + os.pathsep + os.environ.get("PATH", "")
+    _gs_dir = gs_dir
 
 
 def _load_source_bytes(body, url_key="image_url", b64_key="image_b64"):
@@ -75,6 +109,8 @@ class handler(BaseHTTPRequestHandler):
 
         mode = body.get("mode") or "check"
         try:
+            if mode == "check" and (body.get("card_type") or "virtual") == "physical":
+                return self._handle_check_physical(body)
             if mode in ("check", "render"):
                 return self._handle_virtual(mode, body)
             if mode == "render-physical":
@@ -82,6 +118,72 @@ class handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": f"Unknown mode: {mode}"})
         except Exception as e:  # surface the reason; the caller has a pdf-lib fallback
             return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _handle_check_physical(self, body):
+        # Physical tech specs, fully off-session: .ai/.eps rendering via the
+        # vendored Ghostscript binary (30MB static build under scripts/bin/;
+        # measured 2.6-3.8s per 455-DPI render on Vercel vs 84-133s for the
+        # same step inside the agent sandbox).
+        front_bytes, err = _load_source_bytes(body)
+        if err:
+            return self._json(400, {"error": err})
+        back_bytes = None
+        if body.get("back_url") or body.get("back_b64"):
+            back_bytes, err = _load_source_bytes(body, "back_url", "back_b64")
+            if err:
+                return self._json(400, {"error": err})
+
+        front_name = os.path.basename(body.get("file_name") or "front.ai") or "front.ai"
+        back_name = os.path.basename(body.get("back_file_name") or "back.ai") or "back.ai"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            front_path = os.path.join(tmp, front_name)
+            with open(front_path, "wb") as f:
+                f.write(front_bytes)
+            back_path = None
+            if back_bytes is not None:
+                back_path = os.path.join(tmp, back_name)
+                with open(back_path, "wb") as f:
+                    f.write(back_bytes)
+
+            _ensure_vendored_gs_on_path()
+            tech = specs.check_physical(front_path, back_path=back_path, out_dir=tmp)
+
+            # Previews travel inline, downscaled to <=1536 wide (full 455-DPI
+            # renders can be tens of MB — over the response cap). The checks
+            # above already measured against the full render; its true size
+            # is recorded so the report's 56px overlay scales correctly.
+            previews = {}
+            for side_key in ("front", "back"):
+                side = tech.get(side_key)
+                if not isinstance(side, dict):
+                    continue
+                preview_path = side.get("rendered_preview_path")
+                if preview_path and os.path.exists(preview_path):
+                    img = specs.Image.open(preview_path).convert("RGB")
+                    side["render_full_width"], side["render_full_height"] = img.size
+                    if img.width > 1536:
+                        img = img.resize(
+                            (1536, max(1, round(img.height * 1536 / img.width))),
+                            specs.Image.LANCZOS,
+                        )
+                    buf = io.BytesIO()
+                    img.save(buf, "PNG")
+                    previews[side_key] = base64.b64encode(buf.getvalue()).decode("ascii")
+                # Local temp paths are meaningless to the caller — the
+                # pipeline rewrites these to session mount paths.
+                side["rendered_preview_path"] = None
+
+            crops = {}
+            front = tech.get("front") or {}
+            for name, crop_path in (front.get("zoom_crops") or {}).items():
+                if os.path.exists(crop_path):
+                    with open(crop_path, "rb") as f:
+                        crops[name] = base64.b64encode(f.read()).decode("ascii")
+            if "zoom_crops" in front:
+                front["zoom_crops"] = {}
+
+            return self._json(200, {"tech_specs": tech, "previews": previews, "crops": crops})
 
     def _handle_virtual(self, mode, body):
         if (body.get("card_type") or "virtual") != "virtual":

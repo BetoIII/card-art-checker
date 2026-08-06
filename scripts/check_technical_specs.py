@@ -1372,10 +1372,15 @@ def generate_physical_results_image(tech_result, visual_checks,
             img = Image.open(path).convert("RGB")
         except Exception:
             return None
-        orig_w, orig_h = img.size
-        scale = DISPLAY_W / orig_w
-        disp = img.resize((DISPLAY_W, max(1, round(orig_h * scale))), Image.LANCZOS)
-        return {"disp": disp, "scale": scale, "orig_w": orig_w, "orig_h": orig_h}
+        img_w, img_h = img.size
+        disp = img.resize((DISPLAY_W, max(1, round(img_h * DISPLAY_W / img_w))), Image.LANCZOS)
+        # The preview may have been downscaled for transport (api/spec-check.py
+        # records the measurement raster's true size as render_full_width/height).
+        # The 56px quiet zone and the File Info dimensions must reflect the
+        # ORIGINAL render the checks measured against, not the shrunken copy.
+        orig_w = side.get("render_full_width") or img_w
+        orig_h = side.get("render_full_height") or img_h
+        return {"disp": disp, "scale": DISPLAY_W / orig_w, "orig_w": orig_w, "orig_h": orig_h}
 
     front_side = tech_result.get("front") or {}
     back_side = tech_result.get("back")
