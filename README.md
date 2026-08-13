@@ -49,10 +49,49 @@ Notes:
 |-------|---------|---------|
 | `/upload` | Customer-facing upload form (embedded in Rocketlane) | — |
 | `/` | API playground for internal testing | — |
-| `/api/card-check` | Analysis + PDF generation, streams SSE | 300s |
+| `/api/card-check` | Analysis + PDF generation. Streams SSE for the browser UI; JSON for authenticated server-to-server callers. See below. | 300s |
 | `/api/card-deliver` | Slack + Rocketlane delivery, non-fatal per service | 60s |
 | `/api/card-art-check` | External-trigger entrypoint: resolve attachment IDs, download, analyze, store, deliver. See below. | 300s |
 | `/api/result/:runId` | Structured check results for a run. See below. | 30s |
+
+## Upload API: `/api/card-check`
+
+Two callers share this endpoint, and **authentication is what separates them**.
+
+| | Browser UI (`/upload`) | Server-to-server |
+|---|---|---|
+| Auth | none | `Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET` (or `x-webhook-secret`) |
+| `projectId` | **required** | optional |
+| Response | SSE progress stream | SSE, or JSON with `?async=1` |
+| `runLog.source` | `upload` | `api` |
+
+Tying the relaxation to the secret is what keeps it safe: an anonymous caller can never
+reach the projectId-less path, so the UI's guarantees are unchanged.
+
+**Fields** (multipart): `file` (required), `projectId`, `cardType`, `backFile`,
+`slackDelivery`, plus two for server-to-server callers:
+
+| Field | Purpose |
+|-------|---------|
+| `reference` | Caller's own correlation id (e.g. a `cardArtForm` id). Stands in for `projectId` as the report's Blob path segment, and is echoed back on `trigger.reference`. Sanitized to a single path segment. |
+| `callbackUrl` | Where to POST the result. Allowlist-gated exactly as on `/api/card-art-check`. |
+
+Without a `projectId` the Rocketlane lookup is skipped entirely and the report is stored
+under `reports/{reference or "external"}/`.
+
+```bash
+curl -X POST "https://card-art-checker.vercel.app/api/card-check?async=1" \
+  -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET" \
+  -F "file=@card.png" -F "cardType=virtual" -F "reference=cardArtForm_01HX9"
+
+# → { "ok": true, "queued": true, "runId": "…", "projectId": null,
+#     "reference": "cardArtForm_01HX9", "cardType": "virtual" }
+```
+
+`?async=1` returns as soon as the file is parsed and runs the analysis in the background
+via `waitUntil` — poll `GET /api/result/:runId`, or configure a webhook to be pushed the
+result. It is honored only for authenticated callers: an anonymous request must hold the
+stream it started.
 
 ## External-trigger API: `/api/card-art-check`
 

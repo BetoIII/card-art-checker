@@ -200,6 +200,7 @@
     .badge.src-rocketlane { background: rgba(59, 91, 219, 0.1); color: var(--rain-active-blue); }
     .badge.src-dock { background: rgba(255, 47, 182, 0.09); color: #B01F7E; }
     .badge.src-upload { background: rgba(64, 192, 87, 0.1); color: #237a36; }
+    .badge.src-api { background: rgba(120, 92, 219, 0.1); color: #5a3fb8; }
     .badge.src-unknown { background: var(--rain-off-white); color: var(--rain-dark-gray); }
 
     .badge.st-running { background: rgba(59, 91, 219, 0.1); color: var(--rain-active-blue); }
@@ -335,6 +336,7 @@
       rocketlane: 'Rocketlane webhook',
       dock: 'Dock webhook',
       upload: 'Manual upload',
+      api: 'Server-to-server',
     };
 
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
