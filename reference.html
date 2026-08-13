@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Card Art Checker — API Reference</title>
+<meta name="description" content="Submit card art, get a compliance verdict. Endpoints, payloads, result schema, and the full check catalog.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper:    #FFFFFF;
+  --paper-2:  #FAFAFB;
+  --paper-3:  #F2F4F7;
+  --ink:      #0A0A0A;
+  --ink-2:    #121212;
+  --muted:    #5B6169;
+  --faint:    #868D96;
+  --line:     #E6E9ED;
+  --line-2:   #D8DCDF;
+
+  --accent:   #E84670;
+  --accent-soft: rgba(232, 70, 112, 0.10);
+  --green:    #2FA34B;
+  --red:      #E84142;
+  --amber:    #C97C10;
+
+  --pill-post: #71FF7D;
+  --pill-get:  #7BC4FF;
+
+  --code-bg:  #101322;
+  --code-fg:  #DDE1EC;
+  --code-line:#232739;
+  --code-key: #71FFFF;
+  --code-str: #71FF7D;
+  --code-num: #F49FFF;
+  --code-com: #6C7392;
+  --code-kw:  #FF9FD2;
+
+  --font:  "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono:  "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+
+  --sidebar-w: 264px;
+  --toc-w:     212px;
+  --topbar-h:  57px;
+
+  --grad: linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%);
+}
+
+[data-theme="dark"] {
+  --paper:    #0B0D16;
+  --paper-2:  #10131F;
+  --paper-3:  #171B2A;
+  --ink:      #F0F1F4;
+  --ink-2:    #E3E5EA;
+  --muted:    #9BA2B0;
+  --faint:    #767E8E;
+  --line:     #1F2333;
+  --line-2:   #2A2F42;
+
+  --accent:   #FF6B92;
+  --accent-soft: rgba(255, 107, 146, 0.14);
+  --green:    #4ADE7B;
+  --red:      #FF6B6C;
+  --amber:    #F7A838;
+
+  --code-bg:  #070911;
+  --code-line:#1C2030;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--topbar-h) + 24px); }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+body {
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  /* The topbar is fixed, so the page has to make room for it. */
+  padding-top: var(--topbar-h);
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ── Top bar ───────────────────────────────────────────── */
+
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--topbar-h);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--grad);
+}
+
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand-name {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--ink);
+  white-space: nowrap;
+}
+.brand-tag {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  color: var(--faint); letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+@media (max-width: 720px) { .brand-tag { display: none; } }
+
+.topbar-spacer { flex: 1; }
+
+.topbar-links { display: flex; align-items: center; gap: 20px; }
+.topbar-links a {
+  font-size: 13.5px; font-weight: 500; color: var(--muted);
+}
+.topbar-links a:hover { color: var(--ink); text-decoration: none; }
+@media (max-width: 900px) { .topbar-links { display: none; } }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border: 1px solid var(--line-2); border-radius: 8px;
+  background: transparent; color: var(--muted);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover { background: var(--paper-3); color: var(--ink); }
+.icon-btn svg { width: 16px; height: 16px; }
+[data-theme="light"] .icon-moon { display: none; }
+[data-theme="dark"]  .icon-sun  { display: none; }
+
+.menu-btn { display: none; }
+@media (max-width: 1000px) { .menu-btn { display: inline-flex; } }
+
+/* ── Shell ─────────────────────────────────────────────── */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
+  gap: 48px;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+@media (max-width: 1200px) {
+  .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+  .toc { display: none; }
+}
+@media (max-width: 1000px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+
+/* ── Sidebar ───────────────────────────────────────────── */
+
+.sidebar {
+  position: sticky;
+  top: var(--topbar-h);
+  align-self: start;
+  height: calc(100vh - var(--topbar-h));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px 12px 64px 0;
+  scrollbar-width: thin;
+}
+@media (max-width: 1000px) {
+  .sidebar {
+    position: fixed;
+    top: var(--topbar-h); left: 0; bottom: 0;
+    width: 280px; z-index: 45;
+    background: var(--paper);
+    border-right: 1px solid var(--line);
+    padding: 20px 16px 64px;
+    transform: translateX(-102%);
+    transition: transform 0.22s ease;
+  }
+  .sidebar.open { transform: translateX(0); }
+}
+
+.nav-search {
+  width: 100%;
+  padding: 7px 11px;
+  margin-bottom: 20px;
+  font-family: var(--font); font-size: 13px;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  outline: none;
+}
+.nav-search::placeholder { color: var(--faint); }
+.nav-search:focus { border-color: var(--accent); }
+
+.nav-group { margin-bottom: 22px; }
+.nav-group-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--faint);
+  padding: 0 10px; margin-bottom: 6px;
+}
+.nav-link {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 13.5px; font-weight: 450;
+  color: var(--muted);
+  border-left: 2px solid transparent;
+  margin-left: -2px;
+}
+.nav-link:hover { color: var(--ink); background: var(--paper-3); text-decoration: none; }
+.nav-link.active {
+  color: var(--ink); font-weight: 600;
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.nav-link.hidden { display: none; }
+.nav-group.hidden { display: none; }
+
+.nav-method {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 5px; border-radius: 4px;
+  color: var(--ink-2);
+  flex-shrink: 0;
+}
+.nav-method.post { background: var(--pill-post); }
+.nav-method.get  { background: var(--pill-get); }
+
+.scrim {
+  display: none;
+  position: fixed; inset: var(--topbar-h) 0 0 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 44;
+}
+.scrim.open { display: block; }
+@media (min-width: 1001px) { .scrim.open { display: none; } }
+
+/* ── Content ───────────────────────────────────────────── */
+
+.content {
+  padding: 40px 0 120px;
+  min-width: 0;
+  max-width: 780px;
+}
+
+.page-eyebrow {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  letter-spacing: 1px; text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+h1 {
+  font-size: 34px; font-weight: 700; letter-spacing: -0.9px;
+  line-height: 1.18; margin-bottom: 14px;
+}
+.lede {
+  font-size: 17px; line-height: 1.6; color: var(--muted);
+  max-width: 62ch;
+}
+
+section { scroll-margin-top: calc(var(--topbar-h) + 24px); }
+
+h2 {
+  font-size: 22px; font-weight: 650; letter-spacing: -0.4px;
+  margin: 56px 0 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: calc(var(--topbar-h) + 24px);
+}
+h2:first-of-type { border-top: none; padding-top: 0; }
+h3 {
+  font-size: 16px; font-weight: 650; letter-spacing: -0.2px;
+  margin: 32px 0 10px;
+  scroll-margin-top: calc(var(--topbar-h) + 24px);
+}
+h4 {
+  font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
+  text-transform: uppercase; color: var(--faint);
+  margin: 24px 0 8px;
+}
+
+.content p { margin-bottom: 14px; max-width: 68ch; }
+.content ul, .content ol { margin: 0 0 16px 20px; max-width: 66ch; }
+.content li { margin-bottom: 6px; }
+
+.anchor {
+  color: var(--faint); font-weight: 400; opacity: 0;
+  margin-left: 8px; font-size: 0.8em;
+  transition: opacity 0.15s;
+}
+h2:hover .anchor, h3:hover .anchor, .anchor:focus-visible { opacity: 1; }
+
+/* Inline identifiers — the contract is set in mono, the prose is not. */
+code {
+  font-family: var(--mono); font-size: 0.855em;
+  background: var(--paper-3);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1.5px 5px;
+  color: var(--ink-2);
+  /* Wrap at spaces so a long error string can't widen the page, but break
+     inside a token only when the token alone won't fit the line. */
+  overflow-wrap: anywhere;
+}
+a code { color: inherit; border-color: currentColor; }
+
+/* ── Endpoint header ───────────────────────────────────── */
+
+.endpoint {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  margin: 16px 0 20px;
+  background: var(--paper-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+}
+.method {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 4px 9px; border-radius: 5px;
+  color: #0A0A0A;
+}
+.method.post { background: var(--pill-post); }
+.method.get  { background: var(--pill-get); }
+.endpoint-path {
+  font-family: var(--mono); font-size: 13.5px; font-weight: 500;
+  color: var(--ink); word-break: break-all;
+}
+.endpoint-path em { font-style: normal; color: var(--accent); }
+.endpoint-auth {
+  margin-left: auto;
+  font-size: 11.5px; font-weight: 500;
+  color: var(--muted);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.endpoint-auth svg { width: 12px; height: 12px; }
+
+/* ── Code blocks ───────────────────────────────────────── */
+
+.code {
+  position: relative;
+  margin: 0 0 20px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.code-head {
+  display: flex; align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--code-line);
+  min-height: 38px;
+}
+.code-title {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  color: #8A92AC; letter-spacing: 0.3px;
+  margin-right: auto;
+}
+.tab {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  padding: 5px 10px; border-radius: 6px;
+  background: transparent; border: none;
+  color: #8A92AC; cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.tab:hover { color: #DDE1EC; }
+.tab.active { color: #0A0A0A; background: var(--pill-post); font-weight: 600; }
+
+.copy-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0;
+  margin-left: 6px;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: #8A92AC; cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.copy-btn:hover { color: #DDE1EC; background: rgba(255,255,255,0.07); }
+.copy-btn svg { width: 14px; height: 14px; }
+.copy-btn.copied { color: var(--pill-post); }
+.copy-btn.copied .icon-copy { display: none; }
+.copy-btn .icon-check { display: none; }
+.copy-btn.copied .icon-check { display: block; }
+
+.code pre {
+  margin: 0; padding: 14px 16px;
+  overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.72;
+  color: var(--code-fg);
+  tab-size: 2;
+}
+.code pre::-webkit-scrollbar { height: 8px; }
+.code pre::-webkit-scrollbar-thumb { background: #2C3247; border-radius: 4px; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+.tok-key { color: var(--code-key); }
+.tok-str { color: var(--code-str); }
+.tok-num { color: var(--code-num); }
+.tok-com { color: var(--code-com); font-style: italic; }
+.tok-kw  { color: var(--code-kw); }
+.tok-fn  { color: #FFD479; }
+
+/* ── Tables ────────────────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+table { border-collapse: collapse; min-width: 100%; font-size: 13.5px; }
+/* The check catalog packs 30-character identifiers into four columns. Setting
+   them a step down fits the whole table in the reading column at desktop
+   widths; narrower than that, the wrapper scrolls. */
+.table-wrap.wide td code { font-size: 11px; padding: 1px 5px; }
+.table-wrap.wide td, .table-wrap.wide th { padding-left: 10px; padding-right: 10px; }
+th {
+  text-align: left; font-weight: 600; font-size: 11.5px;
+  letter-spacing: 0.5px; text-transform: uppercase; color: var(--faint);
+  padding: 10px 14px;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  line-height: 1.55;
+}
+tbody tr:last-child td { border-bottom: none; }
+/* Inside a table the wrapper scrolls, so identifiers stay on one line. */
+td code, th code { white-space: nowrap; overflow-wrap: normal; }
+tbody tr:hover td { background: var(--paper-2); }
+tbody tr { transition: opacity 0.18s; }
+
+.req {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.opt {
+  font-size: 10.5px; font-weight: 500; letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.type {
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--muted); white-space: nowrap;
+}
+
+.sev {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px;
+  white-space: nowrap;
+}
+.sev.blocker  { background: rgba(232,65,66,0.12);  color: var(--red); }
+.sev.required { background: rgba(201,124,16,0.14); color: var(--amber); }
+.sev.advisory { background: var(--paper-3);        color: var(--muted); }
+
+.status-code {
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+}
+.status-code.ok  { color: var(--green); }
+.status-code.bad { color: var(--amber); }
+.status-code.err { color: var(--red); }
+
+/* ── Callouts ──────────────────────────────────────────── */
+
+.note {
+  display: flex; gap: 12px;
+  padding: 13px 15px;
+  margin: 0 0 20px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  background: var(--paper-2);
+  font-size: 14px; line-height: 1.6;
+}
+.note p { margin: 0; max-width: none; }
+.note p + p { margin-top: 8px; }
+.note-icon { flex-shrink: 0; margin-top: 2px; }
+.note-icon svg { width: 15px; height: 15px; display: block; }
+.note.warn { border-left-color: var(--amber); background: rgba(247,168,56,0.06); }
+.note.warn .note-icon { color: var(--amber); }
+.note.danger { border-left-color: var(--red); background: rgba(232,65,66,0.05); }
+.note.danger .note-icon { color: var(--red); }
+.note.tip { border-left-color: var(--accent); background: var(--accent-soft); }
+.note.tip .note-icon { color: var(--accent); }
+.note-title { font-weight: 650; }
+
+/* ── Flow diagram (overview) ───────────────────────────── */
+
+.flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 24px 0 20px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--paper-2);
+}
+@media (max-width: 640px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.flow-step {
+  padding: 14px 15px;
+  border-right: 1px solid var(--line);
+  position: relative;
+}
+.flow-step:last-child { border-right: none; }
+@media (max-width: 640px) {
+  .flow-step:nth-child(2n) { border-right: none; }
+  .flow-step:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+}
+.flow-num {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  color: var(--accent); letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.flow-label { font-size: 13.5px; font-weight: 600; margin-bottom: 3px; }
+.flow-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+/* ── Card zone diagram — the signature element ─────────── */
+
+.zone-figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+  padding: 22px;
+  margin: 20px 0 24px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
+@media (max-width: 700px) { .zone-figure { grid-template-columns: minmax(0, 1fr); } }
+
+.zone-svg { width: 100%; height: auto; display: block; }
+.zone-region {
+  fill: var(--accent);
+  fill-opacity: 0.07;
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  transition: fill-opacity 0.18s, stroke-opacity 0.18s;
+}
+.zone-region.lit { fill-opacity: 0.3; stroke-opacity: 1; stroke-dasharray: none; }
+/* The whole-card region sits on top of the others, so it stays invisible
+   until it is the one being asked about. */
+.zone-region[data-zone="card"] { fill-opacity: 0; stroke-opacity: 0; }
+.zone-region[data-zone="card"].lit { fill-opacity: 0.14; stroke-opacity: 0.9; }
+.zone-label {
+  font-family: var(--mono); font-size: 7px; font-weight: 600;
+  fill: var(--muted); letter-spacing: 0.4px;
+  transition: fill 0.18s;
+}
+.zone-label.lit { fill: var(--accent); }
+
+.zone-key { display: flex; flex-direction: column; gap: 3px; }
+.zone-key-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--faint);
+  margin-bottom: 6px;
+}
+.zone-item {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px;
+  border: 1px solid transparent; border-radius: 7px;
+  background: transparent;
+  font-family: var(--font); font-size: 12.5px; color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.zone-item:hover, .zone-item.on {
+  background: var(--paper); border-color: var(--line-2); color: var(--ink);
+}
+.zone-item strong { display: block; font-weight: 600; font-size: 13px; color: var(--ink); }
+
+.zone-chip {
+  display: inline-block;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  padding: 1px 5px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* ── On this page ──────────────────────────────────────── */
+
+.toc {
+  position: sticky;
+  top: var(--topbar-h);
+  align-self: start;
+  height: calc(100vh - var(--topbar-h));
+  overflow-y: auto;
+  padding: 40px 0 64px;
+  scrollbar-width: thin;
+}
+.toc-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--faint);
+  margin-bottom: 10px;
+}
+.toc-link {
+  display: block;
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid var(--line);
+  font-size: 12.5px; line-height: 1.45;
+  color: var(--muted);
+}
+.toc-link:hover { color: var(--ink); text-decoration: none; }
+.toc-link.active { color: var(--accent); border-left-color: var(--accent); font-weight: 550; }
+
+/* ── Footer ────────────────────────────────────────────── */
+
+.foot {
+  margin-top: 64px; padding-top: 22px;
+  border-top: 1px solid var(--line);
+  display: flex; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px; color: var(--faint);
+}
+
+.skip {
+  position: absolute; left: -9999px;
+  top: 8px; z-index: 100;
+  padding: 8px 14px; border-radius: 8px;
+  background: var(--ink); color: var(--paper);
+  font-size: 13px; font-weight: 600;
+}
+.skip:focus { left: 12px; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+  </button>
+  <div class="brand">
+    <span class="brand-name">Card Art Checker</span>
+    <span class="brand-tag">API reference</span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-links">
+    <a href="/upload">Playground</a>
+    <a href="#quickstart">Quickstart</a>
+    <a href="#checks">Check catalog</a>
+  </nav>
+  <button class="icon-btn" id="themeBtn" aria-label="Toggle dark mode">
+    <svg class="icon-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3.1"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1"/></svg>
+    <svg class="icon-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.6A5.8 5.8 0 016.4 2.5a5.9 5.9 0 107.1 7.1z"/></svg>
+  </button>
+</header>
+
+<div class="scrim" id="scrim"></div>
+
+<div class="shell">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar" aria-label="Documentation">
+    <input class="nav-search" id="navSearch" type="search" placeholder="Filter…" aria-label="Filter navigation">
+
+    <div class="nav-group">
+      <div class="nav-group-title">Get started</div>
+      <a class="nav-link" href="#overview">Overview</a>
+      <a class="nav-link" href="#quickstart">Quickstart</a>
+      <a class="nav-link" href="#authentication">Authentication</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-title">Endpoints</div>
+      <a class="nav-link" href="#submit"><span class="nav-method post">POST</span> Submit a check</a>
+      <a class="nav-link" href="#result"><span class="nav-method get">GET</span> Fetch a result</a>
+      <a class="nav-link" href="#rocketlane"><span class="nav-method post">POST</span> Rocketlane trigger</a>
+      <a class="nav-link" href="#health"><span class="nav-method get">GET</span> Health</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-title">Results</div>
+      <a class="nav-link" href="#webhooks">Webhooks</a>
+      <a class="nav-link" href="#result-object">The result object</a>
+      <a class="nav-link" href="#enums">Enums</a>
+      <a class="nav-link" href="#checks">Check catalog</a>
+      <a class="nav-link" href="#tech-checks">Technical checks</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-title">Reference</div>
+      <a class="nav-link" href="#errors">Errors &amp; failures</a>
+      <a class="nav-link" href="#limits">Limits</a>
+    </div>
+  </nav>
+
+  <!-- ── Content ─────────────────────────────────────── -->
+  <main class="content" id="main">
+
+    <div class="page-eyebrow">Rain · Internal service</div>
+    <h1>Card Art Checker API</h1>
+    <p class="lede">
+      Submit a card design, get back a structured compliance verdict against the Visa
+      brand rules — which checks failed, where on the art, and whether the design can ship.
+    </p>
+
+    <!-- Overview -->
+    <section id="overview">
+      <h2>Overview <a class="anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
+      <p>
+        A check is a visual review: a Claude agent inspects the art against 18 Visa rules and
+        returns a decision. That takes <strong>100–160 seconds</strong>, so no endpoint returns a
+        verdict synchronously. Every integration has the same four beats.
+      </p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-num">01</div>
+          <div class="flow-label">Submit</div>
+          <div class="flow-desc">POST the art with <code>?async=1</code>.</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">02</div>
+          <div class="flow-label">Store the runId</div>
+          <div class="flow-desc">Returned immediately. Your handle on the run.</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">03</div>
+          <div class="flow-label">Wait</div>
+          <div class="flow-desc">The analysis runs in the background.</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <div class="flow-label">Read the result</div>
+          <div class="flow-desc">Poll, or have it pushed to your webhook.</div>
+        </div>
+      </div>
+
+      <p>
+        The numbering above is a real sequence — each step depends on the one before it, and a
+        run cannot skip one. Everything else in this reference describes the shape of one of
+        those four calls.
+      </p>
+
+      <div class="note tip">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.3v4M8 4.9v.1"/></svg></span>
+        <div>
+          <p><span class="note-title">Base URL.</span> <code>https://card-art-checker.vercel.app</code></p>
+          <p>Use the stable alias, not the per-deploy <code>…-&lt;hash&gt;.vercel.app</code> URLs — those change on every push.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart -->
+    <section id="quickstart">
+      <h2>Quickstart <a class="anchor" href="#quickstart" aria-label="Link to Quickstart">#</a></h2>
+      <p>Submit a virtual card design and read the verdict.</p>
+
+      <div class="code" data-group="lang">
+        <div class="code-head">
+          <span class="code-title">Submit</span>
+          <button class="tab active" data-lang="curl">cURL</button>
+          <button class="tab" data-lang="ts">TypeScript</button>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <div class="panel active" data-lang="curl"><pre data-hl="bash">curl -X POST "https://card-art-checker.vercel.app/api/card-check?async=1" \
+  -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET" \
+  -F "file=@card.png" \
+  -F "cardType=virtual" \
+  -F "reference=cardArtForm_01HX9"
+
+# → { "ok": true, "queued": true, "runId": "msqz4i4j-6fa7c9",
+#     "projectId": null, "reference": "cardArtForm_01HX9",
+#     "cardType": "virtual" }</pre></div>
+        <div class="panel" data-lang="ts"><pre data-hl="ts">const form = new FormData()
+form.append("file", new Blob([artBuffer], { type: "image/png" }), "card.png")
+form.append("cardType", "virtual")
+form.append("reference", cardArtForm.id)
+
+const res = await fetch(`${CARD_ART_CHECKER_URL}/api/card-check?async=1`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${CARD_ART_CHECKER_SECRET}` },
+  body: form,
+})
+
+const { runId } = await res.json()
+// Store runId on the row — it is how you find the verdict later.</pre></div>
+      </div>
+
+      <div class="code" data-group="lang">
+        <div class="code-head">
+          <span class="code-title">Read the verdict</span>
+          <button class="tab active" data-lang="curl">cURL</button>
+          <button class="tab" data-lang="ts">TypeScript</button>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <div class="panel active" data-lang="curl"><pre data-hl="bash">curl -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET" \
+  "https://card-art-checker.vercel.app/api/result/msqz4i4j-6fa7c9"
+
+# 404 while the run is still in flight — that is the normal answer.
+# 200 → { "runId": "…", "count": 1, "results": [ … ] }</pre></div>
+        <div class="panel" data-lang="ts"><pre data-hl="ts">const res = await fetch(`${CARD_ART_CHECKER_URL}/api/result/${runId}`, {
+  headers: { Authorization: `Bearer ${CARD_ART_CHECKER_SECRET}` },
+})
+
+if (res.status === 404) return // still running, try again later
+
+const { results } = await res.json()
+const [result] = results
+
+if (result.status === "error") return           // the checker broke — retry
+if (result.outcome === "requires_changes") {
+  reject(result.summary, result.blocking_failures)
+}</pre></div>
+      </div>
+
+      <div class="note">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.7v4M8 11v.1"/></svg></span>
+        <div><p>Polling works, but <a href="#webhooks">webhooks</a> are the recommended path — they cost you nothing while a two-minute run is in flight.</p></div>
+      </div>
+    </section>
+
+    <!-- Authentication -->
+    <section id="authentication">
+      <h2>Authentication <a class="anchor" href="#authentication" aria-label="Link to Authentication">#</a></h2>
+      <p>One shared secret guards every server-to-server endpoint. Send it either way:</p>
+
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">Headers</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="http">Authorization: Bearer &lt;secret&gt;
+x-webhook-secret: &lt;secret&gt;</pre>
+      </div>
+
+      <p>
+        Ask Beto for the value — it is not published here. The same secret reads results,
+        so a caller that may start a check may read its verdict.
+      </p>
+
+      <div class="note warn">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
+        <div>
+          <p><span class="note-title">Authentication does more than gate access.</span> It is what separates a
+          server-to-server caller from the browser upload page. Authenticated callers may omit
+          <code>projectId</code> and use <code>?async=1</code>; anonymous ones may not.</p>
+          <p>If your calls behave like the browser path — streaming back an event stream, demanding a
+          <code>projectId</code> — the secret is not arriving.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Submit -->
+    <section id="submit">
+      <h2>Submit a check <a class="anchor" href="#submit" aria-label="Link to Submit a check">#</a></h2>
+
+      <div class="endpoint">
+        <span class="method post">POST</span>
+        <span class="endpoint-path">/api/card-check?async=1</span>
+        <span class="endpoint-auth">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
+          Bearer token
+        </span>
+      </div>
+
+      <p>
+        Send the art as <code>multipart/form-data</code>. With <code>?async=1</code> the response
+        returns as soon as the file is parsed and the analysis continues in the background.
+        Without it you get a Server-Sent Events progress stream instead — that path exists for the
+        browser playground; don't use it from a server.
+      </p>
+
+      <h3>Body fields <a class="anchor" href="#submit" aria-label="Link to Body fields">#</a></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>file</code></td>
+              <td class="type">file</td>
+              <td><span class="req">Required</span></td>
+              <td>The card art. PNG for virtual submissions.</td>
+            </tr>
+            <tr>
+              <td><code>cardType</code></td>
+              <td class="type">"virtual" | "physical"</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Inferred from the filename when omitted. Send <code>virtual</code> explicitly — back-office art always is.</td>
+            </tr>
+            <tr>
+              <td><code>reference</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Your own correlation id, e.g. a <code>cardArtForm.id</code>. Comes back on <code>trigger.reference</code>. Sanitized to <code>[A-Za-z0-9._-]</code>, 64 chars max.</td>
+            </tr>
+            <tr>
+              <td><code>projectId</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Rocketlane project id. Omit it unless you have one — when present it must resolve in Rocketlane or the run fails. Required for unauthenticated callers.</td>
+            </tr>
+            <tr>
+              <td><code>callbackUrl</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Push the result here instead of polling. Allowlist-gated — see <a href="#webhooks">Webhooks</a>.</td>
+            </tr>
+            <tr>
+              <td><code>backFile</code></td>
+              <td class="type">file</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Physical submissions only. Rejected on a virtual submission.</td>
+            </tr>
+            <tr>
+              <td><code>slackDelivery</code></td>
+              <td class="type">boolean</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Defaults to true. Only affects the Rocketlane-driven flow.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Responses <a class="anchor" href="#submit" aria-label="Link to Responses">#</a></h3>
+
+      <h4><span class="status-code ok">200</span> &nbsp;Queued</h4>
+      <p>The file was accepted. Store <code>runId</code> — it is the only handle on the run.</p>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">200 application/json</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="json">{
+  "ok": true,
+  "queued": true,
+  "runId": "msqz4i4j-6fa7c9",
+  "projectId": null,
+  "reference": "cardArtForm_01HX9",
+  "cardType": "virtual"
+}</pre>
+      </div>
+
+      <h4><span class="status-code bad">400</span> &nbsp;Never started</h4>
+      <p>A <code>runId</code> still comes back, so the attempt stays traceable in the admin dashboard.</p>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">400 application/json</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="json">{ "error": "No file uploaded", "runId": "msr0w4np-1eoerz" }</pre>
+      </div>
+      <p>Other <code>error</code> values:</p>
+      <ul>
+        <li><code>Missing projectId</code> — unauthenticated callers only.</li>
+        <li><code>Invalid cardType "foo" — must be "virtual" or "physical"</code></li>
+        <li><code>Could not infer card type from "art.bin" — pass cardType=virtual|physical explicitly</code></li>
+        <li><code>Multipart parse timed out</code> — the body took longer than 30s.</li>
+        <li><code>backFile is only valid for physical submissions</code></li>
+      </ul>
+      <p>
+        A wrong content type returns <span class="status-code bad">400</span> with a plain-text body:
+        <code>Bad request: expected multipart/form-data</code>.
+      </p>
+    </section>
+
+    <!-- Result -->
+    <section id="result">
+      <h2>Fetch a result <a class="anchor" href="#result" aria-label="Link to Fetch a result">#</a></h2>
+
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/api/result/<em>{runId}</em></span>
+        <span class="endpoint-auth">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
+          Bearer token
+        </span>
+      </div>
+
+      <p>
+        One run can analyze several files, so this returns every stored result for the run — each
+        with its own <code>attachment_id</code>.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Status</th><th>Body</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="status-code ok">200</span></td>
+              <td><code>{ runId, count, results[] }</code></td>
+              <td>Done. See <a href="#result-object">the result object</a>.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code bad">404</span></td>
+              <td><code>{ error, runId, hint }</code></td>
+              <td><strong>Still running, or unknown run.</strong> This is the normal answer while waiting — not an error.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code bad">400</span></td>
+              <td><code>{ error: "Malformed runId" }</code></td>
+              <td>Run ids look like <code>msqz4i4j-6fa7c9</code>.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code err">401</span></td>
+              <td class="type">Unauthorized (text)</td>
+              <td>Bad or missing secret.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code err">502</span></td>
+              <td><code>{ error: "Result lookup failed" }</code></td>
+              <td>The result store could not be read. Retry.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
+        <div><p>Every run also publishes a <code>resultUrl</code> — a public blob URL that needs no auth to read. It is unguessable, but treat the URL itself as the secret.</p></div>
+      </div>
+    </section>
+
+    <!-- Rocketlane -->
+    <section id="rocketlane">
+      <h2>Rocketlane trigger <a class="anchor" href="#rocketlane" aria-label="Link to Rocketlane trigger">#</a></h2>
+
+      <div class="endpoint">
+        <span class="method post">POST</span>
+        <span class="endpoint-path">/api/card-art-check?projectId=<em>{id}</em></span>
+        <span class="endpoint-auth">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
+          Bearer token
+        </span>
+      </div>
+
+      <p>
+        The project-keyed entry point, driven by a Rocketlane <em>Form completed</em> automation.
+        Instead of a file upload it takes a project id, and pulls the art from the attachment
+        anchors in the payload — <code>&lt;a data-attachment-id="12345"&gt;</code>. One field can
+        carry several files, and each is analyzed separately.
+      </p>
+      <p>
+        Reach for this only if you are wiring up Rocketlane. Everything else should
+        <a href="#submit">post the file directly</a>.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Input</th><th></th><th>Description</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>projectId</code></td>
+              <td><span class="req">Required</span></td>
+              <td>Numeric Rocketlane project id. Query string wins over the JSON body. Routes Slack delivery and the report path.</td>
+            </tr>
+            <tr>
+              <td>attachment ids</td>
+              <td><span class="req">Required</span></td>
+              <td>Read from <code>data-attachment-id="…"</code> anchors anywhere in the payload. An explicit <code>attachmentId</code> field also works for manual calls.</td>
+            </tr>
+            <tr>
+              <td><code>cardType</code></td>
+              <td><span class="opt">Optional</span></td>
+              <td>Applies to every attachment in the request. <code>.ai</code> and <code>.eps</code> always run physical regardless.</td>
+            </tr>
+            <tr>
+              <td><code>callbackUrl</code></td>
+              <td><span class="opt">Optional</span></td>
+              <td>Allowlist-gated, same as <a href="#submit">/api/card-check</a>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Resolving and downloading attachments happens <em>before</em> the response, so the status
+        code tells you whether the art was retrieved:
+        <span class="status-code ok">200</span> <code>{ ok, queued, projectId, runId, downloaded[], failed[] }</code> ·
+        <span class="status-code bad">400</span> missing project id or no attachments found ·
+        <span class="status-code err">502</span> every download failed, nothing was analyzed.
+      </p>
+
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">Manual trigger</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="bash">curl -X POST "https://card-art-checker.vercel.app/api/card-art-check?projectId=12345&amp;attachmentId=67890" \
+  -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET"</pre>
+      </div>
+    </section>
+
+    <!-- Health -->
+    <section id="health">
+      <h2>Health <a class="anchor" href="#health" aria-label="Link to Health">#</a></h2>
+
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/api/health</span>
+        <span class="endpoint-auth">Public</span>
+      </div>
+
+      <p>
+        Liveness plus a boolean map of which environment variables are configured — names and
+        presence only, never values. Useful when a deploy behaves as if a credential is missing.
+      </p>
+
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">200 application/json</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="json">{
+  "ok": true,
+  "time": 1755061234567,
+  "env": {
+    "ROCKETLANE_API_KEY": true,
+    "ANTHROPIC_API_KEY": true,
+    "BLOB_READ_WRITE_TOKEN": true
+  }
+}</pre>
+      </div>
+    </section>
+
+    <!-- Webhooks -->
+    <section id="webhooks">
+      <h2>Webhooks <a class="anchor" href="#webhooks" aria-label="Link to Webhooks">#</a></h2>
+      <p>
+        The recommended way to receive a verdict — no polling, no idle connection. It needs a
+        receiving route on your side and one config change on ours: either
+        <code>RESULT_WEBHOOK_URL</code> pointed at your endpoint, or your host added to
+        <code>RESULT_WEBHOOK_ALLOWED_HOSTS</code> so a per-request <code>callbackUrl</code> is honored.
+      </p>
+
+      <h3>What arrives <a class="anchor" href="#webhooks" aria-label="Link to What arrives">#</a></h3>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">POST your endpoint</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="http">Content-Type: application/json
+User-Agent: card-art-checker/1.0
+X-Card-Art-Signature: sha256=&lt;hex&gt;
+X-Card-Art-Timestamp: &lt;unix seconds&gt;</pre>
+      </div>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">Envelope</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="json">{
+  "schema_version": "1.0",
+  "event": "card_art_check.completed",
+  "run_id": "msqz4i4j-6fa7c9",
+  "attachment_id": null,
+  "occurred_at": "2026-08-13T04:32:34.023Z",
+  "data": { }
+}</pre>
+      </div>
+      <p>
+        <code>event</code> is <code>card_art_check.completed</code> or
+        <code>card_art_check.failed</code>. <code>data</code> holds
+        <a href="#result-object">the result object</a>.
+      </p>
+
+      <h3>Verifying the signature <a class="anchor" href="#webhooks" aria-label="Link to Verifying the signature">#</a></h3>
+      <p>
+        HMAC-SHA256 over <code>{timestamp}.{rawBody}</code>. The timestamp is <em>inside</em> the
+        signed material, so a captured request cannot be replayed with a fresh one.
+      </p>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">verify.ts</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="ts">import { createHmac, timingSafeEqual } from "node:crypto"
+
+function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: string) {
+  const ts = headers["x-card-art-timestamp"]
+  const expected = "sha256=" + createHmac("sha256", secret)
+    .update(`${ts}.${rawBody}`)
+    .digest("hex")
+
+  const a = Buffer.from(expected)
+  const b = Buffer.from(headers["x-card-art-signature"] ?? "")
+  return a.length === b.length &amp;&amp; timingSafeEqual(a, b)
+}</pre>
+      </div>
+
+      <div class="note danger">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
+        <div><p>Verify against the <strong>raw</strong> body, before JSON parsing. Re-serializing changes the bytes and the signature will never match.</p></div>
+      </div>
+
+      <h3>Delivery semantics <a class="anchor" href="#webhooks" aria-label="Link to Delivery semantics">#</a></h3>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td style="width:38%"><strong>Retries</strong></td><td>3 attempts, 500ms backoff doubling</td></tr>
+            <tr><td><strong>Retried on</strong></td><td><code>5xx</code>, <code>408</code>, <code>429</code></td></tr>
+            <tr><td><strong>Not retried</strong></td><td>any other <code>4xx</code></td></tr>
+            <tr><td><strong>Timeout</strong></td><td>10s per attempt</td></tr>
+            <tr><td><strong>Physical results</strong></td><td>never sent — <code>schema_version: "0-internal"</code></td></tr>
+            <tr><td><strong>Delivery failure</strong></td><td>recorded on the run; never fails the analysis</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Respond <code>2xx</code> quickly and do your work afterward.</p>
+    </section>
+
+    <!-- Result object -->
+    <section id="result-object">
+      <h2>The result object <a class="anchor" href="#result-object" aria-label="Link to The result object">#</a></h2>
+      <p>The same shape whether you polled for it or had it pushed.</p>
+
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">result.json</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="json">{
+  "schema_version": "1.0",
+  "run_id": "msqz4i4j-6fa7c9",
+  "attachment_id": null,
+  "card_type": "virtual",
+  "generated_at": "2026-08-13T03:46:31.599Z",
+
+  "outcome": "requires_changes",
+  "status": "fail",
+  "summary": "The art is clean, full-color, and legible, but the Visa Brand Mark is placed in the lower-right corner.",
+
+  "project":    { "id": null, "name": null },
+  "submission": { "file_name": "BRAZA_CARTAO-2026_VIRTUAL.png" },
+  "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" },
+  "report":     { "pdf_url": "https://blob.vercel-storage.com/reports/report.pdf" },
+
+  "counts": { "pass": 17, "fail": 1 },
+  "blocking_failures": ["visa_brand_mark_position"],
+
+  "checks": [
+    {
+      "id": "visa_brand_mark_position",
+      "name": "Visa Brand Mark position (upper-left/upper-right only)",
+      "category": "brand_mark",
+      "severity": "blocker",
+      "status": "fail",
+      "reason_code": "position_lower_edge",
+      "notes": "The Visa Brand Mark is in the lower-right corner.",
+      "marker": { "x": 0.84, "y": 0.82 }
+    }
+  ],
+
+  "tech_checks": [
+    { "id": "bleed_zone", "status": "pass", "actual": "Bottom: 127px, Right: 63px",
+      "required": null, "note": "", "measurements": {} }
+  ],
+
+  "colors": {
+    "background": { "rgb": [185, 5, 57],    "hex": "#B90539" },
+    "foreground": { "rgb": [240, 240, 240], "hex": "#F0F0F0" },
+    "label":      { "rgb": [240, 240, 240], "hex": "#F0F0F0" }
+  },
+
+  "unmapped_checks": []
+}</pre>
+      </div>
+
+      <h3>Field notes <a class="anchor" href="#result-object" aria-label="Link to Field notes">#</a></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>outcome</code></td>
+              <td><strong>The review decision. Branch on this.</strong></td>
+            </tr>
+            <tr>
+              <td><code>status</code></td>
+              <td>Legacy top-level state: <code>pass</code> · <code>fail</code> · <code>error</code>. <code>approved_with_notes</code> collapses to <code>pass</code>, so it erases the distinction you care about — don't decide on it. <code>error</code> means the run broke; see <a href="#errors">failures</a>.</td>
+            </tr>
+            <tr>
+              <td><code>checks[].id</code></td>
+              <td><strong>The contract.</strong> Bind to this.</td>
+            </tr>
+            <tr>
+              <td><code>checks[].name</code></td>
+              <td>Display text the model may reword. Never match on it.</td>
+            </tr>
+            <tr>
+              <td><code>checks[].marker</code></td>
+              <td>Normalized 0–1 coordinates on the art — <code>{x: 0.84, y: 0.82}</code> is lower-right. Absent when the issue isn't locatable. Enough to pin the problem on a preview tile.</td>
+            </tr>
+            <tr>
+              <td><code>counts</code></td>
+              <td>Only non-zero statuses appear as keys.</td>
+            </tr>
+            <tr>
+              <td><code>blocking_failures</code></td>
+              <td>Check ids that are <code>fail</code> <em>and</em> <code>blocker</code>. Empty means nothing blocking.</td>
+            </tr>
+            <tr>
+              <td><code>colors</code></td>
+              <td>Extracted from the art. Compare against the colors the tenant declared.</td>
+            </tr>
+            <tr>
+              <td><code>unmapped_checks</code></td>
+              <td>Should always be <code>[]</code>. Non-empty means our prompt and catalog have drifted — nothing is dropped, but tell us.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Enums -->
+    <section id="enums">
+      <h2>Enums <a class="anchor" href="#enums" aria-label="Link to Enums">#</a></h2>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">Closed sets</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="ts">type Outcome  = "approved" | "approved_with_notes" | "requires_changes"
+type Severity = "blocker" | "required" | "advisory"
+type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "estimated"</pre>
+      </div>
+      <p>
+        <code>warning</code> is a real and common state — a borderline measurement that didn't fail.
+        Treat anything that isn't <code>pass</code> as "not clean", but reject only on
+        <code>blocking_failures</code>.
+      </p>
+
+      <h3>Mapping onto a card art form <a class="anchor" href="#enums" aria-label="Link to Mapping onto a card art form">#</a></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Result</th><th>Row transition</th></tr></thead>
+          <tbody>
+            <tr><td><code>outcome: "approved"</code></td><td>Approve</td></tr>
+            <tr><td><code>outcome: "approved_with_notes"</code></td><td>Hold for review — it passes, but it is worth a human glance</td></tr>
+            <tr><td><code>outcome: "requires_changes"</code></td><td>Reject, citing <code>blocking_failures</code></td></tr>
+            <tr><td><code>summary</code></td><td>The rejection reason. 1–2 sentences, fits a <code>VARCHAR(1024)</code>.</td></tr>
+            <tr><td><code>error.code</code> present</td><td><strong>No transition.</strong> Retry — see <a href="#errors">failures</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Check catalog -->
+    <section id="checks">
+      <h2>Check catalog <a class="anchor" href="#checks" aria-label="Link to Check catalog">#</a></h2>
+      <p>
+        The 18 rules applied to virtual card art. Most of them are questions about
+        <em>where</em> something sits, which is why a result can point at coordinates. Pick a zone
+        to see what it governs.
+      </p>
+
+      <figure class="zone-figure">
+        <svg class="zone-svg" viewBox="0 0 240 152" role="img" aria-label="Diagram of a virtual card showing the brand mark corners, product identifier area, and the lower-left PAN zone">
+          <rect x="1" y="1" width="238" height="150" rx="10"
+                fill="var(--paper)" stroke="var(--line-2)" stroke-width="1.5"/>
+
+          <!-- Upper-left / upper-right brand mark corners -->
+          <rect class="zone-region" data-zone="mark" x="12" y="12" width="66" height="30" rx="4"/>
+          <text class="zone-label" data-zone="mark" x="18" y="31">VISA MARK</text>
+
+          <rect class="zone-region" data-zone="mark" x="162" y="12" width="66" height="30" rx="4"/>
+          <text class="zone-label" data-zone="mark" x="168" y="31">VISA MARK</text>
+
+          <!-- Product identifier, adjacent to the mark -->
+          <rect class="zone-region" data-zone="identifier" x="162" y="46" width="66" height="18" rx="4"/>
+          <text class="zone-label" data-zone="identifier" x="168" y="58">IDENTIFIER</text>
+
+          <!-- Lower-left PAN zone -->
+          <rect class="zone-region" data-zone="pan" x="12" y="102" width="112" height="38" rx="4"/>
+          <text class="zone-label" data-zone="pan" x="18" y="125">PAN ZONE — KEEP CLEAR</text>
+
+          <!-- Whole-card region, drawn last so it sits above -->
+          <rect class="zone-region" data-zone="card" x="6" y="6" width="228" height="140" rx="7"/>
+        </svg>
+
+        <div class="zone-key">
+          <div class="zone-key-title">Zones</div>
+          <button class="zone-item" data-zone="mark">
+            <strong>Visa Brand Mark</strong>
+            Upper-left or upper-right only — never a lower corner.
+          </button>
+          <button class="zone-item" data-zone="identifier">
+            <strong>Product identifier</strong>
+            Same corner as the mark, directly beneath it, never separated.
+          </button>
+          <button class="zone-item" data-zone="pan">
+            <strong>PAN zone</strong>
+            Lower-left area stays clear so the card number stays legible.
+          </button>
+          <button class="zone-item" data-zone="card">
+            <strong>Whole card</strong>
+            Orientation, color, and everything prohibited anywhere on the art.
+          </button>
+        </div>
+      </figure>
+
+      <div class="table-wrap wide">
+        <table>
+          <thead><tr><th>Check id</th><th>Category</th><th>Severity</th><th>Reason codes</th></tr></thead>
+          <tbody>
+            <tr data-zone="mark"><td><code>visa_brand_mark_present</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>mark_absent</code></td></tr>
+            <tr data-zone="mark"><td><code>visa_brand_mark_position</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>position_lower_edge</code> <code>position_wrong_corner</code> <code>mark_absent</code></td></tr>
+            <tr data-zone="mark"><td><code>visa_brand_mark_size</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>size_undersized</code> <code>size_oversized</code> <code>size_unverifiable</code></td></tr>
+            <tr data-zone="mark"><td><code>visa_brand_mark_margin</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>margin_below_minimum</code> <code>margin_borderline</code> <code>margin_unverifiable</code></td></tr>
+            <tr data-zone="mark"><td><code>visa_brand_mark_contrast</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>contrast_insufficient_wordmark</code> <code>contrast_insufficient_identifier</code></td></tr>
+            <tr data-zone="identifier"><td><code>product_identifier</code></td><td>product_identifier</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_absent</code> <code>identifier_wrong_corner</code> <code>identifier_separated_from_mark</code> <code>identifier_in_pan_zone</code> <code>identifier_casing</code> <code>identifier_tier_mismatch</code></td></tr>
+            <tr data-zone="card"><td><code>issuer_logo_present</code></td><td>required_elements</td><td><span class="sev required">required</span></td><td><code>issuer_logo_absent</code></td></tr>
+            <tr data-zone="card"><td><code>no_emv_chip</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_hologram</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_magnetic_stripe</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_cardholder_name</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_pan</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_expiry_date</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_physical_card_photography</code></td><td>prohibited</td><td><span class="sev required">required</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="pan"><td><code>lower_left_area_clear</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>pan_zone_obstructed</code> <code>pan_zone_legibility_risk</code></td></tr>
+            <tr data-zone="identifier"><td><code>design_elements_clear_of_identifier</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_obstructed</code></td></tr>
+            <tr data-zone="card"><td><code>landscape_orientation</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>orientation_not_landscape</code></td></tr>
+            <tr data-zone="card"><td><code>full_color</code></td><td>layout</td><td><span class="sev required">required</span></td><td><code>grayscale_or_monochrome</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Technical checks -->
+    <section id="tech-checks">
+      <h2>Technical checks <a class="anchor" href="#tech-checks" aria-label="Link to Technical checks">#</a></h2>
+      <p>
+        Four structural measurements ride along in <code>tech_checks</code>:
+        <code>dimensions</code>, <code>file_format</code>, <code>dpi</code>, and
+        <code>bleed_zone</code>.
+      </p>
+      <p>
+        <code>dpi</code> here means <strong>calculated</strong> DPI ≥ 72, not "declared density
+        equals 72" — a PNG declaring 300 DPI passes this check.
+      </p>
+
+      <div class="note">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.3v4M8 4.9v.1"/></svg></span>
+        <div>
+          <p>This service runs <em>after</em> your own structural validation, not instead of it. If
+          you already reject non-PNG or wrong-sized art before submitting, these four should always
+          pass — ignore them for the review decision.</p>
+          <p>A failure means the two layers disagree about the same file. That is worth an alert,
+          not a rejection.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Errors -->
+    <section id="errors">
+      <h2>Errors &amp; failures <a class="anchor" href="#errors" aria-label="Link to Errors and failures">#</a></h2>
+      <p>
+        A run that never produced an analysis still publishes a result, so <em>"this card has
+        problems"</em> stays distinguishable from <em>"the checker fell over"</em>.
+      </p>
+
+      <div class="note danger">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
+        <div><p>Never reject a design on a failure result. Leave the submission open and retry.</p></div>
+      </div>
+
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">Failure result</span>
+          <button class="copy-btn" aria-label="Copy code">
+            <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 00-1-1h-7a1 1 0 00-1 1v7a1 1 0 001 1h1"/></svg>
+            <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 5"/></svg>
+          </button>
+        </div>
+        <pre data-hl="json">{
+  "schema_version": "1.0",
+  "run_id": "msr0w4np-1eoerz",
+  "card_type": null,
+  "generated_at": "2026-08-13T04:12:09.114Z",
+  "outcome": null,
+  "status": "error",
+  "error": { "code": "function_timeout", "message": "", "step": "visual" },
+  "project":    { "id": null, "name": null },
+  "submission": { "file_name": "art.png" },
+  "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" }
+}</pre>
+      </div>
+
+      <p>
+        The cheapest discriminator is <code>status === "error"</code>. A failure result carries no
+        <code>checks</code>, <code>counts</code>, <code>summary</code>, or
+        <code>blocking_failures</code> at all, and <code>outcome</code> is <code>null</code>.
+        <code>card_type</code> is <code>null</code> when the run failed before the type was resolved.
+      </p>
+
+      <h3>Error codes <a class="anchor" href="#errors" aria-label="Link to Error codes">#</a></h3>
+      <p>A closed set. Anything unrecognized becomes <code>internal_error</code> rather than being misattributed.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>What happened</th></tr></thead>
+          <tbody>
+            <tr><td><code>function_timeout</code></td><td>The run hit the 300s ceiling.</td></tr>
+            <tr><td><code>visual_budget_exhausted</code></td><td>The agent ran out of budget mid-analysis.</td></tr>
+            <tr><td><code>abandoned</code></td><td>The client disconnected before a streaming run finished.</td></tr>
+            <tr><td><code>agent_output_unparseable</code></td><td>The analysis came back in a shape we could not read.</td></tr>
+            <tr><td><code>spec_check_failed</code></td><td>The technical measurement pass failed.</td></tr>
+            <tr><td><code>card_type_indeterminate</code></td><td>Card type could not be inferred and none was sent.</td></tr>
+            <tr><td><code>unsupported_card_type</code></td><td>Resolved to a type this pipeline cannot analyze.</td></tr>
+            <tr><td><code>card_art_missing</code></td><td>No art bytes to analyze.</td></tr>
+            <tr><td><code>missing_project_id</code></td><td>Rocketlane flow, no project id resolved.</td></tr>
+            <tr><td><code>no_attachment_resolved</code></td><td>Rocketlane flow, no attachment anchors in the payload.</td></tr>
+            <tr><td><code>attachment_download_failed</code></td><td>Rocketlane returned no bytes for the attachment.</td></tr>
+            <tr><td><code>internal_error</code></td><td>Anything else.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Limits -->
+    <section id="limits">
+      <h2>Limits <a class="anchor" href="#limits" aria-label="Link to Limits">#</a></h2>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td style="width:34%"><strong>Run duration</strong></td><td>100–160s typical. The function ceiling is 300s; the pipeline self-limits at 280s so it degrades rather than dying mid-step.</td></tr>
+            <tr><td><strong>Results per run</strong></td><td>One per analyzed file. A run covering several attachments returns several results, each with its own <code>attachment_id</code>.</td></tr>
+            <tr><td><strong>Virtual only</strong></td><td>Physical results carry <code>schema_version: "0-internal"</code>, are never pushed to webhooks, and their enums may change without notice.</td></tr>
+            <tr><td><strong>Multipart parse</strong></td><td>30s. A slower upload fails with <code>Multipart parse timed out</code>.</td></tr>
+            <tr><td><strong>Report URLs</strong></td><td>Public and permanent. Unguessable, but unauthenticated — don't put one anywhere you wouldn't put the report itself.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="foot">
+        <span>Internal Rain service. Questions → Beto.</span>
+        <span><a href="/upload">Try it in the playground →</a></span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── On this page ────────────────────────────────── -->
+  <aside class="toc" aria-label="On this page">
+    <div class="toc-title">On this page</div>
+    <div id="tocLinks"></div>
+  </aside>
+
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ── Theme ─────────────────────────────────────────── */
+  const root = document.documentElement;
+  const stored = localStorage.getItem('cac-theme');
+  const initial = stored || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.setAttribute('data-theme', initial);
+
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('cac-theme', next);
+  });
+
+  /* ── Syntax highlighting ───────────────────────────── */
+  // Escape first so the patterns below never see markup, then tokenize the
+  // escaped text — quotes survive escaping, so string matching still works.
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const wrap = (cls, text) => `<span class="tok-${cls}">${text}</span>`;
+
+  const highlighters = {
+    // String first in the alternation: a `//` inside a URL is consumed by the
+    // string branch and never mistaken for a comment.
+    json: (src) => src.replace(
+      /("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+\.?\d*(?:[eE][+-]?\d+)?)|(\/\/[^\n]*)/g,
+      (m, key, colon, str, kw, num, com) => {
+        if (key !== undefined) return wrap('key', key) + colon;
+        if (str !== undefined) return wrap('str', str);
+        if (kw  !== undefined) return wrap('kw', kw);
+        if (num !== undefined) return wrap('num', num);
+        return wrap('com', com);
+      }
+    ),
+    ts: (src) => src.replace(
+      /(\/\/[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\b(const|let|return|import|from|function|await|async|type|if|new|null|true|false)\b/g,
+      (m, com, str, kw) => {
+        if (com !== undefined) return wrap('com', com);
+        if (str !== undefined) return wrap('str', str);
+        return wrap('kw', kw);
+      }
+    ),
+    bash: (src) => src.replace(
+      /(#[^\n]*)|("(?:\\.|[^"\\])*")|(\B-{1,2}[A-Za-z][\w-]*)|\b(curl)\b/g,
+      (m, com, str, flag, cmd) => {
+        if (com  !== undefined) return wrap('com', com);
+        if (str  !== undefined) return wrap('str', str);
+        if (flag !== undefined) return wrap('num', flag);
+        return wrap('fn', cmd);
+      }
+    ),
+    http: (src) => src.replace(
+      /^(GET|POST|PUT|DELETE)\b|^([A-Za-z][A-Za-z-]*)(:)/gm,
+      (m, method, header, colon) =>
+        method !== undefined ? wrap('kw', method) : wrap('key', header) + colon
+    ),
+  };
+
+  document.querySelectorAll('pre[data-hl]').forEach((pre) => {
+    const fn = highlighters[pre.dataset.hl];
+    if (!fn) return;
+    // textContent, not innerHTML: the source may contain &lt; entities that
+    // must be re-escaped as literal characters, not treated as markup.
+    pre.innerHTML = fn(esc(pre.textContent));
+  });
+
+  /* ── Copy buttons ──────────────────────────────────── */
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const block = btn.closest('.code');
+      // In a tabbed block, copy whichever panel the reader is looking at.
+      const pre = block.querySelector('.panel.active pre') || block.querySelector('pre');
+      try {
+        await navigator.clipboard.writeText(pre.textContent);
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1600);
+      } catch { /* clipboard blocked — the text is still selectable */ }
+    });
+  });
+
+  /* ── Language tabs (synced across the page) ────────── */
+  const setLang = (lang) => {
+    document.querySelectorAll('.code[data-group="lang"]').forEach((block) => {
+      const tabs = [...block.querySelectorAll('.tab')];
+      // Only switch blocks that actually offer this language.
+      if (!tabs.some((t) => t.dataset.lang === lang)) return;
+      tabs.forEach((t) => t.classList.toggle('active', t.dataset.lang === lang));
+      block.querySelectorAll('.panel').forEach((p) => {
+        p.classList.toggle('active', p.dataset.lang === lang);
+      });
+    });
+    localStorage.setItem('cac-lang', lang);
+  };
+
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => setLang(tab.dataset.lang));
+  });
+  const savedLang = localStorage.getItem('cac-lang');
+  if (savedLang) setLang(savedLang);
+
+  /* ── Build the "on this page" list ─────────────────── */
+  const tocBox = document.getElementById('tocLinks');
+  const headings = [...document.querySelectorAll('.content h2')];
+  headings.forEach((h) => {
+    const a = document.createElement('a');
+    a.className = 'toc-link';
+    a.href = '#' + h.parentElement.id;
+    // The anchor "#" is part of the heading; take the text without it.
+    a.textContent = h.firstChild.textContent.trim();
+    tocBox.appendChild(a);
+  });
+
+  /* ── Scroll spy ────────────────────────────────────── */
+  const sections = [...document.querySelectorAll('.content section')];
+  const navLinks = [...document.querySelectorAll('.nav-link')];
+  const tocLinks = [...document.querySelectorAll('.toc-link')];
+
+  const markActive = (id) => {
+    navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
+    tocLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
+  };
+
+  // Track visibility per section rather than reacting to individual crossings,
+  // so the topmost visible section always wins even when several intersect.
+  const visible = new Set();
+  const spy = new IntersectionObserver((entries) => {
+    entries.forEach((e) => e.isIntersecting ? visible.add(e.target) : visible.delete(e.target));
+    if (!visible.size) return;
+    const top = sections.find((s) => visible.has(s));
+    if (top) markActive(top.id);
+  }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+
+  sections.forEach((s) => spy.observe(s));
+
+  /* ── Sidebar filter ────────────────────────────────── */
+  document.getElementById('navSearch').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.nav-group').forEach((group) => {
+      let shown = 0;
+      group.querySelectorAll('.nav-link').forEach((link) => {
+        const hit = !q || link.textContent.toLowerCase().includes(q);
+        link.classList.toggle('hidden', !hit);
+        if (hit) shown++;
+      });
+      group.classList.toggle('hidden', shown === 0);
+    });
+  });
+
+  /* ── Mobile navigation ─────────────────────────────── */
+  const sidebar = document.getElementById('sidebar');
+  const scrim = document.getElementById('scrim');
+  const menuBtn = document.getElementById('menuBtn');
+
+  const closeNav = () => {
+    sidebar.classList.remove('open');
+    scrim.classList.remove('open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  menuBtn.addEventListener('click', () => {
+    const open = sidebar.classList.toggle('open');
+    scrim.classList.toggle('open', open);
+    menuBtn.setAttribute('aria-expanded', String(open));
+  });
+  scrim.addEventListener('click', closeNav);
+  sidebar.addEventListener('click', (e) => { if (e.target.closest('.nav-link')) closeNav(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
+
+  /* ── Zone diagram ──────────────────────────────────── */
+  // The catalog rows and the diagram are two views of the same fact: which
+  // part of the card a rule governs. Lighting one lights the other.
+  const litZone = (zone) => {
+    document.querySelectorAll('.zone-svg [data-zone]').forEach((el) => {
+      el.classList.toggle('lit', el.dataset.zone === zone);
+    });
+    document.querySelectorAll('.zone-item').forEach((el) => {
+      el.classList.toggle('on', el.dataset.zone === zone);
+    });
+    document.querySelectorAll('#checks tbody tr').forEach((row) => {
+      row.style.opacity = !zone || row.dataset.zone === zone ? '' : '0.35';
+    });
+  };
+
+  let activeZone = null;
+  document.querySelectorAll('.zone-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      activeZone = activeZone === item.dataset.zone ? null : item.dataset.zone;
+      litZone(activeZone);
+    });
+    item.addEventListener('mouseenter', () => { if (!activeZone) litZone(item.dataset.zone); });
+    item.addEventListener('mouseleave', () => { if (!activeZone) litZone(null); });
+  });
+})();
+</script>
+</body>
+</html>
