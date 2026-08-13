@@ -5,6 +5,7 @@ import { storeReport } from '../lib/blob-report.js';
 import { inferCardType } from '../lib/card-type.js';
 import { extractCardArtFile, cardTypeFromForm } from '../lib/dock.js';
 import { createRunLog } from '../lib/run-log.js';
+import { emitResult, emitFailure, classifyError } from '../lib/result-emit.js';
 
 // Receives Dock (dock.us) webhook events — currently subscribed to
 // workspace.form.submitted. Verifies the X-Dock-Signature HMAC, then runs the
@@ -92,7 +93,7 @@ async function processDockSubmission({ assoc, eventId, runLog, deadlineAt }) {
     const buffer = Buffer.from(await res.arrayBuffer());
     runLog.set({ downloads: [{ filename: cardArt.fileName, bytes: buffer.length, ok: true }] });
 
-    const { pdfBuffer, status, summary } = await runAnalysis({
+    const { pdfBuffer, status, summary, results, techJson } = await runAnalysis({
       file: buffer,
       fileName: cardArt.fileName,
       cardType,
@@ -110,6 +111,21 @@ async function processDockSubmission({ assoc, eventId, runLog, deadlineAt }) {
     const { pdfUrl } = await storeReport({ pdfBuffer, projectId: reportKey });
     console.log(`[dock-webhook] ${eventId}: report ready status=${status} pdfUrl=${pdfUrl}`);
     console.log(`[dock-webhook] ${eventId}: summary: ${summary}`);
+
+    // Slack delivery is still blocked on an account→project mapping, but the
+    // structured result has no such dependency — publish it regardless.
+    const emitted = await emitResult({
+      runId: runLog.runId,
+      results, techJson, cardType,
+      projectId: reportKey,
+      projectName: assoc.account?.name || null,
+      fileName: cardArt.fileName,
+      pdfUrl,
+      source: 'dock',
+      trigger: { endpoint: '/api/dock-webhook', eventId },
+      deadlineAt,
+    });
+
     // TODO: deliver pdfUrl to the customer once account→Rocketlane-project
     // mapping exists (see lib/delivery.js + [[project-overview]]).
     runLog.addResult({
@@ -118,11 +134,24 @@ async function processDockSubmission({ assoc, eventId, runLog, deadlineAt }) {
       status,
       summary,
       pdfUrl,
+      outcome: emitted.outcome,
+      resultUrl: emitted.resultUrl,
+      webhook: emitted.webhook,
       delivery: { slack: 'skipped (no Dock account → Rocketlane project mapping)' },
     });
     await runLog.finish();
   } catch (err) {
     console.error(`[dock-webhook] ${eventId}: processDockSubmission error:`, err);
+    const errorCode = classifyError(err);
+    await emitFailure({
+      runId: runLog.runId,
+      errorCode,
+      message: String(err?.message || err),
+      step: err?.step || null,
+      source: 'dock',
+      trigger: { endpoint: '/api/dock-webhook', eventId },
+      deadlineAt,
+    });
     await runLog.fail(err);
   }
 }

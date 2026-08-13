@@ -31,6 +31,12 @@ For location-specific failures/warnings, include marker_x/marker_y (0.0–1.0, p
 
 Emit the RESULTS_JSON_START / RESULTS_JSON_END block per the Turn 1 prompt. The system parses this to generate the PDF report — the annotated report itself is rendered off-session; you never generate a PDF.
 
+The Turn 1 prompt supplies the exact `visual_checks` array to fill in, and each entry carries an `"id"`. Those ids are the stable machine identifiers that downstream systems key on:
+
+- Reproduce every `"id"` EXACTLY as given. Never rename, merge, split, reorder, or omit an entry, and never invent one. If an observation does not fit any listed check, put it in that check's `notes` — do not add an array entry for it.
+- `"name"` is display text. You may adjust it to record what you measured (e.g. appending a measured height); the `"id"` must not change.
+- For any check whose result is `fail` or `warning`, add a `"reason_code"` chosen from the table the Turn 1 prompt lists for that check, or `"other"` when none fit. Passing checks carry no reason code.
+
 ### Step 3: Output Human-Readable Summary
 
 ```

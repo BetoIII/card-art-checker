@@ -8,6 +8,7 @@ import { getProjectName, downloadAttachment, resolveLatestSubmission } from '../
 import { identifySlackChannel } from '../lib/slack-identify.js';
 import { getImageSize } from '../lib/image-size.js';
 import { createRunLog } from '../lib/run-log.js';
+import { emitResult, emitFailure, classifyError } from '../lib/result-emit.js';
 
 // Card-art check, keyed on a Rocketlane projectId. The caller is a Rocketlane
 // "Form completed" HTTP automation on the custom-card-request form. Its payload
@@ -168,16 +169,30 @@ function pickCardArtByDimensions(files) {
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
 // background (waitUntil) after the download stage has confirmed the bytes exist.
 // Returns true on success so the caller can settle the run log's final status.
-async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt }) {
-  try {
-    const cardType = inferCardType(filename, cardTypeOverride);
-    if (!cardType) {
-      console.error(`[card-art-check] could not infer card type for ${filename} (attachment ${attachmentId}) — aborting`);
-      runLog?.addResult({ attachmentId, filename, error: `Could not infer card type for "${filename}"` });
-      return false;
-    }
+async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt, callbackUrl }) {
+  const emitContext = {
+    runId: runLog?.runId,
+    attachmentId,
+    projectId,
+    projectName,
+    fileName: filename,
+    source: 'rocketlane',
+    trigger: { endpoint: '/api/card-art-check' },
+    callbackUrl,
+    deadlineAt,
+  };
 
-    const { pdfBuffer, status, summary } = await runAnalysis({
+  const cardType = inferCardType(filename, cardTypeOverride);
+  if (!cardType) {
+    console.error(`[card-art-check] could not infer card type for ${filename} (attachment ${attachmentId}) — aborting`);
+    const error = `Could not infer card type for "${filename}"`;
+    const emitted = await emitFailure({ ...emitContext, errorCode: 'card_type_indeterminate', message: error });
+    runLog?.addResult({ attachmentId, filename, error, errorCode: 'card_type_indeterminate', resultUrl: emitted.resultUrl, webhook: emitted.webhook });
+    return false;
+  }
+
+  try {
+    const { pdfBuffer, status, summary, results, techJson } = await runAnalysis({
       file: buffer,
       fileName: filename,
       cardType,
@@ -193,6 +208,11 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
     const { pdfUrl } = await storeReport({ pdfBuffer, projectId });
     console.log(`[card-art-check] pdfUrl=${pdfUrl} attachment=${attachmentId} project=${projectId}`);
 
+    // Publish the structured result before Slack delivery: the report is the
+    // deliverable, and a Slack channel-identification miss must not withhold
+    // it from the consumer waiting on the webhook.
+    const emitted = await emitResult({ ...emitContext, results, techJson, cardType, pdfUrl });
+
     const delivery = await deliverReport({
       projectId,
       projectName,
@@ -203,12 +223,22 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
       channelPromise,
       runLog,
     });
-    console.log(`[card-art-check] delivered attachment ${attachmentId}:`, delivery);
-    runLog?.addResult({ attachmentId, filename, cardType, status, summary, pdfUrl, delivery });
+    console.log(`[card-art-check] delivered attachment ${attachmentId}:`, delivery, 'webhook:', emitted.webhook);
+    runLog?.addResult({
+      attachmentId, filename, cardType, status, summary, pdfUrl, delivery,
+      outcome: emitted.outcome, resultUrl: emitted.resultUrl, webhook: emitted.webhook,
+    });
     return true;
   } catch (err) {
     console.error(`[card-art-check] analyzeAndDeliver error (attachment ${attachmentId}, project ${projectId}):`, err);
-    runLog?.addResult({ attachmentId, filename, error: String(err?.message || err) });
+    const errorCode = classifyError(err);
+    const emitted = await emitFailure({
+      ...emitContext, cardType, errorCode, message: String(err?.message || err), step: err?.step || null,
+    });
+    runLog?.addResult({
+      attachmentId, filename, error: String(err?.message || err),
+      errorCode, resultUrl: emitted.resultUrl, webhook: emitted.webhook,
+    });
     return false;
   }
 }
@@ -255,6 +285,7 @@ export async function POST(request) {
   const qsProjectId = url.searchParams.get('projectId');
   const qsAttachmentId = url.searchParams.get('attachmentId');
   const qsCardType = url.searchParams.get('cardType');
+  const qsCallbackUrl = url.searchParams.get('callbackUrl');
 
   let body = null;
   if (rawBody.trim()) {
@@ -279,11 +310,14 @@ export async function POST(request) {
     findProjectIdInJson(body) ??
     projectIdFromRawBody(rawBody);
   const cardTypeOverride = normalizeCardType(qsCardType) ?? normalizeCardType(body?.cardType);
+  // Optional per-request result callback. Validated against the allowlist in
+  // lib/webhook-out.js before anything is sent — never trusted as given.
+  const callbackUrl = (qsCallbackUrl || body?.callbackUrl || '').trim() || null;
 
   if (!looksLikeId(projectId)) {
     console.warn('[card-art-check] 400 projectId missing or unresolved — qs:', JSON.stringify({ qsProjectId }), 'body:', rawBody.slice(0, 2000));
     await runLog.fail('Missing or unresolved projectId');
-    return Response.json({ error: 'Missing or unresolved projectId' }, { status: 400 });
+    return Response.json({ error: 'Missing or unresolved projectId', runId: runLog.runId }, { status: 400 });
   }
   runLog.set({ projectId, cardTypeOverride });
 
@@ -327,7 +361,7 @@ export async function POST(request) {
     // so Rocketlane doesn't retry/error, and stop here.
     console.warn(`[card-art-check] 200 no card-art attachment resolved for project ${projectId} — skipping analysis. body:`, rawBody.slice(0, 2000));
     await runLog.skip('No card-art attachment resolved');
-    return Response.json({ ok: true, queued: false, projectId, reason: 'No card-art attachment resolved' });
+    return Response.json({ ok: true, queued: false, projectId, runId: runLog.runId, reason: 'No card-art attachment resolved' });
   }
   console.log(`[card-art-check] project=${projectId} attachments=[${attachmentIds.join(', ')}]`);
 
@@ -356,8 +390,14 @@ export async function POST(request) {
   // analysis or delivery.
   if (downloaded.length === 0) {
     await runLog.fail('All attachment downloads failed');
+    await emitFailure({
+      runId: runLog.runId, projectId, source: 'rocketlane',
+      trigger: { endpoint: '/api/card-art-check' },
+      errorCode: 'attachment_download_failed',
+      message: 'All attachment downloads failed', step: 'download', callbackUrl, deadlineAt,
+    });
     return Response.json(
-      { error: 'All attachment downloads failed', projectId, failed },
+      { error: 'All attachment downloads failed', projectId, runId: runLog.runId, failed },
       { status: 502 }
     );
   }
@@ -407,7 +447,7 @@ export async function POST(request) {
   // function alive through the final blob write.
   waitUntil((async () => {
     const outcomes = await Promise.all(toAnalyze.map(({ attachmentId, buffer, filename }) =>
-      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt })
+      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt, callbackUrl })
     ));
     await runLog.finish(outcomes.every(Boolean) ? 'completed' : 'failed');
   })());
@@ -416,6 +456,9 @@ export async function POST(request) {
     ok: true,
     queued: true,
     projectId,
+    // Returned so a caller can poll GET /api/result/:runId without having to
+    // configure a callback. Analysis is still running at this point.
+    runId: runLog.runId,
     analyzing: toAnalyze.map((d) => d.attachmentId),
     downloaded: downloaded.map((d) => d.attachmentId),
     failed: failed.map((f) => f.attachmentId),

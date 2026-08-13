@@ -4,6 +4,7 @@ import { storeReport } from '../lib/blob-report.js';
 import { inferCardType, extOf } from '../lib/card-type.js';
 import { getProjectName } from '../lib/rocketlane.js';
 import { createRunLog } from '../lib/run-log.js';
+import { emitResult, emitFailure, classifyError } from '../lib/result-emit.js';
 
 // ── Multipart parser ─────────────────────────────────────────────────
 
@@ -157,7 +158,7 @@ export async function POST(request) {
         send('progress', { step: 'rocketlane', message: `Project: ${projectName}`, status: 'done' });
         runLog.set({ projectName });
 
-        const { pdfBuffer, status, summary } = await runAnalysis({
+        const { pdfBuffer, status, summary, results, techJson, cardType: resolvedCardType } = await runAnalysis({
           file,
           fileName,
           backFile,
@@ -171,11 +172,26 @@ export async function POST(request) {
         const { pdfUrl } = await storeReport({ pdfBuffer, projectId });
         send('progress', { step: 'blob_upload', message: 'Report stored', status: 'done' });
 
+        const emitted = await emitResult({
+          runId: runLog.runId,
+          results, techJson,
+          cardType: resolvedCardType,
+          projectId, projectName, fileName, pdfUrl,
+          source: 'upload',
+          trigger: { endpoint: '/api/card-check' },
+          deadlineAt,
+        });
+
         send('complete', {
           status,
           summary,
           cardType,
           pdfUrl,
+          // The manual/playground path is where drift shows up first, so the
+          // structured outcome and its result URL are surfaced to the client.
+          runId: runLog.runId,
+          outcome: emitted.outcome,
+          resultUrl: emitted.resultUrl,
           delivery: {
             projectId,
             projectName,
@@ -192,12 +208,24 @@ export async function POST(request) {
           status,
           summary,
           pdfUrl,
+          outcome: emitted.outcome,
+          resultUrl: emitted.resultUrl,
+          webhook: emitted.webhook,
           // Slack delivery is a separate client-triggered call (/api/card-deliver).
           delivery: { slack: 'client-triggered' },
         });
         await runLog.finish();
       } catch (err) {
         send('error', { message: err.message || 'An unexpected error occurred', step: err.step });
+        await emitFailure({
+          runId: runLog.runId,
+          errorCode: classifyError(err),
+          message: String(err?.message || err),
+          step: err?.step || null,
+          source: 'upload',
+          trigger: { endpoint: '/api/card-check' },
+          deadlineAt,
+        });
         await runLog.fail(err);
       } finally {
         try { controller.close(); } catch { /* already closed/cancelled */ }

@@ -52,6 +52,7 @@ Notes:
 | `/api/card-check` | Analysis + PDF generation, streams SSE | 300s |
 | `/api/card-deliver` | Slack + Rocketlane delivery, non-fatal per service | 60s |
 | `/api/card-art-check` | External-trigger entrypoint: resolve attachment IDs, download, analyze, store, deliver. See below. | 300s |
+| `/api/result/:runId` | Structured check results for a run. See below. | 30s |
 
 ## External-trigger API: `/api/card-art-check`
 
@@ -73,9 +74,10 @@ Both stages are awaited synchronously, so the HTTP response reflects whether the
 | `projectId` | yes | Numeric Rocketlane project ID. From the URL query string or JSON body. Used for Slack channel routing and Blob report path. |
 | attachment IDs | yes | One or more, sourced from `data-attachment-id="…"` anchors anywhere in the payload. An explicit `attachmentId` query-string/body field is also accepted (manual/legacy callers). |
 | `cardType` | no | `"virtual"` or `"physical"`. Override for ambiguous filenames; `.ai`/`.eps` always run physical regardless. Applies to every attachment in the request. |
+| `callbackUrl` | no | Where to POST the structured result. Honored only for hosts in `RESULT_WEBHOOK_ALLOWED_HOSTS`; otherwise the run falls back to `RESULT_WEBHOOK_URL`. See Structured results. |
 
 **Responses:**
-- `200 { ok: true, queued: true, projectId, downloaded: [...ids], failed: [...ids] }` — at least one attachment downloaded; analysis runs in the background via `waitUntil`.
+- `200 { ok: true, queued: true, projectId, runId, downloaded: [...ids], failed: [...ids] }` — at least one attachment downloaded; analysis runs in the background via `waitUntil`. Use `runId` with `GET /api/result/:runId`.
 - `400 { error: "Missing or unresolved projectId" }` / `{ error: "No attachment IDs found in payload" }`.
 - `401` — bad/missing secret. `500` — server missing `ROCKETLANE_WEBHOOK_SECRET`.
 - `502 { error: "All attachment downloads failed", projectId, failed }` — every download failed; nothing was analyzed.
@@ -86,6 +88,91 @@ Both stages are awaited synchronously, so the HTTP response reflects whether the
 curl -X POST "https://card-art-checker.vercel.app/api/card-art-check?projectId=12345&attachmentId=67890" \
   -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET"
 ```
+
+## Structured results
+
+Every run publishes a machine-readable result alongside the PDF. Two ways to consume it:
+
+**Pull** — `GET /api/result/:runId`, authenticated with the same
+`ROCKETLANE_WEBHOOK_SECRET` bearer token as the trigger endpoints. The trigger's 200 response
+returns the `runId`. A run analyzing several attachments yields several results, each with its
+own `attachment_id`:
+
+```bash
+curl -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET" \
+  https://card-art-checker.vercel.app/api/result/mfk2q1x-a7b3c9
+# → { "runId": "...", "count": 1, "results": [ { … } ] }
+```
+
+Returns `404` while a run is still in flight.
+
+**Push** — set `RESULT_WEBHOOK_URL` + `RESULT_WEBHOOK_SECRET` and each completed file POSTs an
+envelope. A per-request `?callbackUrl=` overrides the destination, but only for hosts listed in
+`RESULT_WEBHOOK_ALLOWED_HOSTS` — the payload embeds a permanent public report URL, so an
+unvalidated callback would leak it.
+
+```json
+{ "schema_version": "1.0",
+  "event": "card_art_check.completed",
+  "run_id": "mfk2q1x-a7b3c9", "attachment_id": "67890",
+  "occurred_at": "2026-08-12T18:04:11.000Z",
+  "data": { "…the result object…" } }
+```
+
+Verify with `X-Card-Art-Signature: sha256=hex(HMAC-SHA256(secret, "{timestamp}.{rawBody}"))`,
+where `timestamp` is the `X-Card-Art-Timestamp` header. The timestamp is inside the signed
+material, so a captured request cannot be replayed with a fresh one. `verifyPayload()` in
+`lib/webhook-out.js` is the reference implementation.
+
+Failures publish too, as `card_art_check.failed` with a closed `error.code` (e.g.
+`function_timeout`, `visual_budget_exhausted`, `agent_output_unparseable`).
+
+### The result object
+
+```jsonc
+{
+  "schema_version": "1.0",
+  "run_id": "…", "attachment_id": "…", "card_type": "virtual",
+  "outcome": "approved | approved_with_notes | requires_changes",
+  "status": "pass | fail",          // legacy two-state; approved_with_notes → pass
+  "summary": "1-2 sentence assessment",
+  "blocking_failures": ["visa_brand_mark_margin"],
+  "counts": { "pass": 16, "warning": 2 },
+  "checks": [
+    { "id": "visa_brand_mark_margin",
+      "name": "Visa Brand Mark margin (56px from edges)",
+      "category": "brand_mark", "severity": "blocker",
+      "status": "warning", "reason_code": "margin_borderline",
+      "notes": "…", "marker": { "x": 0.045, "y": 0.06 } }
+  ],
+  "tech_checks": [ { "id": "bleed_zone", "status": "warning", "measurements": { … } } ],
+  "colors": { "background": { "rgb": [68,78,92], "hex": "#444E5C" } },
+  "unmapped_checks": []
+}
+```
+
+`id` is the contract — `name` is display text the model may reword. The full check list,
+statuses, severities, and reason codes live in `lib/check-catalog.js`, which also **generates**
+the check list embedded in the agent prompt, so the two cannot drift apart.
+
+`unmapped_checks` holds anything the agent reported that the catalog does not know. It should be
+empty; a non-empty array in production means the prompt and catalog have diverged. Nothing is
+ever dropped.
+
+**Physical cards are not yet part of this contract.** No archived physical report exists to
+validate their enums against, so physical results are stored with
+`schema_version: "0-internal"` and are never sent to a webhook — they exist to build the corpus
+a v1.1 physical schema needs.
+
+## Tests
+
+```bash
+npm test    # node --test 'tests/*.test.js'
+```
+
+No test framework — `node:test` only. The suite is mostly a drift guard: it replays real check
+names extracted from archived reports through the catalog resolver, and normalizes the one
+surviving `_visual_results.json` artifact end to end.
 
 ## Deployment
 
