@@ -363,11 +363,16 @@ An unrecognized failure becomes `internal_error` rather than being misattributed
 
 ## 9. Mapping onto `CardArtForm`
 
+Using `CardArtFormStatus` from `rain-api/lib/api/repos/cardArtForm.ts`. Note that the
+`rain-api-contract` package declares a different, four-value enum — see
+[the integration guide §2](./rain-backoffice-integration-guide.md); that contradiction is
+unresolved and the team owns it.
+
 | Checker | → | Card art form |
 |---|---|---|
-| `outcome: "approved"` | → | `APPROVED` |
-| `outcome: "approved_with_notes"` | → | `UNDER_REVIEW` — passes, but worth a human glance |
-| `outcome: "requires_changes"` | → | `RAIN_REJECTED` (surfaced as `REJECTED`) |
+| `outcome: "approved"` | → | `RAIN_APPROVED` |
+| `outcome: "approved_with_notes"` | → | stay `UNDER_RAIN_REVIEW` — passes, but worth a human glance |
+| `outcome: "requires_changes"` | → | `RAIN_REJECTED` |
 | `summary` | → | `rejectionReason` — 1–2 sentences, fits `VARCHAR(1024)` |
 | `blocking_failures[]` | → | which checks to cite |
 | `checks[].id` / `reason_code` / `notes` | → | `CardArtFormValidationError` `{ field, code, message }` |
