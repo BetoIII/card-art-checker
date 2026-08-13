@@ -21,50 +21,53 @@ all in the payload.
 
 ## 1. Where it lands in your lifecycle
 
-**It automates the Rain review step.** Not the submission gate.
+**`validation.ts` is unchanged. The checker is a second step that runs after it**, and it
+automates the Rain review — not the submission gate.
 
 ```
-                      ┌─────────────────────── automated by the checker ──┐
-UNDER_RAIN_REVIEW ────┴──> RAIN_APPROVED ──> UNDER_VISA_REVIEW ──> VISA_APPROVED
-        │                                                          VISA_REJECTED
-        └────────────> RAIN_REJECTED  (+ rejectionReason)
+POST /cardArtForms
+      │
+      ├─ validation.ts ──── fails ──> 422, nothing stored     (inline, sub-second)
+      │                                                        the invariant holds
+      └─ passes ──> GCS upload ──> row: UNDER_RAIN_REVIEW ──> 201 to the tenant
+                                          │
+                                          └──> card art checker  (async, 100–160s)
+                                                     │
+                          ┌──────────────────────────┴─────────────┐
+                          ▼                                        ▼
+                    RAIN_APPROVED                            RAIN_REJECTED
+                          │                                  + rejectionReason
+                          ▼
+                  UNDER_VISA_REVIEW ──> VISA_APPROVED / VISA_REJECTED
 ```
 
-This fits `CardArtFormStatus` as it already exists: a row is born `UNDER_RAIN_REVIEW`, and
-Rain's verdict moves it to `RAIN_APPROVED` or `RAIN_REJECTED` with a reason. That is
-exactly the shape of an asynchronous automated check — you modeled it before you had one.
+Two layers, each doing what it's shaped for:
 
-### Why it can't be the submission gate
+| | Runs | Decides | On failure |
+|---|---|---|---|
+| `validation.ts` | inline, sub-second | is this **storable**? PNG, 1536×969, DPI, ≤20MB, icon, colors, contact | `422` with field errors — nothing is stored |
+| card art checker | async, 100–160s | is this **compliant**? 18 Visa rules | `RAIN_REJECTED` + `rejectionReason` |
 
-`repos/cardArtForm.ts` says:
+This ordering earns three things:
 
-> a stored row is born UNDER_RAIN_REVIEW (**submissions failing the automated checks are
-> never stored**)
+- **Your invariant survives.** `repos/cardArtForm.ts` promises that "submissions failing
+  the automated checks are never stored" — still true, because the gate is still
+  synchronous. A 100–160s agent check could never have held that line without making the
+  tenant wait two and a half minutes.
+- **Instant feedback survives.** A 1024×768 upload is still rejected in milliseconds with
+  *"Image size is incorrect."* The tenant never waits on us to be told something obvious.
+- **Junk never reaches a paid agent run.** Only structurally valid art gets that far.
 
-A check takes **100–160 seconds**, because a Claude agent inspects the art visually. To
-gate storage on it you would hold the tenant's HTTP request open for two and a half
-minutes. So one of two things has to be true:
+### One consequence worth knowing
 
-- **(a) Keep a synchronous pre-store gate.** `validation.ts` stays as the thing that
-  decides whether a submission is worth storing — structural facts only, sub-second — and
-  the checker becomes the Rain review that runs after. The "never stored" invariant holds
-  for malformed files, and compliance verdicts live where reviews live. **We recommend
-  this.**
-- **(b) Drop the invariant.** Everything is stored, and the checker's verdict is the only
-  automated judgment. Simpler to describe, but a tenant who uploads a 1024×768 JPEG waits
-  2.5 minutes to be told, and every junk upload costs a full agent run.
+Every submission that reaches the checker has already passed `validation.ts`, so our four
+`tech_checks` (`dimensions`, `file_format`, `dpi`, `bleed_zone`) should now *always* pass.
+You can ignore them for the review decision — but a `tech_checks` failure would mean the
+two layers disagree about the same file, which is worth an alert rather than a shrug.
 
-If you take (a), the split is:
-
-| | Runs | Decides |
-|---|---|---|
-| `validation.ts` | inline, sub-second | is this storable? PNG, dimensions, size, icon, colors, contact |
-| card art checker | async, 100–160s | is this compliant? 18 Visa rules |
-
-Under (b), three of `validateCardArtFormSubmission`'s four branches still have to stay —
-the checker never analyzes the **icon**, never parses your **color strings** (it extracts
-colors *from the art*), and knows nothing about **contact**. Only the `cardArt` branch is
-replaceable either way.
+The two layers measure DPI differently and it no longer matters: `validation.ts` rejects a
+*declared* density that isn't exactly 72, and it runs first, so a 300-DPI PNG never
+reaches our (more permissive) calculated ≥ 72 check.
 
 ---
 
@@ -213,12 +216,13 @@ Live in production, `main@0b0a759`.
 ## 5. What we need from you
 
 1. **Which status vocabulary** the transition code should write (§2).
-2. **(a) or (b)** on the submission gate (§1) — it decides whether `validation.ts` keeps
-   its structural checks.
-3. **A receiving URL**, plus a webhook secret you generate. Then push delivery is one
+2. **A receiving URL**, plus a webhook secret you generate. Then push delivery is one
    config change on our side.
-4. **Whether `approved_with_notes` should auto-approve** or hold for a human. We've
+3. **Whether `approved_with_notes` should auto-approve** or hold for a human. We've
    assumed hold.
+
+Settled: the checker is an additional step after `validation.ts`, which keeps its
+structural checks and its role as the pre-store gate.
 
 ---
 
@@ -227,12 +231,9 @@ Live in production, `main@0b0a759`.
 - **Virtual only.** Physical results carry `schema_version: "0-internal"`, are never
   pushed, and their enums may change. Back-office art is PNG/virtual, so this shouldn't bite.
 - **The icon is never analyzed** — only the card art.
-- **DPI means something different here:** the checker calculates DPI and passes ≥ 72;
-  `validation.ts` rejects a *declared* density that isn't exactly 72. A PNG declaring
-  300 DPI fails today and would pass the checker.
 - **`resultUrl` and `report.pdf_url` are public blob URLs.** Unguessable, but
   unauthenticated — treat them as secrets.
-- **Every submission costs an agent run.** Worth a cheap pre-flight gate if you take
-  option (b).
+- **Every submission that clears `validation.ts` costs an agent run.** That's the point of
+  keeping the structural gate in front.
 
 Questions → Beto.

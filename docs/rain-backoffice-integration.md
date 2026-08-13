@@ -383,25 +383,29 @@ unresolved and the team owns it.
 
 ---
 
-## 10. If this replaces `validation.ts`
+## 10. Relationship to `validation.ts`
 
-`validateCardArtFormSubmission` does four things; only the first is card art.
+**This service runs *after* `validation.ts`, as an additional step. Nothing in
+`validateCardArtFormSubmission` changes.**
 
-| | Covered here? |
-|---|---|
-| `validateDesignFile("cardArt", …)` | **yes** — plus 18 Visa rules it never attempted |
-| `validateDesignFile("icon", …)` (100×100) | **no** — the icon is never analyzed |
-| color string normalization (`rgb(r,g,b)`) | **no** — colors are *extracted*, not parsed |
-| contact (email and/or phone) | **no** |
+| | Runs | Decides |
+|---|---|---|
+| `validation.ts` | inline, sub-second | is this **storable**? PNG, 1536×969, DPI, ≤20MB, icon, colors, contact |
+| card art checker | async, 100–160s | is this **compliant**? the 18 Visa rules in §7 |
 
-Two behavior changes to plan for:
+The split keeps the repo's invariant that "submissions failing the automated checks are
+never stored" — the gate is still synchronous — and keeps millisecond feedback on obvious
+problems, while only structurally valid art ever reaches a paid agent run.
 
-1. **Instant feedback disappears.** A 1024×768 upload is rejected in milliseconds today.
-   Afterward it's accepted, stored to GCS, and rejected ~2.5 minutes later — and each one
-   costs a full agent run. Consider keeping a thin dimension/file-type pre-flight as a
-   cheap gate.
-2. **The DPI rule changes meaning** — see §7. A PNG declaring 300 DPI fails today and
-   passes afterward.
+Two consequences:
+
+1. **`tech_checks` become redundant.** Everything reaching the checker has already passed
+   the equivalent structural validation, so `dimensions`, `file_format`, `dpi` and
+   `bleed_zone` should always pass. Ignore them for the review decision — but a failure
+   means the two layers disagree about the same file, which is worth an alert.
+2. **The DPI difference is moot.** `validation.ts` rejects a *declared* density that isn't
+   exactly 72 and runs first, so a 300-DPI PNG never reaches the checker's more permissive
+   calculated ≥ 72 check (§7).
 
 ---
 
