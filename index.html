@@ -74,6 +74,11 @@
       border-radius: 2px;
     }
 
+    /* The shared nav carries this accent at the top of the window, so the
+       container's own bar would double it. Keyed to the class nav.js sets:
+       when the page is framed (no nav) this bar is still the page's accent. */
+    html.rn-nav-on .container::before { display: none; }
+
     /* ── Header ── */
     .header {
       display: flex;
@@ -608,6 +613,9 @@
       text-decoration: none;
     }
   </style>
+  <link rel="stylesheet" href="/assets/nav.css">
+  <script src="/assets/nav.js" data-tag="Playground"></script>
+
 </head>
 <body>
   <div class="container">

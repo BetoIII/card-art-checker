@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/nav.css">
+<script src="/assets/nav.js" data-tag="API reference" data-theme-toggle data-menu="#sidebar" data-menu-scrim="#scrim"></script>
 <style>
 :root {
   --paper:    #FFFFFF;
@@ -43,7 +45,9 @@
 
   --sidebar-w: 264px;
   --toc-w:     212px;
-  --topbar-h:  57px;
+  /* The bar's height is owned by nav.css; track it so the sticky columns and
+     the scroll offsets stay pinned to the real thing. */
+  --topbar-h:  var(--rn-nav-h, 57px);
 
   --grad: linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%);
 }
@@ -84,8 +88,7 @@ body {
   font-size: 15px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
-  /* The topbar is fixed, so the page has to make room for it. */
-  padding-top: var(--topbar-h);
+  /* Room for the fixed bar is reserved by nav.css. */
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -97,64 +100,11 @@ a:hover { text-decoration: underline; }
   border-radius: 3px;
 }
 
-/* ── Top bar ───────────────────────────────────────────── */
-
-.topbar {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  height: var(--topbar-h);
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 24px;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter: saturate(180%) blur(12px);
-  border-bottom: 1px solid var(--line);
-}
-.topbar::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: var(--grad);
-}
-
-.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.brand-name {
-  font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--ink);
-  white-space: nowrap;
-}
-.brand-tag {
-  font-family: var(--mono); font-size: 11px; font-weight: 500;
-  color: var(--faint); letter-spacing: 0.4px;
-  white-space: nowrap;
-}
-@media (max-width: 720px) { .brand-tag { display: none; } }
-
-.topbar-spacer { flex: 1; }
-
-.topbar-links { display: flex; align-items: center; gap: 20px; }
-.topbar-links a {
-  font-size: 13.5px; font-weight: 500; color: var(--muted);
-}
-.topbar-links a:hover { color: var(--ink); text-decoration: none; }
-@media (max-width: 900px) { .topbar-links { display: none; } }
-
-.icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px;
-  border: 1px solid var(--line-2); border-radius: 8px;
-  background: transparent; color: var(--muted);
-  cursor: pointer; transition: background 0.15s, color 0.15s;
-}
-.icon-btn:hover { background: var(--paper-3); color: var(--ink); }
-.icon-btn svg { width: 16px; height: 16px; }
-[data-theme="light"] .icon-moon { display: none; }
-[data-theme="dark"]  .icon-sun  { display: none; }
-
-.menu-btn { display: none; }
-@media (max-width: 1000px) { .menu-btn { display: inline-flex; } }
+/* The bar itself lives in /assets/nav.css. Only the hamburger is this page's
+   business: it opens the docs sidebar, so it appears at the width where that
+   sidebar becomes a drawer. */
+#rn-menu { display: none; }
+@media (max-width: 1000px) { #rn-menu { display: inline-flex; } }
 
 /* ── Shell ─────────────────────────────────────────────── */
 
@@ -661,26 +611,6 @@ tbody tr { transition: opacity 0.18s; }
 <body>
 
 <a class="skip" href="#main">Skip to content</a>
-
-<header class="topbar">
-  <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
-  </button>
-  <div class="brand">
-    <span class="brand-name">Card Art Checker</span>
-    <span class="brand-tag">API reference</span>
-  </div>
-  <div class="topbar-spacer"></div>
-  <nav class="topbar-links">
-    <a href="/upload">Playground</a>
-    <a href="#quickstart">Quickstart</a>
-    <a href="#checks">Check catalog</a>
-  </nav>
-  <button class="icon-btn" id="themeBtn" aria-label="Toggle dark mode">
-    <svg class="icon-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3.1"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1"/></svg>
-    <svg class="icon-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.6A5.8 5.8 0 016.4 2.5a5.9 5.9 0 107.1 7.1z"/></svg>
-  </button>
-</header>
 
 <div class="scrim" id="scrim"></div>
 
@@ -1596,7 +1526,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 
       <div class="foot">
         <span>Internal Rain service. Questions → Beto.</span>
-        <span><a href="/upload">Try it in the playground →</a></span>
+        <span><a href="/">Send a real request in the playground →</a></span>
       </div>
     </section>
 
@@ -1614,17 +1544,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 (() => {
   'use strict';
 
-  /* ── Theme ─────────────────────────────────────────── */
-  const root = document.documentElement;
-  const stored = localStorage.getItem('cac-theme');
-  const initial = stored || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  root.setAttribute('data-theme', initial);
-
-  document.getElementById('themeBtn').addEventListener('click', () => {
-    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    root.setAttribute('data-theme', next);
-    localStorage.setItem('cac-theme', next);
-  });
+  /* Theme and the sidebar drawer are handled by /assets/nav.js. */
 
   /* ── Syntax highlighting ───────────────────────────── */
   // Escape first so the patterns below never see markup, then tokenize the
@@ -1758,26 +1678,6 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
       group.classList.toggle('hidden', shown === 0);
     });
   });
-
-  /* ── Mobile navigation ─────────────────────────────── */
-  const sidebar = document.getElementById('sidebar');
-  const scrim = document.getElementById('scrim');
-  const menuBtn = document.getElementById('menuBtn');
-
-  const closeNav = () => {
-    sidebar.classList.remove('open');
-    scrim.classList.remove('open');
-    menuBtn.setAttribute('aria-expanded', 'false');
-  };
-
-  menuBtn.addEventListener('click', () => {
-    const open = sidebar.classList.toggle('open');
-    scrim.classList.toggle('open', open);
-    menuBtn.setAttribute('aria-expanded', String(open));
-  });
-  scrim.addEventListener('click', closeNav);
-  sidebar.addEventListener('click', (e) => { if (e.target.closest('.nav-link')) closeNav(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
 
   /* ── Zone diagram ──────────────────────────────────── */
   // The catalog rows and the diagram are two views of the same fact: which

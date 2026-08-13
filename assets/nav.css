@@ -1,0 +1,172 @@
+/* Shared top navigation for the card-art-checker front end.
+ *
+ * Self-contained on purpose: every page here is a standalone HTML file with
+ * its own token block, so this file defines every value it uses rather than
+ * inheriting one page's variables. Load it AFTER the page's own <style> so the
+ * bar wins any collision on .rn-* names.
+ *
+ * The bar is injected by nav.js, which also injects the spacer that reserves
+ * its height. Nothing here touches `body` — a page embedded in an iframe gets
+ * no bar and no spacer, and so no leftover gap. */
+
+:root {
+  --rn-nav-h: 57px;
+  --rn-nav-bg: #FFFFFF;
+  --rn-nav-ink: #0A0A0A;
+  --rn-nav-muted: #5B6169;
+  --rn-nav-faint: #868D96;
+  --rn-nav-line: #E6E9ED;
+  --rn-nav-line-2: #D8DCDF;
+  --rn-nav-hover: #F2F4F7;
+  --rn-nav-accent: #E84670;
+  --rn-nav-accent-soft: rgba(232, 70, 112, 0.10);
+  --rn-nav-font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --rn-nav-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+  --rn-nav-grad: linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%);
+}
+
+:root[data-theme="dark"] {
+  --rn-nav-bg: #0B0D16;
+  --rn-nav-ink: #F0F1F4;
+  --rn-nav-muted: #9BA2B0;
+  --rn-nav-faint: #767E8E;
+  --rn-nav-line: #1F2333;
+  --rn-nav-line-2: #2A2F42;
+  --rn-nav-hover: #171B2A;
+  --rn-nav-accent: #FF6B92;
+  --rn-nav-accent-soft: rgba(255, 107, 146, 0.14);
+}
+
+.rn-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 50;
+  box-sizing: border-box;
+  height: var(--rn-nav-h);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  font-family: var(--rn-nav-font);
+  background: color-mix(in srgb, var(--rn-nav-bg) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--rn-nav-line);
+}
+/* Browsers without color-mix still get an opaque bar rather than a clear one. */
+@supports not (background: color-mix(in srgb, red 50%, transparent)) {
+  .rn-nav { background: var(--rn-nav-bg); }
+}
+
+.rn-nav::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--rn-nav-grad);
+}
+
+.rn-nav *, .rn-nav *::before, .rn-nav *::after { box-sizing: border-box; }
+
+/* nav.js adds .rn-nav-on before first paint, so the space is reserved without
+   a layout shift — and never reserved on a framed page, which gets no bar.
+   The compound selector outranks each page's own `body` padding shorthand
+   regardless of which stylesheet loads first. */
+html.rn-nav-on body { padding-top: var(--rn-nav-h); }
+
+/* ── Brand ─────────────────────────────────────────────── */
+
+.rn-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  text-decoration: none;
+}
+.rn-brand:hover { text-decoration: none; }
+.rn-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--rn-nav-ink);
+  white-space: nowrap;
+}
+.rn-brand-tag {
+  font-family: var(--rn-nav-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--rn-nav-faint);
+  white-space: nowrap;
+}
+@media (max-width: 720px) { .rn-brand-tag { display: none; } }
+
+.rn-nav-spacer-flex { flex: 1; }
+
+/* ── Links ─────────────────────────────────────────────── */
+
+.rn-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rn-link {
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--rn-nav-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+}
+.rn-link:hover {
+  color: var(--rn-nav-ink);
+  background: var(--rn-nav-hover);
+  text-decoration: none;
+}
+.rn-link[aria-current="page"] {
+  color: var(--rn-nav-accent);
+  background: var(--rn-nav-accent-soft);
+  font-weight: 600;
+}
+
+/* Below the fold for links: collapse to a scrollable strip rather than
+   hiding destinations the reader may be looking for. */
+@media (max-width: 620px) {
+  .rn-nav { gap: 10px; padding: 0 14px; }
+  .rn-links { gap: 0; overflow-x: auto; scrollbar-width: none; }
+  .rn-links::-webkit-scrollbar { display: none; }
+  .rn-link { padding: 6px 8px; font-size: 13px; }
+}
+
+/* ── Buttons (menu, theme) ─────────────────────────────── */
+
+.rn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--rn-nav-line-2);
+  border-radius: 8px;
+  color: var(--rn-nav-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.rn-btn:hover { background: var(--rn-nav-hover); color: var(--rn-nav-ink); }
+.rn-btn svg { width: 16px; height: 16px; display: block; }
+
+:root[data-theme="dark"] .rn-icon-sun { display: none; }
+:root:not([data-theme="dark"]) .rn-icon-moon { display: none; }
+
+.rn-nav :focus-visible {
+  outline: 2px solid var(--rn-nav-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rn-nav *, .rn-nav *::before { transition-duration: 0.01ms !important; }
+}
