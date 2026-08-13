@@ -1,10 +1,13 @@
-# Card Art Checker — integration guide for rain-api
+# Card Art Checker — API contract
 
-Request and response shapes for submitting card art from the back-office card design
-flow and consuming the compliance result.
+Every request and response shape: what to POST, what comes back, and every enum a
+consumer has to switch on.
 
 **Base URL:** `https://card-art-checker.vercel.app`
-**Audience:** whoever wires `rain-api/lib/tenant/cardArtForms` to this service.
+**Audience:** whoever wires a service to this one.
+**Start here instead:** [`rain-backoffice-integration-guide.md`](./rain-backoffice-integration-guide.md)
+— what to build, in order, for the back-office card design flow. This file is the
+reference it points at.
 
 ---
 

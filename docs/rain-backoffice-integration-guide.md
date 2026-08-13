@@ -2,7 +2,7 @@
 
 **For:** the back-office card design team (`rain@hackathon/backOffice`)
 **From:** Beto — card art checker service
-**Contract reference:** [`rain-backoffice-integration.md`](./rain-backoffice-integration.md) — every request/response shape, enum, and check id.
+**Contract reference:** [`card-art-check-api-contract.md`](./card-art-check-api-contract.md) — every request/response shape, enum, and check id.
 
 ---
 
