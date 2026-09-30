@@ -8,7 +8,7 @@
 
 ## What you get
 
-Submit card art, get back a structured verdict on **18 Visa compliance rules** plus 4
+Submit card art, get back a structured verdict on **20 Visa compliance rules** plus 9
 technical checks: which passed, which failed, why, and where on the art. Enough to
 approve or reject a design without a human opening the file.
 
@@ -46,7 +46,7 @@ Two layers, each doing what it's shaped for:
 | | Runs | Decides | On failure |
 |---|---|---|---|
 | `validation.ts` | inline, sub-second | is this **storable**? PNG, 1536×969, DPI, ≤20MB, icon, colors, contact | `422` with field errors — nothing is stored |
-| card art checker | async, 100–160s | is this **compliant**? 18 Visa rules | `RAIN_REJECTED` + `rejectionReason` |
+| card art checker | async, 100–160s | is this **compliant**? 20 Visa rules | `RAIN_REJECTED` + `rejectionReason` |
 
 This ordering earns three things:
 

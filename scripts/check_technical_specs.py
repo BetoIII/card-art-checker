@@ -4,7 +4,9 @@ Technical spec checker for Visa virtual/digital AND physical card art.
 
 VIRTUAL (PNG, 1536x969):
   Dimensions, format (PNG), DPI (pixel_width / CARD_WIDTH_INCHES),
-  56px Visa Brand Mark margin, RGB color extraction.
+  Visa Brand Mark lockup (placed at 56px, 109px mark height, identifier
+  alignment, permitted flat ink color), square corners, no border frame,
+  RGB color extraction.
 
 PHYSICAL (.ai / .eps vector, or .png raster):
   File format, CR80 aspect ratio (~1.586:1), minimum rendered resolution,
@@ -59,6 +61,30 @@ REQUIRED_FORMAT = "PNG"
 CARD_WIDTH_INCHES = 3.375   # ISO ID-1 standard credit card width
 MIN_DPI_DIGITAL = 72        # Visa minimum DPI for digital card display
 VISA_MARK_EDGE_MARGIN = 56  # pixels — applies ONLY to the Visa Brand Mark
+
+# --- Virtual Visa Brand Mark lockup geometry (1536x969 scale) ---
+# Visa places the mark AT 56px, not "at least" 56px: it rejects marks that sit
+# too far from the edge with the same sentence it uses for too-close marks.
+# Visa-approved cards in the eval set measure 53-59px strict on both nearest
+# edges (most 54-57; one explicitly approved fix at 53/59), and the nearest
+# margin rejection is ~64px, so the band is 56 +/- 3 on the strict
+# letter-tip distances.
+VISA_MARK_MARGIN_TOLERANCE = 3
+# Visa's feedback describes one lockup: a 109px mark, and 170px from the top
+# of the mark to the product identifier's baseline. Approved cards measure
+# 104-109px tall on the wordmark (anti-aliased letter tips vary a few px).
+VISA_MARK_HEIGHT_PX = 109
+VISA_MARK_HEIGHT_TOLERANCE_PX = 7
+# The 142px "Option Two" in references/visa-requirements.md has no approved
+# example and Visa's recent feedback asks for 109px; a mark at that size is a
+# warning to confirm, not a pass.
+VISA_MARK_LEGACY_HEIGHT_PX = 142
+VISA_LOCKUP_COMPOSITE_PX = 170
+# Identifier edge vs. the mark's outer edge. Approved lockups sit within 3px.
+IDENTIFIER_ALIGN_TOLERANCE_PX = 6
+IDENTIFIER_ALIGN_FAIL_PX = 15
+# Visa Blue, per Visa's feedback ("R20 G52 B203").
+VISA_BLUE_RGB = (20, 52, 203)
 
 # --- Physical card constants (CR80, per ISO/IEC 7810) ---
 CR80_ASPECT_RATIO = 3.375 / 2.125            # ≈ 1.5882
@@ -224,9 +250,9 @@ def check_bleed_zone(img, trim_offsets=None, margin_px=None):
     """
     Measure the pixel distance from the Visa Brand Mark to card edges.
 
-    The Visa Brand Mark must be at least 56px (at the canonical 1536px-wide
-    scale) from the nearest card edges. This is the #1 reason for Visa card
-    art rejection.
+    PHYSICAL only: virtual art uses check_virtual_mark, which locates the mark
+    in either polarity and applies Visa's "placed at 56px" rule. Here the mark
+    must clear a minimum quiet zone from the trim edge.
 
     trim_offsets: optional {left, right, top, bottom} pixel offsets of the
     TrimBox inside the raster (from _check_physical_side's PDF-box pass).
@@ -571,6 +597,693 @@ def check_bleed_zone(img, trim_offsets=None, margin_px=None):
         "measured_from": "trim" if trim_offsets else "render_edge",
         "background_median": round(bg_median, 1),
         "mark_threshold": round(mark_thr, 1),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Virtual Visa Brand Mark lockup
+# ─────────────────────────────────────────────────────────────────
+#
+# check_bleed_zone above assumes one polarity (a white mark on a dark card, or
+# dark on light) with fixed brightness thresholds. That misses light-on-light
+# and metallic marks and can latch onto line patterns near the corner, so the
+# margin verdict falls back to the agent's eyeball or is simply wrong.
+# Virtual cards use this locator instead. Physical keeps check_bleed_zone,
+# whose thresholds are calibrated against Rain's canonical templates.
+#
+# The locator measures contrast against a LOCAL background (a coarse median,
+# so gradients and metallic textures cancel out) in either polarity, and finds
+# the wordmark by shape rather than brightness: letter-sized glyphs on one
+# line, about 3.1 times as wide as tall. The same pass yields the mark height,
+# the identifier baseline and alignment, and the mark's ink color.
+
+_WORDMARK_ASPECT = 3.1
+_MARK_CORNERS = ("upper-right", "lower-right", "upper-left")
+
+
+def _box_sum(mask, k):
+    """Count of True pixels in the k x k window centered on each pixel."""
+    m = mask.astype(np.int32)
+    h, w = m.shape
+    r = k // 2
+    padded = np.zeros((h + k, w + k), dtype=np.int32)
+    padded[r:r + h, r:r + w] = m
+    cs = np.zeros((h + k + 1, w + k + 1), dtype=np.int32)
+    cs[1:, 1:] = np.cumsum(np.cumsum(padded, axis=0), axis=1)
+    return cs[k:k + h, k:k + w] - cs[:h, k:k + w] - cs[k:k + h, :w] + cs[:h, :w]
+
+
+def _binary_open(mask, k):
+    """Erode then dilate with a k x k square: drops strokes thinner than k."""
+    eroded = _box_sum(mask, k) == k * k
+    return _box_sum(eroded, k) > 0
+
+
+def _label_components(mask, min_area=30):
+    """Bounding boxes of the 8-connected components of a boolean mask."""
+    from collections import deque
+    h, w = mask.shape
+    grid = mask.tolist()
+    seen = [[False] * w for _ in range(h)]
+    comps = []
+    for y0, x0 in zip(*[a.tolist() for a in np.nonzero(mask)]):
+        if seen[y0][x0]:
+            continue
+        seen[y0][x0] = True
+        queue = deque([(y0, x0)])
+        area, y1, y2, x1, x2 = 0, y0, y0, x0, x0
+        while queue:
+            y, x = queue.popleft()
+            area += 1
+            y1, y2, x1, x2 = min(y1, y), max(y2, y), min(x1, x), max(x2, x)
+            for yy in (y - 1, y, y + 1):
+                if yy < 0 or yy >= h:
+                    continue
+                row, seen_row = grid[yy], seen[yy]
+                for xx in (x - 1, x, x + 1):
+                    if 0 <= xx < w and row[xx] and not seen_row[xx]:
+                        seen_row[xx] = True
+                        queue.append((yy, xx))
+        if area >= min_area:
+            comps.append({"area": area, "y1": y1, "y2": y2, "x1": x1, "x2": x2})
+    return comps
+
+
+def _merge_split_glyphs(comps):
+    """
+    Rejoin a glyph the threshold split in two (a metallic "S" often breaks at
+    its waist). Pieces merge only when they overlap horizontally, are similar
+    in height, and are each well short of the joined height — which keeps the
+    wordmark from merging with the identifier line beneath it.
+    """
+    merged = []
+    for c in sorted(comps, key=lambda c: c["x1"]):
+        for o in merged:
+            overlap = min(o["x2"], c["x2"]) - max(o["x1"], c["x1"])
+            narrower = min(o["x2"] - o["x1"], c["x2"] - c["x1"]) + 1
+            joined_h = max(o["y2"], c["y2"]) - min(o["y1"], c["y1"]) + 1
+            h1, h2 = o["y2"] - o["y1"] + 1, c["y2"] - c["y1"] + 1
+            vgap = max(c["y1"] - o["y2"], o["y1"] - c["y2"])
+            if (overlap >= 0.5 * narrower and vgap <= 0.2 * joined_h + 2
+                    and max(h1, h2) <= 0.65 * joined_h
+                    and min(h1, h2) >= 0.5 * max(h1, h2)):
+                o.update(area=o["area"] + c["area"],
+                         y1=min(o["y1"], c["y1"]), y2=max(o["y2"], c["y2"]),
+                         x1=min(o["x1"], c["x1"]), x2=max(o["x2"], c["x2"]))
+                break
+        else:
+            merged.append(dict(c))
+    return merged
+
+
+def _text_lines(comps, min_h, max_h, max_gap_ratio=0.45, same_height=None):
+    """Group glyph boxes into left-to-right runs on one line."""
+    glyphs = sorted((c for c in comps if min_h <= c["y2"] - c["y1"] + 1 <= max_h),
+                    key=lambda c: c["x1"])
+    lines, used = [], set()
+    for i, first in enumerate(glyphs):
+        if i in used:
+            continue
+        line = [first]
+        used.add(i)
+        for j in range(i + 1, len(glyphs)):
+            if j in used:
+                continue
+            c = glyphs[j]
+            top = min(g["y1"] for g in line)
+            bottom = max(g["y2"] for g in line)
+            line_h, glyph_h = bottom - top + 1, c["y2"] - c["y1"] + 1
+            gap = c["x1"] - max(g["x2"] for g in line)
+            overlap = min(bottom, c["y2"]) - max(top, c["y1"])
+            if (gap <= max_gap_ratio * line_h and overlap >= 0.5 * min(glyph_h, line_h)
+                    and (same_height is None or abs(glyph_h - line_h) <= same_height * line_h)):
+                line.append(c)
+                used.add(j)
+        lines.append(line)
+    return lines
+
+
+def _line_box(line):
+    return {
+        "n": len(line),
+        "x1": min(g["x1"] for g in line), "x2": max(g["x2"] for g in line),
+        "y1": min(g["y1"] for g in line), "y2": max(g["y2"] for g in line),
+        "area": sum(g["area"] for g in line),
+        "bottoms": sorted(g["y2"] for g in line),
+    }
+
+
+def _luminance(rgb):
+    return rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114
+
+
+def _local_background(rgb, scale=8, size=21):
+    """Coarse median background: ~170px windows at 1536w, wider than the mark."""
+    from PIL import ImageFilter
+    h, w, _ = rgb.shape
+    im = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8))
+    small = im.resize((max(1, w // scale), max(1, h // scale)), Image.BOX)
+    med = small.filter(ImageFilter.MedianFilter(size))
+    return np.array(med.resize((w, h), Image.BILINEAR), dtype=float)
+
+
+def _locate_visa_mark(img):
+    """
+    Find the Visa wordmark in the upper-right, lower-right or upper-left corner.
+
+    Returns None when no glyph run looks like the wordmark. Otherwise returns
+    the mark's box in card pixels (edges measured on the half-contrast
+    anti-aliased boundary, letter tips included), the product identifier line
+    beneath it when one is found, and the mark's core ink color.
+
+    Oversized art is located at the 1536px canvas scale (the thresholds and
+    background window are tuned there) and reported in native pixels.
+    """
+    native_w, native_h = img.size
+    factor = 1.0
+    if native_w > REQUIRED_WIDTH * 1.25:
+        factor = native_w / REQUIRED_WIDTH
+        img = img.convert("RGB").resize(
+            (REQUIRED_WIDTH, max(1, round(native_h / factor))), Image.LANCZOS)
+    rgb = np.array(img.convert("RGB"), dtype=float)
+    h, w, _ = rgb.shape
+    open_k = max(3, int(round(h * 0.006)) | 1)
+    best = None
+
+    for corner in _MARK_CORNERS:
+        wh, ww = round(h * 0.34), round(w * 0.36)
+        wy = 0 if corner.startswith("upper") else h - wh
+        wx = w - ww if corner.endswith("right") else 0
+        win = rgb[wy:wy + wh, wx:wx + ww]
+        bg = _local_background(win)
+        dist = np.sqrt(((win - bg) ** 2).sum(axis=-1))
+        lighter = _luminance(win) > _luminance(bg)
+
+        for polarity, side in (("light", lighter), ("dark", ~lighter)):
+            contrast = np.where(side, dist, 0.0)
+            peak = float(np.percentile(contrast, 99.5))
+            if peak < 40:
+                continue
+            raw = contrast > 0.5 * peak
+            opened = _binary_open(raw, open_k)
+            glyphs = _merge_split_glyphs(_label_components(opened))
+            for line in _text_lines(glyphs, 0.05 * h, 0.25 * h, same_height=0.35):
+                box = _line_box(line)
+                box_h = box["y2"] - box["y1"] + 1
+                box_w = box["x2"] - box["x1"] + 1
+                aspect, fill = box_w / box_h, box["area"] / (box_h * box_w)
+                if box["n"] < 2 or not 2.3 <= aspect <= 4.1 or not 0.3 <= fill <= 0.65:
+                    continue
+                score = (-3 * abs(np.log(aspect / _WORDMARK_ASPECT))
+                         - 0.4 * abs(box["n"] - 4) - 2 * abs(fill - 0.45))
+                if best is None or score > best["score"]:
+                    best = {"score": score, "corner": corner, "polarity": polarity,
+                            "peak": peak, "box": box, "wy": wy, "wx": wx,
+                            "win": win, "contrast": contrast, "raw": raw,
+                            "opened": opened, "glyphs": glyphs}
+
+    if best is None:
+        return None
+
+    # Refine the box on the unopened mask: opening shaves anti-aliased tips
+    # and thin tapers (the flag on the V is the leftmost point of an
+    # upper-left mark). Grow the solid glyph bodies back along connected mark
+    # pixels, a bounded distance, so tapers return but pattern lines that
+    # merely come near the mark stay out of the measurement. Tapers only run
+    # sideways — the top and bottom are flat letter ends — so the vertical
+    # reach stays short and an identifier set close beneath is never absorbed.
+    b, raw, opened = best["box"], best["raw"], best["opened"]
+    pad = 3 * open_k
+    ry1, ry2 = max(0, b["y1"] - open_k), min(raw.shape[0], b["y2"] + open_k + 1)
+    rx1, rx2 = max(0, b["x1"] - pad), min(raw.shape[1], b["x2"] + pad + 1)
+    body = np.zeros_like(opened)
+    for g in best["glyphs"]:
+        if g["x1"] >= b["x1"] and g["x2"] <= b["x2"] and g["y1"] >= b["y1"] and g["y2"] <= b["y2"]:
+            body[g["y1"]:g["y2"] + 1, g["x1"]:g["x2"] + 1] |= opened[g["y1"]:g["y2"] + 1, g["x1"]:g["x2"] + 1]
+    raw_box = raw[ry1:ry2, rx1:rx2]
+    grown = body[ry1:ry2, rx1:rx2] & raw_box
+    for _ in range(pad):
+        nxt = (_box_sum(grown, 3) > 0) & raw_box
+        if nxt.sum() == grown.sum():
+            break
+        grown = nxt
+    ys, xs = np.nonzero(grown)
+    top, bottom = ry1 + int(ys.min()), ry1 + int(ys.max())
+    left, right = rx1 + int(xs.min()), rx1 + int(xs.max())
+    mark_h = bottom - top + 1
+    # The wordmark's edges along its baseline (bottom 15% of rows): the
+    # italic VISA leans right, so a left-aligned identifier lines up with the
+    # V's foot, not the flag tip above it.
+    base_rows = ys >= (ys.max() - max(2, int(0.15 * mark_h)))
+    base_left, base_right = rx1 + int(xs[base_rows].min()), rx1 + int(xs[base_rows].max())
+
+    # Product identifier: the text line directly beneath the wordmark. Light
+    # opening only — identifier strokes are a few px wide.
+    identifier = None
+    if best["corner"].startswith("upper"):
+        zy1 = bottom + 3
+        zy2 = min(raw.shape[0], bottom + int(1.4 * mark_h))
+        zx1 = max(0, left - int(0.5 * (right - left)))
+        zx2 = min(raw.shape[1], right + int(0.1 * (right - left)) + 1)
+        if zy2 > zy1:
+            zone = _binary_open(raw[zy1:zy2, zx1:zx2], 3)
+            lines = [_line_box(l) for l in _text_lines(
+                _label_components(zone, min_area=12), 0.12 * mark_h, 0.75 * mark_h,
+                max_gap_ratio=0.8)]
+            lines = [l for l in lines if l["n"] >= 3]
+            if lines:
+                main = max(lines, key=lambda l: l["area"])
+                row = [l for l in lines if abs(l["y2"] - main["y2"]) < 0.3 * mark_h]
+                bottoms = sorted(v for l in row for v in l["bottoms"])
+                identifier = {
+                    "top": zy1 + min(l["y1"] for l in row),
+                    # Median glyph bottom: descenders (g, p) are a minority.
+                    "baseline": zy1 + bottoms[len(bottoms) // 2],
+                    "left": zx1 + min(l["x1"] for l in row),
+                    "right": zx1 + max(l["x2"] for l in row),
+                }
+
+    # Core ink: well inside the strokes, clear of anti-aliasing.
+    core = (best["contrast"][top:bottom + 1, left:right + 1] > 0.75 * best["peak"]) & \
+        opened[top:bottom + 1, left:right + 1]
+    ink = best["win"][top:bottom + 1, left:right + 1][core]
+    if not len(ink):
+        ink = best["win"][top:bottom + 1, left:right + 1][raw[top:bottom + 1, left:right + 1]]
+    ink_l = _luminance(ink)
+
+    wy, wx = best["wy"], best["wx"]
+
+    # Window -> native card pixels. A far edge (bottom/right) maps to the last
+    # native pixel the located pixel covers, so edge distances stay exact.
+    def _near(v, offset):
+        return int(round((v + offset) * factor))
+
+    def _far(v, offset):
+        return int(round((v + offset + 1) * factor)) - 1
+
+    n_top, n_bottom = _near(top, wy), _far(bottom, wy)
+    n_left, n_right = _near(left, wx), _far(right, wx)
+    return {
+        "baseline_left": _near(base_left, wx), "baseline_right": _far(base_right, wx),
+        "corner": best["corner"],
+        "polarity": best["polarity"],
+        "top": n_top, "bottom": n_bottom, "left": n_left, "right": n_right,
+        "height": n_bottom - n_top + 1, "width": n_right - n_left + 1,
+        "card_width": native_w, "card_height": native_h,
+        "identifier": ({
+            "top": _near(identifier["top"], wy),
+            "baseline": _far(identifier["baseline"], wy),
+            "left": _near(identifier["left"], wx),
+            "right": _far(identifier["right"], wx),
+        } if identifier else None),
+        "ink_rgb": [int(round(v)) for v in np.median(ink, axis=0)],
+        "ink_luminance_spread": int(round(float(
+            np.percentile(ink_l, 95) - np.percentile(ink_l, 5)))),
+    }
+
+
+def _mark_scale(mark):
+    """Pixels per 1536px-canvas pixel — Visa's geometry is set at 1536x969."""
+    return mark["card_width"] / REQUIRED_WIDTH
+
+
+def _virtual_margin_check(mark):
+    """
+    The Visa Brand Mark sits AT 56px from its nearest top/bottom edge and its
+    nearest side edge, within +/-2px on the strict letter-tip distances.
+    """
+    scale = _mark_scale(mark)
+    target = round(VISA_MARK_EDGE_MARGIN * scale)
+    tol = max(1, round(VISA_MARK_MARGIN_TOLERANCE * scale))
+    lo, hi = target - tol, target + tol
+    w, h = mark["card_width"], mark["card_height"]
+    corner = mark["corner"]
+
+    near_label = "top" if corner.startswith("upper") else "bottom"
+    side_label = "right" if corner.endswith("right") else "left"
+    near = mark["top"] if near_label == "top" else h - 1 - mark["bottom"]
+    side = w - 1 - mark["right"] if side_label == "right" else mark["left"]
+
+    def _judge(label, px):
+        if px < lo:
+            return f"{label.capitalize()} edge {px}px is {lo - px}px inside the {target}px placement (min {lo}px)", "margin_below_minimum"
+        if px > hi:
+            return f"{label.capitalize()} edge {px}px is {px - hi}px farther than the {target}px placement (max {hi}px)", "margin_above_target"
+        return None, None
+
+    problems = [p for p in (_judge(near_label, near), _judge(side_label, side)) if p[0]]
+    passed = not problems
+    measured = f"{near_label.capitalize()}: {near}px, {side_label.capitalize()}: {side}px"
+    if passed:
+        note = (f"Visa Brand Mark is placed at {target}px. {measured} "
+                f"(strict, anti-aliased letter tips included; accepted {lo}-{hi}px).")
+    else:
+        note = (f"FAIL — Visa places the Brand Mark AT {target}px from the nearest edges, "
+                f"not merely at least {target}px. {measured}. "
+                + " | ".join(p[0] for p in problems))
+    result = {
+        "passed": passed,
+        "actual": measured,
+        "required": f"{target}px from the nearest {near_label} and {side_label} edges (±{tol}px)",
+        "note": note,
+        "mark_detected": True,
+        "mark_corner": corner,
+        f"strict_{near_label}_px": near,
+        f"strict_{side_label}_px": side,
+        "strict_min_px": min(near, side),
+        "strict_max_px": max(near, side),
+        "margin_px": target,
+        "margin_tolerance_px": tol,
+        "measured_from": "render_edge",
+        "mark_box": [mark["left"], mark["top"], mark["right"], mark["bottom"]],
+    }
+    if problems:
+        result["reason_code"] = problems[0][1]
+    return result
+
+
+def _virtual_size_check(mark):
+    """109px wordmark, 170px from the top of the mark to the identifier baseline."""
+    scale = _mark_scale(mark)
+    target = round(VISA_MARK_HEIGHT_PX * scale)
+    tol = max(1, round(VISA_MARK_HEIGHT_TOLERANCE_PX * scale))
+    legacy = round(VISA_MARK_LEGACY_HEIGHT_PX * scale)
+    composite_target = round(VISA_LOCKUP_COMPOSITE_PX * scale)
+    height = mark["height"]
+
+    ident = mark.get("identifier")
+    composite = (ident["baseline"] - mark["top"]) if ident else None
+    lockup = (f"; mark top to identifier baseline {composite}px (Visa: {composite_target}px)"
+              if composite is not None else "")
+
+    result = {
+        "actual": f"Mark height {height}px{lockup}",
+        "required": f"{target}px mark height (±{tol}px); {composite_target}px from the top of the mark to the identifier baseline",
+        "mark_detected": True,
+        "mark_height_px": height,
+        "expected_mark_height_px": target,
+        "lockup_height_px": composite,
+        "expected_lockup_height_px": composite_target,
+    }
+    if abs(height - target) <= tol:
+        result.update(passed=True, note=f"Visa Brand Mark height {height}px matches the {target}px lockup{lockup}.")
+    elif abs(height - legacy) <= tol:
+        result.update(
+            passed=True, borderline=True, reason_code="size_oversized",
+            note=(f"Mark height {height}px matches the legacy {legacy}px \"Option Two\". Visa's "
+                  f"recent feedback asks for a {target}px mark with a {composite_target}px "
+                  f"lockup — confirm before submitting."))
+    else:
+        code = "size_undersized" if height < target else "size_oversized"
+        result.update(
+            passed=False, reason_code=code,
+            note=(f"FAIL — Visa Brand Mark is {height}px tall; Visa asks for {target}px "
+                  f"(accepted {target - tol}-{target + tol}px){lockup}."))
+    return result
+
+
+def _virtual_identifier_alignment_check(mark):
+    """
+    The identifier's edge aligns with the mark's outer edge on the mark's side:
+    right-aligned under a right-corner mark, left-aligned under a left one.
+    """
+    ident = mark.get("identifier")
+    side = "right" if mark["corner"].endswith("right") else "left"
+    if not ident:
+        return {
+            "passed": None,
+            "actual": "Product identifier not detected beneath the mark",
+            "required": f"identifier {side}-aligned with the Visa Brand Mark",
+            "note": "Could not locate the identifier line programmatically. Verify alignment visually.",
+            "identifier_detected": False,
+        }
+    scale = _mark_scale(mark)
+    tol = max(1, round(IDENTIFIER_ALIGN_TOLERANCE_PX * scale))
+    fail_at = max(tol + 1, round(IDENTIFIER_ALIGN_FAIL_PX * scale))
+    # Measured against the wordmark's baseline edge (see _locate_visa_mark).
+    offset = ((mark["baseline_right"] - ident["right"]) if side == "right"
+              else (ident["left"] - mark["baseline_left"]))
+    direction = "inside" if offset > 0 else "past"
+    actual = (f"Identifier {side} edge {abs(offset)}px {direction} the mark's {side} edge"
+              if offset else f"Identifier {side} edge flush with the mark's {side} edge")
+    result = {
+        "actual": actual,
+        "required": f"identifier {side}-aligned with the Visa Brand Mark (±{tol}px)",
+        "identifier_detected": True,
+        "aligned_to": side,
+        "offset_px": offset,
+        "identifier_box": [ident["left"], ident["top"], ident["right"], ident["baseline"]],
+    }
+    if abs(offset) <= tol:
+        result.update(passed=True, note=f"Product identifier is {side}-aligned with the Visa Brand Mark.")
+    elif abs(offset) < fail_at:
+        result.update(passed=True, borderline=True, reason_code="identifier_misaligned",
+                      note=f"{actual} — Visa asks for the identifier to align with the mark's {side} edge.")
+    else:
+        result.update(passed=False, reason_code="identifier_misaligned",
+                      note=f"FAIL — {actual}. Visa asks for the identifier to align with the mark's {side} edge.")
+    return result
+
+
+def _classify_mark_ink(rgb):
+    """Name a mark ink against Visa's permitted versions, or None if not permitted."""
+    r, g, b = (float(v) for v in rgb)
+    if np.linalg.norm(np.array([r, g, b]) - np.array(VISA_BLUE_RGB)) <= 60:
+        return "Visa Blue"
+    chroma = max(r, g, b) - min(r, g, b)
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    if chroma <= 36:
+        if lum >= 225:
+            return "white"
+        if lum <= 50:
+            return "black"
+        return "silver/gray"
+    # Gold premium ink: a warm yellow-orange hue that reads as gold, not brown.
+    # Brown marks (luminance ~78) are the "not a valid version" Visa rejects.
+    if lum < 110:
+        return None
+    mx = max(r, g, b)
+    if mx == r:
+        hue = (60 * ((g - b) / chroma)) % 360
+    elif mx == g:
+        hue = 60 * ((b - r) / chroma) + 120
+    else:
+        hue = 60 * ((r - g) / chroma) + 240
+    if 30 <= hue <= 60:
+        return "gold"
+    return None
+
+
+def _virtual_color_check(mark):
+    """White, black, Visa Blue, or gold/silver premium ink — flat, no gradient."""
+    ink = mark["ink_rgb"]
+    spread = mark["ink_luminance_spread"]
+    name = _classify_mark_ink(ink)
+    hex_code = "#{:02X}{:02X}{:02X}".format(*ink)
+    color = f"R{ink[0]} G{ink[1]} B{ink[2]} ({hex_code})"
+    result = {
+        "actual": f"{name or 'non-standard color'} {color}" + (f", luminance varies {spread} levels across the mark" if spread > 30 else ", flat"),
+        "required": "white, black, Visa Blue (R20 G52 B203), or gold/silver premium ink — flat, no gradient",
+        "mark_detected": True,
+        "ink_rgb": ink,
+        "ink_hex": hex_code,
+        "color_class": name,
+        "luminance_spread": spread,
+    }
+    if spread > 30:
+        result.update(passed=False, reason_code="mark_gradient_applied",
+                      note=(f"FAIL — the Visa Brand Mark carries a gradient (luminance varies {spread} "
+                            f"levels across the letters). Visa requires a flat mark in a permitted color."))
+    elif name is None:
+        result.update(passed=False, reason_code="mark_color_not_permitted",
+                      note=(f"FAIL — mark color {color} is not a permitted version. Use white, black, "
+                            f"or Visa Blue (R20 G52 B203), or the gold/silver premium ink version."))
+    elif name == "gold":
+        # Visa's feedback on Signature cards names white, black or Visa Blue
+        # only; the gold premium version is not a safe default.
+        result.update(passed=True, borderline=True, reason_code="mark_color_not_permitted",
+                      note=(f"Mark is gold {color}. The gold premium ink version is reserved for "
+                            f"premium products — confirm, or use white, black, or Visa Blue."))
+    else:
+        result.update(passed=True, note=f"Visa Brand Mark is flat {name} {color}.")
+    return result
+
+
+def check_virtual_mark(img):
+    """
+    Deterministic Visa Brand Mark checks for virtual art, from one locator pass:
+    bleed_zone (placed at 56px), mark_size, identifier_alignment, mark_color.
+
+    When the mark is not found every check reports passed=None (unverified)
+    rather than a pass: an undetected mark is not evidence of compliance.
+    """
+    mark = _locate_visa_mark(img)
+    if mark is None:
+        unverified = {
+            "passed": None,
+            "actual": "Visa Brand Mark not detected",
+            "note": ("Could not locate the Visa Brand Mark programmatically. "
+                     "Visual verification required."),
+            "mark_detected": False,
+        }
+        return {
+            "bleed_zone": dict(unverified, required=f"{VISA_MARK_EDGE_MARGIN}px from the nearest edges (±{VISA_MARK_MARGIN_TOLERANCE}px)"),
+            "mark_size": dict(unverified, required=f"{VISA_MARK_HEIGHT_PX}px mark height"),
+            "identifier_alignment": dict(unverified, required="identifier aligned with the Visa Brand Mark",
+                                         identifier_detected=False),
+            "mark_color": dict(unverified, required="white, black, Visa Blue, or gold/silver premium ink — flat"),
+        }
+    return {
+        "bleed_zone": _virtual_margin_check(mark),
+        "mark_size": _virtual_size_check(mark),
+        "identifier_alignment": _virtual_identifier_alignment_check(mark),
+        "mark_color": _virtual_color_check(mark),
+    }
+
+
+def _corner_runs(rgba, corner, max_run):
+    """
+    Run lengths, from one card corner, of pixels matching the corner pixel —
+    along the edge row, the edge column and the diagonal.
+    """
+    h, w, _ = rgba.shape
+    sy, sx = (1 if corner[0] == "t" else -1), (1 if corner[1] == "l" else -1)
+    y0, x0 = (0 if sy > 0 else h - 1), (0 if sx > 0 else w - 1)
+    ref = rgba[y0, x0].astype(float)
+
+    def _like(px):
+        px = px.astype(float)
+        if ref[3] < 128 or px[3] < 128:  # transparency decides alone
+            return (ref[3] < 128) == (px[3] < 128)
+        return float(np.abs(px[:3] - ref[:3]).max()) <= 30
+
+    def _run(dy, dx):
+        n = 0
+        while n < max_run:
+            y, x = y0 + sy * dy * n, x0 + sx * dx * n
+            if not (0 <= y < h and 0 <= x < w) or not _like(rgba[y, x]):
+                break
+            n += 1
+        return n
+
+    return {"row": _run(0, 1), "col": _run(1, 0), "diag": _run(1, 1),
+            "transparent": bool(ref[3] < 128)}
+
+
+def check_square_corners(img):
+    """
+    Virtual card art must have square corners — a rounded export leaves an arc
+    of transparent or matte pixels in each corner.
+
+    A circular corner of radius R leaves ~R pixels along each edge but only
+    ~0.29R along the diagonal. Square art, a solid background, or a full-width
+    stripe all fail that shape test.
+    """
+    rgba = np.array(img.convert("RGBA"))
+    h, w, _ = rgba.shape
+    max_run = max(8, int(min(w, h) * 0.2))
+    rounded = []
+    radii = []
+    for corner in ("tl", "tr", "bl", "br"):
+        r = _corner_runs(rgba, corner, max_run + 1)
+        edge = min(r["row"], r["col"])
+        arc = (r["diag"] >= 2 and edge >= 2 * r["diag"]
+               and r["row"] <= max_run and r["col"] <= max_run)
+        if arc:
+            rounded.append((corner, r["transparent"]))
+            radii.append(round((r["row"] + r["col"]) / 2))
+    transparent = [c for c, t in rounded if t]
+    names = {"tl": "top-left", "tr": "top-right", "bl": "bottom-left", "br": "bottom-right"}
+    # Transparent arcs are unambiguous; an opaque matte arc needs 3 corners.
+    if transparent or len(rounded) >= 3:
+        where = ", ".join(names[c] for c, _ in rounded)
+        kind = "transparent" if transparent else "matte-colored"
+        return {
+            "passed": False,
+            "actual": f"Rounded corners (~{int(np.median(radii))}px radius, {kind}): {where}",
+            "required": "square corners",
+            "note": ("FAIL — the artwork has rounded corners. Visa requires square-cornered "
+                     "virtual art; the wallet applies its own corner mask."),
+            "rounded_corners": [names[c] for c, _ in rounded],
+            "radius_px": int(np.median(radii)),
+        }
+    return {"passed": True, "actual": "Square corners", "required": "square corners", "note": ""}
+
+
+def check_border_frame(img):
+    """
+    Flag border lines around the art: the canvas edge is padding, not artwork.
+
+    The rejected cases take two shapes. Transparent padding on any side (the
+    art was placed on a wider canvas), or thin uniform lines of 2px or more on
+    two or more sides (white border lines from an export or a mockup). A 1px
+    hairline is below what Visa has flagged and is typical of resampling, so
+    it is ignored. Every length is judged at the 1536px canvas scale.
+    """
+    rgba = np.array(img.convert("RGBA"), dtype=float)
+    h, w, _ = rgba.shape
+    scale = w / REQUIRED_WIDTH
+    depth = max(3, int(min(w, h) * 0.03))
+    min_band = 2 * scale
+    names = ("top", "bottom", "left", "right")
+
+    def _lines(side):
+        # Middle 90% of each edge-parallel line, outermost first. The ends
+        # are skipped so corner rounding never reads as padding.
+        n = depth + 4
+        if side == "top":
+            return [rgba[i, int(w * 0.05):int(w * 0.95)] for i in range(n)]
+        if side == "bottom":
+            return [rgba[h - 1 - i, int(w * 0.05):int(w * 0.95)] for i in range(n)]
+        if side == "left":
+            return [rgba[int(h * 0.05):int(h * 0.95), i] for i in range(n)]
+        return [rgba[int(h * 0.05):int(h * 0.95), w - 1 - i] for i in range(n)]
+
+    transparent, lined = {}, {}
+    for side in names:
+        lines = _lines(side)
+        clear = 0
+        while clear < len(lines) and (lines[clear][:, 3] < 128).mean() >= 0.9:
+            clear += 1
+        if clear >= min_band:
+            transparent[side] = clear
+            continue
+        rest = lines[clear:]
+        color = np.median(rest[0][:, :3], axis=0)
+        thickness = 0
+        for line in rest:
+            if np.abs(line[:, :3] - color).max(axis=1).mean() > 6:
+                break
+            thickness += 1
+        if not min_band <= thickness <= depth:
+            continue
+        # The artwork must visibly start past the band (allowing for an
+        # anti-aliased transition line or two).
+        after = rest[thickness:thickness + 3]
+        contrast = max(np.abs(l[:, :3] - color).max(axis=1).mean() for l in after) if after else 0
+        if contrast >= 25:
+            lined[side] = (thickness, [int(round(v)) for v in color])
+
+    if not transparent and len(lined) < 2:
+        return {"passed": True, "actual": "No border lines", "required": "art fills the canvas edge to edge", "note": ""}
+
+    parts = []
+    if transparent:
+        parts.append("transparent padding on the " + ", ".join(
+            f"{side} ({px}px)" for side, px in transparent.items()))
+    if len(lined) >= 2:
+        parts.append("uniform border lines on the " + ", ".join(
+            f"{side} ({t}px R{c[0]} G{c[1]} B{c[2]})" for side, (t, c) in lined.items()))
+    sides = list(transparent) + [s for s in lined if len(lined) >= 2]
+    return {
+        "passed": False,
+        "actual": "; ".join(parts).capitalize(),
+        "required": "art fills the canvas edge to edge",
+        "note": ("FAIL — the art does not reach the canvas edge: " + "; ".join(parts) + ". Visa "
+                 "rejects art with white border lines; export the design full-bleed to the "
+                 "1536x969 canvas."),
+        "border_sides": sides,
+        "frame_px": max([*transparent.values(), *[t for t, _ in lined.values()]] or [0]),
     }
 
 
@@ -1098,12 +1811,18 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     tech_headers = ["Check", "Result", "Detail"]
     tech_col_ratios = [0.28, 0.12, 0.60]
     tech_rows_data = []
-    check_order = ["dimensions", "file_format", "dpi", "bleed_zone"]
+    check_order = ["dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
+                   "identifier_alignment", "mark_color", "square_corners", "border_frame"]
     check_labels = {
         "dimensions": "Dimensions (1536x969 px)",
         "file_format": "File Format (PNG)",
         "dpi": "DPI (>= 72 for digital)",
-        "bleed_zone": "56px Margin Zone (Visa Brand Mark)",
+        "bleed_zone": "Visa Brand Mark placed at 56px",
+        "mark_size": "Visa Brand Mark size (109px)",
+        "identifier_alignment": "Identifier aligned with mark",
+        "mark_color": "Visa Brand Mark color",
+        "square_corners": "Square corners",
+        "border_frame": "No border frame",
     }
     for key in check_order:
         if key not in tech_checks:
@@ -1112,6 +1831,8 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
         passed = ck.get("passed", False)
         if ck.get("borderline"):
             status = "warning"
+        elif passed is None:
+            status = "unverified"  # e.g. Brand Mark not located
         elif passed:
             status = "pass"
         else:
@@ -2715,12 +3436,19 @@ def check_image(image_path: str) -> dict:
         )
     }
 
-    # --- Bleed Zone Analysis (56px Visa Brand Mark margin) ---
+    # --- Visa Brand Mark lockup: placed at 56px (bleed_zone), mark size,
+    # identifier alignment, mark color — one locator pass ---
     try:
-        bleed_result = check_bleed_zone(img)
-        results["checks"]["bleed_zone"] = bleed_result
+        results["checks"].update(check_virtual_mark(img))
     except Exception as e:
-        results["errors"].append(f"Bleed zone analysis failed: {e}")
+        results["errors"].append(f"Brand Mark analysis failed: {e}")
+
+    # --- Canvas edges: square corners, no border frame ---
+    for key, fn in (("square_corners", check_square_corners), ("border_frame", check_border_frame)):
+        try:
+            results["checks"][key] = fn(img)
+        except Exception as e:
+            results["errors"].append(f"{key} check failed: {e}")
 
     # --- Color Extraction ---
     try:

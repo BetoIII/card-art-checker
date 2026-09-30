@@ -17,10 +17,10 @@ import {
 
 // ── Catalog integrity ───────────────────────────────────────────────
 
-test('virtual catalog has the canonical 18 checks with unique ids', () => {
+test('virtual catalog has the canonical 20 checks with unique ids', () => {
   const checks = getCatalog('virtual');
-  assert.equal(checks.length, 18);
-  assert.equal(new Set(checks.map((c) => c.id)).size, 18);
+  assert.equal(checks.length, 20);
+  assert.equal(new Set(checks.map((c) => c.id)).size, 20);
 });
 
 test('physical catalog has the canonical 18 checks with unique ids', () => {
@@ -66,14 +66,14 @@ test('prompt skeleton lists every catalog check exactly once', () => {
       const occurrences = block.split(`"id": "${check.id}"`).length - 1;
       assert.equal(occurrences, 1, `${cardType}/${check.id} appeared ${occurrences}x`);
     }
-    assert.equal(block.split('"id":').length - 1, 18);
+    assert.equal(block.split('"id":').length - 1, getCatalog(cardType).length);
   }
 });
 
 test('prompt skeleton is parseable JSON when wrapped', () => {
   for (const cardType of ['virtual', 'physical']) {
     const parsed = JSON.parse(`[\n${buildCheckListForPrompt(cardType)}\n]`);
-    assert.equal(parsed.length, 18);
+    assert.equal(parsed.length, getCatalog(cardType).length);
     assert.deepEqual(parsed.map((p) => p.id), getCatalog(cardType).map((c) => c.id));
   }
 });
@@ -221,11 +221,26 @@ test('checks the agent invents resolve to nothing, so callers preserve them', ()
     'Black frame around artwork',
     'Full-bleed card art (no white padding)',
     'Aspect ratio / dimensions',
-    'Contactless indicator',
   ];
   for (const name of invented) {
     assert.deepEqual(resolveChecks('virtual', name), [], name);
   }
+});
+
+test('checks added from Visa rejection gaps resolve, including the agent\'s old names', () => {
+  // "Contactless indicator" was an invented row before it became a check.
+  assert.deepEqual(resolveChecks('virtual', 'Contactless indicator'), ['contactless_indicator']);
+  assert.deepEqual(
+    resolveChecks('virtual', 'Contactless indicator correct (rotated 180°)'),
+    ['contactless_indicator'],
+  );
+  assert.deepEqual(resolveChecks('virtual', 'Visa Brand Mark color'), ['visa_brand_mark_color']);
+  assert.deepEqual(
+    resolveChecks('virtual', 'Visa Brand Mark color (white, flat)'),
+    ['visa_brand_mark_color'],
+  );
+  // The physical color check keeps its own id.
+  assert.deepEqual(resolveChecks('physical', 'Visa Brand Mark color (front)'), ['visa_brand_mark_color_front']);
 });
 
 test('a physical check name does not resolve against the virtual catalog', () => {
@@ -257,14 +272,25 @@ test('empty and nullish names resolve to nothing rather than throwing', () => {
 test('reason codes include the evidence-backed virtual vocabulary', () => {
   const codes = allReasonCodes('virtual');
   for (const expected of [
-    'margin_below_minimum', 'margin_borderline', 'position_wrong_corner',
+    'margin_below_minimum', 'margin_above_target', 'position_wrong_corner',
     'size_undersized', 'contrast_insufficient_identifier', 'identifier_absent',
     'identifier_tier_mismatch', 'issuer_logo_absent', 'prohibited_element_present',
     'pan_zone_obstructed', 'orientation_not_landscape', 'grayscale_or_monochrome',
     'source_is_screenshot', 'other',
+    // docs/visa-rejection-gaps.md
+    'mark_color_not_permitted', 'mark_gradient_applied', 'identifier_misaligned',
+    'identifier_font_mismatch', 'identifier_size_mismatch', 'lockup_not_official_artwork',
+    'contactless_indicator_incorrect', 'contactless_indicator_rotated', 'border_frame_present',
   ]) {
     assert.ok(codes.includes(expected), `missing reason code: ${expected}`);
   }
+});
+
+test('the virtual margin check has no borderline band', () => {
+  // Visa places the mark AT 56px (±3): a warning on a card Visa rejects is a
+  // miss, so the check offers no code that would produce one.
+  assert.ok(!getCheck('virtual', 'visa_brand_mark_margin').reason_codes.includes('margin_borderline'));
+  assert.ok(getCheck('physical', 'visa_brand_mark_quiet_zone_front').reason_codes.includes('margin_borderline'));
 });
 
 test('enum vocabularies match the tech layer they were adopted from', () => {

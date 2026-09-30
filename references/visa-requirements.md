@@ -1,6 +1,6 @@
 # Virtual / Digital Card Art Requirements Reference
 
-*Source: Visa Digital Card Brand Standards (September 2025)*
+*Source: Visa Digital Card Brand Standards (September 2025), updated with the rules Visa enforces in submission feedback (2025-09 to 2026-09; see `docs/visa-rejection-gaps.md`)*
 
 ---
 
@@ -36,37 +36,40 @@ Per Visa Digital Card Brand Standards, these elements must appear on every digit
 
 - Must be present and clearly legible
 - Positioned in **upper-left or upper-right** corner only — no lower-edge placement allowed
-- Minimum margin of **56px** from nearest card edges — **this margin applies ONLY to the Visa Brand Mark**. Zero tolerance: any part of the brand mark (including letter tips like the "A" in VISA, and product identifier text) crossing this boundary is a hard fail. This is the **#1 reason Visa rejects card art**.
+- Placed **at 56px** from the nearest top/bottom edge **and** the nearest side edge. This is exact placement, not a minimum: Visa rejects a mark that sits too **far** from the edge with the same sentence it uses for one too close ("The Visa logo should be placed at 56 pixels from the edges of the card"). The checker accepts 53–59px on the strict letter-tip distances (letter tips like the "A" in VISA included); Visa-approved cards in the eval set measure 53–59px, most 54–57px. This is the **#1 reason Visa rejects card art**.
 - Must not be distorted or stretched
-- Must match one of two allowed size options (see below)
+- Must be the 109px lockup (see below)
+- Must be a permitted color version, flat (see below)
 - **Must have strong color contrast against the card background** — both the "VISA" wordmark and the product identifier (Signature, Platinum, Infinite, Debit, etc.) must be clearly readable. If the background is medium or bright, use white. If the background is very light, use dark. Avoid gray/silver text on colored backgrounds — Visa has rejected cards for insufficient contrast (e.g., silver "Platinum" on pink).
 - When cards are stacked in a digital wallet, Brand Mark must be visible in upper-left or upper-right
 
-### Visa Brand Mark Size Options
+### Visa Brand Mark Lockup Size
 
-Only two size options are permitted for the Visa Brand Mark on a 1536×969 card:
+Visa's submission feedback describes a single lockup geometry on a 1536×969 card:
 
-**Option One — With Debit Identifier** (Debit cards):
 | Dim | Value | Description |
 |-----|-------|-------------|
 | C | 109 px | Height of Visa Brand Mark |
-| D | 56 px | Distance from nearest card edge to Visa Brand Mark |
-| E | 56 px | Distance from baseline of debit identifier to top of Visa Brand Mark |
-| F | 50 px | Minimum height of debit identifier |
-| G | — | Lower-left area reserved for personalization, must be free of marks/graphics |
-
-**Option Two — Standalone or with Product Identifier** (Signature, Platinum, Infinite, etc.):
-| Dim | Value | Description |
-|-----|-------|-------------|
-| C | 142 px | Height of Visa Brand Mark |
-| D | 220 px | Distance from top of Visa Brand Mark to baseline of product identifier (when present) |
-| E | 56 px | Distance from nearest card edge to Visa Brand Mark |
+| D | 170 px | Distance from top of Visa Brand Mark to baseline of the product identifier |
+| E | 56 px | Distance from nearest card edges to Visa Brand Mark (exact placement) |
 | F | — | Lower-left area reserved for personalization, must be free of marks/graphics |
+
+Visa's wording: "Please ensure the Visa logo is set to a height of 109 px. Composite logo is set to a 170px height." Approved cards measure 104–109px on the wordmark.
+
+> **Legacy Option Two (142 px mark, 220 px to the identifier baseline).** Earlier
+> guidance allowed this for Signature/Platinum/Infinite. No approved card in the
+> eval set uses it, and a design that adopted it was rejected. The checker reports
+> a 142px mark as a warning to confirm against the current Visa Product Brand
+> Standards (VPBS) rather than a pass. Confirm with VPBS before relying on it.
+
+### Visa Brand Mark Color
+
+Permitted versions: **white**, **black**, **Visa Blue (R20 G52 B203)**, or the **Visa Gold / Silver premium ink** versions. Every version is **flat**: no gradient, metallic shading or sheen. Brown or dark-gold marks are rejected ("Please update the Visa logo with Signature identifier to black or Visa Blue color"); the checker treats a gold mark as a warning because Visa's feedback on Signature cards names white, black or Visa Blue only. Visa's wording: "Please update the Visa logo to black or Visa Blue color. The color used is not a valid version." / "Use the Visa Gold Premium or Foil ink logo, don't add a gradient".
 
 > Note: Not all digital wallets or mobile applications are able to support placement of the
 > Visa Brand Mark in the upper left or upper right position. Check with the Solution Provider
 > regarding allowed placements.
-- **Other logos and design elements have NO margin requirement** — they may bleed to the card edge
+- **Artwork and background elements have no margin requirement** — they may bleed to the card edge. Partner and issuer logos: see the open question under Bleed Rules.
 
 ---
 
@@ -81,9 +84,14 @@ Only two size options are permitted for the Visa Brand Mark on a 1536×969 card:
 
 ## Bleed Rules
 
-- The **56px margin requirement applies ONLY to the Visa Brand Mark**
-- Issuer logos, design elements, artwork, and other visuals **may extend to the card edge** (full bleed is allowed)
-- Do NOT flag non-Visa elements for being too close to the edge
+- The **56px placement rule is specific to the Visa Brand Mark**
+- Design elements, artwork, and background **may extend to the card edge** (full bleed is allowed)
+- **Open question — partner/issuer logos:** Visa has rejected cards with "Please adjust the partner logo to ensure it complies with the border guidelines." The rule it applies (the same 56px, or a separate safe area) is not confirmed. Until it is, the checker notes a partner or issuer logo that is cut off by or touching the card edge, but does not fail it.
+
+## Canvas Edges
+
+- **Square corners only.** "The corners of the card must be squared." / "The artwork must not have rounded corners." The wallet applies its own corner mask; a rounded export leaves transparent or matte arcs in the corners.
+- **No border lines.** White border lines, transparent padding along an edge, or a frame around the art (a card-on-background render) are rejected at pre-screen. Export the design full-bleed to the 1536×969 canvas.
 
 ---
 
@@ -108,7 +116,7 @@ The following must NOT appear on digital card art:
 
 ## Permitted Elements
 
-- **Contactless Indicator (⟳ / )))** — allowed even if the physical card is not contactless enabled
+- **Contactless Indicator ( ))) )** — allowed even if the physical card is not contactless enabled. Its absence is fine. When present it must be the official EMVCo symbol in the correct orientation: four arcs radiating to the right, growing left to right. Visa rejects a rotated or incorrect indicator ("Please rotate 180 degrees the Contactless indicator." / "The Contactless indicator is incorrect, please update it.").
 - Partial card image — acceptable only after the user has already seen the full digital card art
 - Gradients and flat color designs
 
@@ -140,7 +148,7 @@ identifier is **always required** — there is no valid case where it can be abs
 
 - **Required identifier — one of four**:
   - Consumer cards: `Visa Platinum`, `Visa Signature`, or `Visa Infinite`
-  - Business / corporate cards: `Corporate`
+  - Business / corporate cards: `Corporate`, or the business/corporate variant of a tier (e.g. `Signature Corporate`)
 - **Anchoring**: The identifier must be placed directly below or immediately adjacent
   to the Visa Brand Mark, in the **same upper corner** (upper-left or upper-right).
 - **Reserved zone**: The identifier must never be placed in the lower-left
@@ -149,14 +157,29 @@ identifier is **always required** — there is no valid case where it can be abs
   Brand Mark, or separated from it by unrelated graphic elements.
 - **Canonical text** (case-insensitive match, casing deviations are a warning):
   `Visa Platinum`, `Visa Signature`, `Visa Infinite`, `Corporate`.
+- **Alignment**: the identifier's edge aligns with the mark's outer edge on the
+  mark's side — right-aligned under an upper-right mark, left-aligned under an
+  upper-left mark. Approved lockups align within 3px.
+- **Typography**: Visa's identifier type, upright (not italic), first letter capitalized,
+  sized to the 170px lockup. Visa rejects modified identifiers ("it's italicized and
+  needs to be straight", "The product identifier was modified").
+- **Official artwork**: the lockup must be Visa's own file (VPBS), not redrawn,
+  re-typeset, an outdated mark (e.g. the old gradient "V" flourish), or the wrong variant.
 - **Failure conditions**:
   1. No identifier visible on the card.
   2. Identifier in the opposite corner from the Brand Mark.
   3. Identifier in the lower-left personalization zone.
   4. Identifier separated from the Brand Mark by unrelated artwork.
+  5. Identifier misaligned with the Brand Mark.
+  6. Wrong typeface, style (italic), or size; modified lettering.
+  7. Lockup is not Visa's official artwork.
+  8. Identifier tier does not match the declared product (when the caller supplies
+     `declaredProduct` — e.g. "Please update the product identifier, it should be
+     Signature Corporate").
 
-> Tier-match validation (identifier text matches the provisioned product tier) is
-> sourced from the program record and is not part of this presence-and-placement check.
+> Tier-match validation needs the provisioned product. Callers pass it as
+> `declaredProduct`; without it the checker only verifies that a valid identifier
+> is present.
 
 ---
 

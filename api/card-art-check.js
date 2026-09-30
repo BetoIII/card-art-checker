@@ -169,7 +169,7 @@ function pickCardArtByDimensions(files) {
 // Analyze one already-downloaded attachment and deliver its report. Runs in the
 // background (waitUntil) after the download stage has confirmed the bytes exist.
 // Returns true on success so the caller can settle the run log's final status.
-async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt, callbackUrl }) {
+async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, declaredProduct, channelPromise, runLog, deadlineAt, callbackUrl }) {
   const emitContext = {
     runId: runLog?.runId,
     attachmentId,
@@ -192,10 +192,11 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
   }
 
   try {
-    const { pdfBuffer, status, summary, results, techJson } = await runAnalysis({
+    const { pdfBuffer, status, summary, results, techJson, declaredProduct: resolvedProduct } = await runAnalysis({
       file: buffer,
       fileName: filename,
       cardType,
+      declaredProduct,
       deadlineAt,
       onProgress: (event, data) => {
         if (event === 'progress') {
@@ -211,7 +212,9 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
     // Publish the structured result before Slack delivery: the report is the
     // deliverable, and a Slack channel-identification miss must not withhold
     // it from the consumer waiting on the webhook.
-    const emitted = await emitResult({ ...emitContext, results, techJson, cardType, pdfUrl });
+    const emitted = await emitResult({
+      ...emitContext, results, techJson, cardType, pdfUrl, declaredProduct: resolvedProduct,
+    });
 
     const delivery = await deliverReport({
       projectId,
@@ -286,6 +289,7 @@ export async function POST(request) {
   const qsAttachmentId = url.searchParams.get('attachmentId');
   const qsCardType = url.searchParams.get('cardType');
   const qsCallbackUrl = url.searchParams.get('callbackUrl');
+  const qsDeclaredProduct = url.searchParams.get('declaredProduct');
 
   let body = null;
   if (rawBody.trim()) {
@@ -313,13 +317,17 @@ export async function POST(request) {
   // Optional per-request result callback. Validated against the allowlist in
   // lib/webhook-out.js before anything is sent — never trusted as given.
   const callbackUrl = (qsCallbackUrl || body?.callbackUrl || '').trim() || null;
+  // Optional Visa product the program is provisioned as ("Signature
+  // Corporate"), e.g. smart-filled from the Rocketlane form. runAnalysis
+  // normalizes it to a canonical product name or drops it.
+  const declaredProduct = (qsDeclaredProduct || body?.declaredProduct || '').toString().trim() || null;
 
   if (!looksLikeId(projectId)) {
     console.warn('[card-art-check] 400 projectId missing or unresolved — qs:', JSON.stringify({ qsProjectId }), 'body:', rawBody.slice(0, 2000));
     await runLog.fail('Missing or unresolved projectId');
     return Response.json({ error: 'Missing or unresolved projectId', runId: runLog.runId }, { status: 400 });
   }
-  runLog.set({ projectId, cardTypeOverride });
+  runLog.set({ projectId, cardTypeOverride, ...(declaredProduct ? { declaredProduct } : {}) });
 
   // ── Stage 1: resolve attachment ID(s) ──────────────────────────────
   // First honor any explicit attachment IDs carried in the payload/query (a
@@ -447,7 +455,7 @@ export async function POST(request) {
   // function alive through the final blob write.
   waitUntil((async () => {
     const outcomes = await Promise.all(toAnalyze.map(({ attachmentId, buffer, filename }) =>
-      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, channelPromise, runLog, deadlineAt, callbackUrl })
+      analyzeAndDeliver({ projectId, projectName, attachmentId, buffer, filename, cardTypeOverride, declaredProduct, channelPromise, runLog, deadlineAt, callbackUrl })
     ));
     await runLog.finish(outcomes.every(Boolean) ? 'completed' : 'failed');
   })());

@@ -175,16 +175,16 @@ Failures publish too, as `card_art_check.failed` with a closed `error.code` (e.g
   "outcome": "approved | approved_with_notes | requires_changes",
   "status": "pass | fail",          // legacy two-state; approved_with_notes → pass
   "summary": "1-2 sentence assessment",
-  "blocking_failures": ["visa_brand_mark_margin"],
-  "counts": { "pass": 16, "warning": 2 },
+  "blocking_failures": ["visa_brand_mark_margin", "bleed_zone"],
+  "counts": { "pass": 19, "fail": 1 },
   "checks": [
     { "id": "visa_brand_mark_margin",
       "name": "Visa Brand Mark margin (56px from edges)",
       "category": "brand_mark", "severity": "blocker",
-      "status": "warning", "reason_code": "margin_borderline",
-      "notes": "…", "marker": { "x": 0.045, "y": 0.06 } }
+      "status": "fail", "reason_code": "margin_above_target",
+      "notes": "…", "marker": { "x": 0.955, "y": 0.06 } }
   ],
-  "tech_checks": [ { "id": "bleed_zone", "status": "warning", "measurements": { … } } ],
+  "tech_checks": [ { "id": "bleed_zone", "status": "fail", "measurements": { … } } ],
   "colors": { "background": { "rgb": [68,78,92], "hex": "#444E5C" } },
   "unmapped_checks": []
 }

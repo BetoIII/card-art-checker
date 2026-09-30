@@ -71,6 +71,7 @@ Content-Type: multipart/form-data
 | `reference` | string | no | **Your** correlation id, e.g. the `cardArtForm.id`. Comes back on `trigger.reference`. Sanitized to `[A-Za-z0-9._-]`, max 64 chars. |
 | `projectId` | string | no | Rocketlane project id. Omit it — you don't have one. When present it must resolve in Rocketlane or the run fails. |
 | `callbackUrl` | string | no | Push the result here instead of polling. Allowlist-gated — see §5. |
+| `declaredProduct` | string | no | The Visa product the program is provisioned as, e.g. `Signature Corporate`. Lets the check fail an identifier for the wrong tier (`identifier_tier_mismatch`). Must name one of the 12 canonical products (`Debit` … `Infinite Corporate`) or `Classic`, case-insensitive with an optional `Visa ` prefix; anything else is ignored. Echoed on `submission.declared_product`. |
 | `backFile` | file | no | Physical submissions only. |
 | `slackDelivery` | boolean | no | Irrelevant to this flow. |
 
@@ -233,12 +234,12 @@ Respond `2xx` fast and do your work afterward.
   "summary": "The art is clean, full-color, and legible… but the Visa Brand Mark is placed in the lower-right corner…",
 
   "project":    { "id": null, "name": null },
-  "submission": { "file_name": "BRAZA_CARTAO-2026_VIRTUAL.png" },
+  "submission": { "file_name": "BRAZA_CARTAO-2026_VIRTUAL.png", "declared_product": "Platinum" },
   "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" },
   "report":     { "pdf_url": "https://…-report.pdf" },
 
-  "counts": { "pass": 17, "fail": 1 },
-  "blocking_failures": ["visa_brand_mark_position"],
+  "counts": { "pass": 18, "fail": 2 },
+  "blocking_failures": ["visa_brand_mark_position", "visa_brand_mark_margin", "bleed_zone"],
 
   "checks": [
     {
@@ -254,8 +255,10 @@ Respond `2xx` fast and do your work afterward.
   ],
 
   "tech_checks": [
-    { "id": "bleed_zone", "status": "pass", "actual": "Bottom: 127px, Right: 63px",
-      "required": null, "note": "…", "measurements": { } }
+    { "id": "bleed_zone", "status": "fail", "actual": "Bottom: 127px, Right: 63px",
+      "required": "56px from the nearest bottom and right edges (±3px)", "note": "…",
+      "measurements": { "mark_corner": "lower-right", "strict_bottom_px": 127, "strict_right_px": 63,
+                        "margin_px": 56, "margin_tolerance_px": 3 } }
   ],
 
   "colors": {
@@ -295,24 +298,26 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 `warning` is a real, common state — a borderline measurement that didn't fail. Treat
 anything that isn't `pass` as "not clean", but only `blocking_failures` should reject.
 
-### Virtual check IDs (18)
+### Virtual check IDs (20)
 
 | id | category | severity | reason codes |
 |---|---|---|---|
 | `visa_brand_mark_present` | brand_mark | blocker | `mark_absent` |
 | `visa_brand_mark_position` | brand_mark | blocker | `position_lower_edge`, `position_wrong_corner`, `mark_absent` |
 | `visa_brand_mark_size` | brand_mark | blocker | `size_undersized`, `size_oversized`, `size_unverifiable` |
-| `visa_brand_mark_margin` | brand_mark | blocker | `margin_below_minimum`, `margin_borderline`, `margin_unverifiable` |
+| `visa_brand_mark_margin` | brand_mark | blocker | `margin_below_minimum`, `margin_above_target`, `margin_unverifiable` |
 | `visa_brand_mark_contrast` | brand_mark | blocker | `contrast_insufficient_wordmark`, `contrast_insufficient_identifier` |
-| `product_identifier` | product_identifier | blocker | `identifier_absent`, `identifier_wrong_corner`, `identifier_separated_from_mark`, `identifier_in_pan_zone`, `identifier_casing`, `identifier_tier_mismatch` |
+| `visa_brand_mark_color` | brand_mark | blocker | `mark_color_not_permitted`, `mark_gradient_applied` |
+| `product_identifier` | product_identifier | blocker | `identifier_absent`, `identifier_wrong_corner`, `identifier_separated_from_mark`, `identifier_in_pan_zone`, `identifier_casing`, `identifier_tier_mismatch`, `identifier_misaligned`, `identifier_font_mismatch`, `identifier_size_mismatch`, `lockup_not_official_artwork` |
 | `issuer_logo_present` | required_elements | required | `issuer_logo_absent` |
+| `contactless_indicator` | required_elements | required | `contactless_indicator_incorrect`, `contactless_indicator_rotated` |
 | `no_emv_chip` | prohibited | blocker | `prohibited_element_present` |
 | `no_hologram` | prohibited | blocker | `prohibited_element_present` |
 | `no_magnetic_stripe` | prohibited | blocker | `prohibited_element_present` |
 | `no_cardholder_name` | prohibited | blocker | `prohibited_element_present` |
 | `no_pan` | prohibited | blocker | `prohibited_element_present` |
 | `no_expiry_date` | prohibited | blocker | `prohibited_element_present` |
-| `no_physical_card_photography` | prohibited | required | `prohibited_element_present` |
+| `no_physical_card_photography` | prohibited | required | `prohibited_element_present`, `border_frame_present` |
 | `lower_left_area_clear` | layout | blocker | `pan_zone_obstructed`, `pan_zone_legibility_risk` |
 | `design_elements_clear_of_identifier` | layout | blocker | `identifier_obstructed` |
 | `landscape_orientation` | layout | blocker | `orientation_not_landscape` |
@@ -320,11 +325,27 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 
 ### Technical check IDs (virtual)
 
-`dimensions` · `file_format` · `dpi` · `bleed_zone`
+`dimensions` · `file_format` · `dpi` · `bleed_zone` · `mark_size` · `identifier_alignment` ·
+`mark_color` · `square_corners` · `border_frame`
 
-These overlap `validation.ts` and can serve as a cross-check. Note `dpi` here means
-**calculated** DPI ≥ 72, not "declared density equals 72" — a PNG declaring 300 DPI
-passes this check.
+`dimensions`, `file_format` and `dpi` overlap `validation.ts` and can serve as a
+cross-check. Note `dpi` here means **calculated** DPI ≥ 72, not "declared density equals
+72" — a PNG declaring 300 DPI passes this check.
+
+The rest are deterministic compliance measurements, not structural ones:
+
+| Tech check | Measures | Mirrored into |
+|---|---|---|
+| `bleed_zone` | Brand Mark placed **at** 56px (±3) from its nearest top/bottom and side edges — too far fails as well as too close | `visa_brand_mark_margin` |
+| `mark_size` | 109px mark height (±7); reports the mark-top-to-identifier-baseline distance (Visa: 170px). A 142px mark is a warning | `visa_brand_mark_size` |
+| `identifier_alignment` | identifier edge vs. the mark's outer edge (±6px passes, >15px fails) | `product_identifier` |
+| `mark_color` | sampled ink: white, black, Visa Blue, silver — flat. Gold is a warning (premium products only); brown fails | `visa_brand_mark_color` |
+| `square_corners` | transparent or matte arcs in the corners | — (tech only) |
+| `border_frame` | transparent padding on any side, or uniform border lines (≥2px) on two or more sides | `no_physical_card_photography` |
+
+A failing measurement fails its mirrored check and forces `outcome: "requires_changes"`;
+a warning (`status: "warning"`) lifts a passing check to a warning. When the Brand Mark
+cannot be located, these report `status: "unverified"` and the visual review decides.
 
 ---
 
@@ -394,7 +415,7 @@ unresolved and the team owns it.
 | | Runs | Decides |
 |---|---|---|
 | `validation.ts` | inline, sub-second | is this **storable**? PNG, 1536×969, DPI, ≤20MB, icon, colors, contact |
-| card art checker | async, 100–160s | is this **compliant**? the 18 Visa rules in §7 |
+| card art checker | async, 100–160s | is this **compliant**? the 20 Visa rules in §7 |
 
 The split keeps the repo's invariant that "submissions failing the automated checks are
 never stored" — the gate is still synchronous — and keeps millisecond feedback on obvious
@@ -402,10 +423,12 @@ problems, while only structurally valid art ever reaches a paid agent run.
 
 Two consequences:
 
-1. **`tech_checks` become redundant.** Everything reaching the checker has already passed
-   the equivalent structural validation, so `dimensions`, `file_format`, `dpi` and
-   `bleed_zone` should always pass. Ignore them for the review decision — but a failure
-   means the two layers disagree about the same file, which is worth an alert.
+1. **The structural `tech_checks` become redundant.** Everything reaching the checker has
+   already passed the equivalent structural validation, so `dimensions`, `file_format` and
+   `dpi` should always pass — a failure means the two layers disagree about the same
+   file, which is worth an alert. The lockup and canvas tech checks (`bleed_zone`,
+   `mark_size`, `identifier_alignment`, `mark_color`, `square_corners`, `border_frame`)
+   have no `validation.ts` equivalent and already feed `outcome`.
 2. **The DPI difference is moot.** `validation.ts` rejects a *declared* density that isn't
    exactly 72 and runs first, so a 300-DPI PNG never reaches the checker's more permissive
    calculated ≥ 72 check (§7).

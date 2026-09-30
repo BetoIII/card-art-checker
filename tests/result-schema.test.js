@@ -75,7 +75,7 @@ test('a merged row fans out and is flagged as not independently assessed', () =>
 test('invented checks are preserved in unmapped_checks, never dropped', () => {
   const { checks, unmapped } = normalizeVisualChecks('virtual', [
     { name: 'Black frame around artwork', result: 'warning', notes: 'Confirm intended.' },
-    { name: 'Contactless indicator', result: 'pass' },
+    { name: 'Aspect ratio / dimensions', result: 'pass' },
   ]);
   assert.equal(checks.length, 0);
   assert.equal(unmapped.length, 2);
@@ -119,9 +119,9 @@ test('checks the agent omits are reported as unverified, not absent', () => {
     runId: 'r1', cardType: 'virtual',
     results: { status: 'APPROVED', visual_checks: [{ id: 'full_color', result: 'pass' }] },
   });
-  assert.equal(result.checks.length, 18, 'every catalog check is present');
+  assert.equal(result.checks.length, 20, 'every catalog check is present');
   const missing = result.checks.filter((c) => c.status === 'unverified');
-  assert.equal(missing.length, 17);
+  assert.equal(missing.length, 19);
 });
 
 // ── Tech checks ─────────────────────────────────────────────────────
@@ -225,9 +225,13 @@ test('golden Coinflow artifact normalizes cleanly', { skip: !existsSync(GOLDEN) 
   assert.equal(result.outcome, 'approved_with_notes');
   assert.equal(result.status, 'pass', 'legacy status still collapses to pass');
   assert.deepEqual(result.unmapped_checks, [], 'every name in the artifact resolves');
-  assert.equal(result.checks.length, 18);
-  assert.equal(result.checks.filter((c) => c.status === 'unverified').length, 0,
-    'all 18 checks were reported');
+  // The artifact predates the checks added from docs/visa-rejection-gaps.md;
+  // those two are recorded as unverified rather than dropped.
+  assert.equal(result.checks.length, 20);
+  assert.deepEqual(
+    result.checks.filter((c) => c.status === 'unverified').map((c) => c.id).sort(),
+    ['contactless_indicator', 'visa_brand_mark_color'],
+  );
 
   const byId = Object.fromEntries(result.checks.map((c) => [c.id, c]));
   assert.equal(byId.visa_brand_mark_margin.status, 'warning');

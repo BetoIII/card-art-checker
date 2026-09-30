@@ -665,7 +665,7 @@ tbody tr { transition: opacity 0.18s; }
     <section id="overview">
       <h2>Overview <a class="anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
       <p>
-        A check is a visual review: a Claude agent inspects the art against 18 Visa rules and
+        A check is a visual review: a Claude agent inspects the art against 20 Visa rules and
         returns a decision. That takes <strong>100–160 seconds</strong>, so no endpoint returns a
         verdict synchronously. Every integration has the same four beats.
       </p>
@@ -873,6 +873,12 @@ x-webhook-secret: &lt;secret&gt;</pre>
               <td>Push the result here instead of polling. Allowlist-gated — see <a href="#webhooks">Webhooks</a>.</td>
             </tr>
             <tr>
+              <td><code>declaredProduct</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">Optional</span></td>
+              <td>The Visa product the program is provisioned as, e.g. <code>Signature Corporate</code>. Lets the check fail an identifier for the wrong tier (<code>identifier_tier_mismatch</code>). Must name a canonical product (<code>Debit</code> … <code>Infinite Corporate</code>) or <code>Classic</code>; anything else is ignored. Echoed on <code>submission.declared_product</code>.</td>
+            </tr>
+            <tr>
               <td><code>backFile</code></td>
               <td class="type">file</td>
               <td><span class="opt">Optional</span></td>
@@ -1040,6 +1046,11 @@ x-webhook-secret: &lt;secret&gt;</pre>
               <td><code>callbackUrl</code></td>
               <td><span class="opt">Optional</span></td>
               <td>Allowlist-gated, same as <a href="#submit">/api/card-check</a>.</td>
+            </tr>
+            <tr>
+              <td><code>declaredProduct</code></td>
+              <td><span class="opt">Optional</span></td>
+              <td>Query string or body. Same as <a href="#submit">/api/card-check</a>.</td>
             </tr>
           </tbody>
         </table>
@@ -1399,17 +1410,19 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <tr data-zone="mark"><td><code>visa_brand_mark_present</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>mark_absent</code></td></tr>
             <tr data-zone="mark"><td><code>visa_brand_mark_position</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>position_lower_edge</code> <code>position_wrong_corner</code> <code>mark_absent</code></td></tr>
             <tr data-zone="mark"><td><code>visa_brand_mark_size</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>size_undersized</code> <code>size_oversized</code> <code>size_unverifiable</code></td></tr>
-            <tr data-zone="mark"><td><code>visa_brand_mark_margin</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>margin_below_minimum</code> <code>margin_borderline</code> <code>margin_unverifiable</code></td></tr>
+            <tr data-zone="mark"><td><code>visa_brand_mark_margin</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>margin_below_minimum</code> <code>margin_above_target</code> <code>margin_unverifiable</code></td></tr>
             <tr data-zone="mark"><td><code>visa_brand_mark_contrast</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>contrast_insufficient_wordmark</code> <code>contrast_insufficient_identifier</code></td></tr>
-            <tr data-zone="identifier"><td><code>product_identifier</code></td><td>product_identifier</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_absent</code> <code>identifier_wrong_corner</code> <code>identifier_separated_from_mark</code> <code>identifier_in_pan_zone</code> <code>identifier_casing</code> <code>identifier_tier_mismatch</code></td></tr>
+            <tr data-zone="mark"><td><code>visa_brand_mark_color</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>mark_color_not_permitted</code> <code>mark_gradient_applied</code></td></tr>
+            <tr data-zone="identifier"><td><code>product_identifier</code></td><td>product_identifier</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_absent</code> <code>identifier_wrong_corner</code> <code>identifier_separated_from_mark</code> <code>identifier_in_pan_zone</code> <code>identifier_casing</code> <code>identifier_tier_mismatch</code> <code>identifier_misaligned</code> <code>identifier_font_mismatch</code> <code>identifier_size_mismatch</code> <code>lockup_not_official_artwork</code></td></tr>
             <tr data-zone="card"><td><code>issuer_logo_present</code></td><td>required_elements</td><td><span class="sev required">required</span></td><td><code>issuer_logo_absent</code></td></tr>
+            <tr data-zone="card"><td><code>contactless_indicator</code></td><td>required_elements</td><td><span class="sev required">required</span></td><td><code>contactless_indicator_incorrect</code> <code>contactless_indicator_rotated</code></td></tr>
             <tr data-zone="card"><td><code>no_emv_chip</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
             <tr data-zone="card"><td><code>no_hologram</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
             <tr data-zone="card"><td><code>no_magnetic_stripe</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
             <tr data-zone="card"><td><code>no_cardholder_name</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
             <tr data-zone="card"><td><code>no_pan</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
             <tr data-zone="card"><td><code>no_expiry_date</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr data-zone="card"><td><code>no_physical_card_photography</code></td><td>prohibited</td><td><span class="sev required">required</span></td><td><code>prohibited_element_present</code></td></tr>
+            <tr data-zone="card"><td><code>no_physical_card_photography</code></td><td>prohibited</td><td><span class="sev required">required</span></td><td><code>prohibited_element_present</code> <code>border_frame_present</code></td></tr>
             <tr data-zone="pan"><td><code>lower_left_area_clear</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>pan_zone_obstructed</code> <code>pan_zone_legibility_risk</code></td></tr>
             <tr data-zone="identifier"><td><code>design_elements_clear_of_identifier</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_obstructed</code></td></tr>
             <tr data-zone="card"><td><code>landscape_orientation</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>orientation_not_landscape</code></td></tr>
@@ -1423,9 +1436,18 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     <section id="tech-checks">
       <h2>Technical checks <a class="anchor" href="#tech-checks" aria-label="Link to Technical checks">#</a></h2>
       <p>
-        Four structural measurements ride along in <code>tech_checks</code>:
-        <code>dimensions</code>, <code>file_format</code>, <code>dpi</code>, and
-        <code>bleed_zone</code>.
+        Three structural measurements ride along in <code>tech_checks</code>:
+        <code>dimensions</code>, <code>file_format</code>, and <code>dpi</code>.
+      </p>
+      <p>
+        Six more are deterministic compliance measurements, each with a
+        <code>measurements</code> object: <code>bleed_zone</code> (Brand Mark placed
+        <strong>at</strong> 56px ±3 — too far fails as well as too close),
+        <code>mark_size</code> (109px mark), <code>identifier_alignment</code>,
+        <code>mark_color</code> (white, black, Visa Blue, or silver — flat; gold is a warning),
+        <code>square_corners</code>, and <code>border_frame</code>. A failing one fails its
+        mirrored visual check and forces <code>requires_changes</code>. When the Brand Mark
+        can't be located they report <code>unverified</code> and the visual review decides.
       </p>
       <p>
         <code>dpi</code> here means <strong>calculated</strong> DPI ≥ 72, not "declared density
@@ -1436,8 +1458,8 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.3v4M8 4.9v.1"/></svg></span>
         <div>
           <p>This service runs <em>after</em> your own structural validation, not instead of it. If
-          you already reject non-PNG or wrong-sized art before submitting, these four should always
-          pass — ignore them for the review decision.</p>
+          you already reject non-PNG or wrong-sized art before submitting, the three structural
+          checks should always pass — ignore them for the review decision.</p>
           <p>A failure means the two layers disagree about the same file. That is worth an alert,
           not a rejection.</p>
         </div>

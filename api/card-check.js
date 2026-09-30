@@ -71,6 +71,7 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
     let slackDelivery = true;
     let reference = '';
     let callbackUrl = '';
+    let declaredProduct = '';
 
     bb.on('file', (fieldname, stream, info) => {
       const key = fieldname === 'backFile' ? 'backFile' : 'file';
@@ -84,6 +85,7 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
       else if (name === 'slackDelivery') slackDelivery = !/^(false|0|no|off)$/i.test((value || '').trim());
       else if (name === 'reference') reference = value;
       else if (name === 'callbackUrl') callbackUrl = value;
+      else if (name === 'declaredProduct') declaredProduct = value;
     });
 
     bb.on('finish', () => {
@@ -137,6 +139,9 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
         slackDelivery,
         reference: sanitizeReference(reference),
         callbackUrl: (callbackUrl || '').trim() || null,
+        // The Visa product the program is provisioned as — lets the agent
+        // match the identifier tier. runAnalysis normalizes or drops it.
+        declaredProduct: (declaredProduct || '').trim() || null,
       });
     });
 
@@ -169,7 +174,7 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
 async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
   const {
     file, fileName, backFile, backFileName,
-    projectId, cardType, slackDelivery, reference, callbackUrl,
+    projectId, cardType, slackDelivery, reference, callbackUrl, declaredProduct,
   } = parsed;
 
   const trigger = {
@@ -186,12 +191,16 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       runLog.set({ projectName });
     }
 
-    const { pdfBuffer, status, summary, results, techJson, cardType: resolvedCardType } = await runAnalysis({
+    const {
+      pdfBuffer, status, summary, results, techJson, cardType: resolvedCardType,
+      declaredProduct: resolvedProduct,
+    } = await runAnalysis({
       file,
       fileName,
       backFile,
       backFileName,
       cardType,
+      declaredProduct,
       onProgress: send,
       deadlineAt,
     });
@@ -213,6 +222,7 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       projectName, fileName, pdfUrl,
       source,
       trigger,
+      declaredProduct: resolvedProduct,
       callbackUrl,
       deadlineAt,
     });

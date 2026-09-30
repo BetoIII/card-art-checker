@@ -20,7 +20,7 @@ function resultsBlock(prompt) {
   return JSON.parse(match[1].trim());
 }
 
-test('the virtual prompt emits a parseable block with all 18 catalog ids in order', () => {
+test('the virtual prompt emits a parseable block with all 20 catalog ids in order', () => {
   const parsed = resultsBlock(buildVisualPrompt(VIRTUAL_TECH, 'virtual', false, []));
   assert.deepEqual(
     parsed.visual_checks.map((c) => c.id),
@@ -45,7 +45,7 @@ test('a verbatim echo of the prompt skeleton normalizes with nothing unmapped', 
     const echoed = parsed.visual_checks.map((c) => ({ ...c, result: 'pass' }));
     const { checks, unmapped } = normalizeVisualChecks(cardType, echoed);
     assert.deepEqual(unmapped, [], `${cardType}: skeleton echo left unmapped entries`);
-    assert.equal(checks.length, 18);
+    assert.equal(checks.length, getCatalog(cardType).length);
   }
 });
 
@@ -72,7 +72,8 @@ test('both prompts carry the reason-code table for their own card type', () => {
   const physical = buildVisualPrompt(PHYSICAL_TECH, 'physical', true, []);
 
   assert.match(virtual, /## Reason Codes/);
-  assert.match(virtual, /visa_brand_mark_margin: margin_below_minimum \| margin_borderline/);
+  assert.match(virtual, /visa_brand_mark_margin: margin_below_minimum \| margin_above_target/);
+  assert.match(virtual, /product_identifier: .*identifier_misaligned/);
   assert.ok(!virtual.includes('issuer_text_back'), 'virtual must not offer physical codes');
 
   assert.match(physical, /## Reason Codes/);
