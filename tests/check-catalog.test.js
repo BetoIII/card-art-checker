@@ -17,10 +17,10 @@ import {
 
 // ── Catalog integrity ───────────────────────────────────────────────
 
-test('virtual catalog has the canonical 20 checks with unique ids', () => {
+test('virtual catalog has the canonical 21 checks with unique ids', () => {
   const checks = getCatalog('virtual');
-  assert.equal(checks.length, 20);
-  assert.equal(new Set(checks.map((c) => c.id)).size, 20);
+  assert.equal(checks.length, 21);
+  assert.equal(new Set(checks.map((c) => c.id)).size, 21);
 });
 
 test('physical catalog has the canonical 18 checks with unique ids', () => {
@@ -235,6 +235,7 @@ test('checks added from Visa rejection gaps resolve, including the agent\'s old 
     ['contactless_indicator'],
   );
   assert.deepEqual(resolveChecks('virtual', 'Visa Brand Mark color'), ['visa_brand_mark_color']);
+  assert.deepEqual(resolveChecks('virtual', 'Partner logo border'), ['issuer_logo_within_border']);
   assert.deepEqual(
     resolveChecks('virtual', 'Visa Brand Mark color (white, flat)'),
     ['visa_brand_mark_color'],
@@ -281,6 +282,7 @@ test('reason codes include the evidence-backed virtual vocabulary', () => {
     'mark_color_not_permitted', 'mark_gradient_applied', 'identifier_misaligned',
     'identifier_font_mismatch', 'identifier_size_mismatch', 'lockup_not_official_artwork',
     'contactless_indicator_incorrect', 'contactless_indicator_rotated', 'border_frame_present',
+    'issuer_logo_in_bleed_zone',
   ]) {
     assert.ok(codes.includes(expected), `missing reason code: ${expected}`);
   }

@@ -20,7 +20,7 @@ function resultsBlock(prompt) {
   return JSON.parse(match[1].trim());
 }
 
-test('the virtual prompt emits a parseable block with all 20 catalog ids in order', () => {
+test('the virtual prompt emits a parseable block with all 21 catalog ids in order', () => {
   const parsed = resultsBlock(buildVisualPrompt(VIRTUAL_TECH, 'virtual', false, []));
   assert.deepEqual(
     parsed.visual_checks.map((c) => c.id),

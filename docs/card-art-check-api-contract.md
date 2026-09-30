@@ -238,7 +238,7 @@ Respond `2xx` fast and do your work afterward.
   "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" },
   "report":     { "pdf_url": "https://…-report.pdf" },
 
-  "counts": { "pass": 18, "fail": 2 },
+  "counts": { "pass": 19, "fail": 2 },
   "blocking_failures": ["visa_brand_mark_position", "visa_brand_mark_margin", "bleed_zone"],
 
   "checks": [
@@ -298,7 +298,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 `warning` is a real, common state — a borderline measurement that didn't fail. Treat
 anything that isn't `pass` as "not clean", but only `blocking_failures` should reject.
 
-### Virtual check IDs (20)
+### Virtual check IDs (21)
 
 | id | category | severity | reason codes |
 |---|---|---|---|
@@ -310,6 +310,7 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 | `visa_brand_mark_color` | brand_mark | blocker | `mark_color_not_permitted`, `mark_gradient_applied` |
 | `product_identifier` | product_identifier | blocker | `identifier_absent`, `identifier_wrong_corner`, `identifier_separated_from_mark`, `identifier_in_pan_zone`, `identifier_casing`, `identifier_tier_mismatch`, `identifier_misaligned`, `identifier_font_mismatch`, `identifier_size_mismatch`, `lockup_not_official_artwork` |
 | `issuer_logo_present` | required_elements | required | `issuer_logo_absent` |
+| `issuer_logo_within_border` | required_elements | blocker | `issuer_logo_in_bleed_zone` |
 | `contactless_indicator` | required_elements | required | `contactless_indicator_incorrect`, `contactless_indicator_rotated` |
 | `no_emv_chip` | prohibited | blocker | `prohibited_element_present` |
 | `no_hologram` | prohibited | blocker | `prohibited_element_present` |
@@ -326,7 +327,7 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 ### Technical check IDs (virtual)
 
 `dimensions` · `file_format` · `dpi` · `bleed_zone` · `mark_size` · `identifier_alignment` ·
-`mark_color` · `square_corners` · `border_frame`
+`mark_color` · `lockup_match` · `issuer_logo_border` · `square_corners` · `border_frame`
 
 `dimensions`, `file_format` and `dpi` overlap `validation.ts` and can serve as a
 cross-check. Note `dpi` here means **calculated** DPI ≥ 72, not "declared density equals
@@ -337,9 +338,11 @@ The rest are deterministic compliance measurements, not structural ones:
 | Tech check | Measures | Mirrored into |
 |---|---|---|
 | `bleed_zone` | Brand Mark placed **at** 56px (±3) from its nearest top/bottom and side edges — too far fails as well as too close | `visa_brand_mark_margin` |
-| `mark_size` | 109px mark height (±7); reports the mark-top-to-identifier-baseline distance (Visa: 170px). A 142px mark is a warning | `visa_brand_mark_size` |
+| `mark_size` | 109px mark height (±7); reports the mark-top-to-identifier-baseline distance (Visa: 170px). The retired 142px size fails | `visa_brand_mark_size` |
 | `identifier_alignment` | identifier edge vs. the mark's outer edge (±6px passes, >15px fails) | `product_identifier` |
 | `mark_color` | sampled ink: white, black, Visa Blue, silver — flat. Gold is a warning (premium products only); brown fails | `visa_brand_mark_color` |
+| `lockup_match` | shape match against Visa's official lockup artwork: wordmark overlap, identifier size relative to the mark (0.87–1.15× passes), and the identifier tier it reads as — a confident tier that differs from `declaredProduct` fails | `product_identifier` |
+| `issuer_logo_border` | partner/issuer logos in the other corners stay at least 53px from the edges (outside the 56px bleed zone) | `issuer_logo_within_border` |
 | `square_corners` | transparent or matte arcs in the corners | — (tech only) |
 | `border_frame` | transparent padding on any side, or uniform border lines (≥2px) on two or more sides | `no_physical_card_photography` |
 
@@ -415,7 +418,7 @@ unresolved and the team owns it.
 | | Runs | Decides |
 |---|---|---|
 | `validation.ts` | inline, sub-second | is this **storable**? PNG, 1536×969, DPI, ≤20MB, icon, colors, contact |
-| card art checker | async, 100–160s | is this **compliant**? the 20 Visa rules in §7 |
+| card art checker | async, 100–160s | is this **compliant**? the 21 Visa rules in §7 |
 
 The split keeps the repo's invariant that "submissions failing the automated checks are
 never stored" — the gate is still synchronous — and keeps millisecond feedback on obvious
@@ -427,8 +430,9 @@ Two consequences:
    already passed the equivalent structural validation, so `dimensions`, `file_format` and
    `dpi` should always pass — a failure means the two layers disagree about the same
    file, which is worth an alert. The lockup and canvas tech checks (`bleed_zone`,
-   `mark_size`, `identifier_alignment`, `mark_color`, `square_corners`, `border_frame`)
-   have no `validation.ts` equivalent and already feed `outcome`.
+   `mark_size`, `identifier_alignment`, `mark_color`, `lockup_match`, `issuer_logo_border`,
+   `square_corners`, `border_frame`) have no `validation.ts` equivalent and already feed
+   `outcome`.
 2. **The DPI difference is moot.** `validation.ts` rejects a *declared* density that isn't
    exactly 72 and runs first, so a 300-DPI PNG never reaches the checker's more permissive
    calculated ≥ 72 check (§7).

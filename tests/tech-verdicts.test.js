@@ -17,6 +17,7 @@ function techJson(overrides = {}) {
       dimensions: passing(), file_format: passing(), dpi: passing(),
       bleed_zone: passing({ actual: 'Top: 56px, Right: 56px' }),
       mark_size: passing(), identifier_alignment: passing(), mark_color: passing(),
+      lockup_match: passing(), issuer_logo_border: passing(),
       square_corners: passing(), border_frame: passing(),
       ...overrides,
     },
@@ -26,7 +27,8 @@ function techJson(overrides = {}) {
 function agentResults(status = 'APPROVED', overrides = {}) {
   const ids = [
     'visa_brand_mark_margin', 'visa_brand_mark_size', 'visa_brand_mark_color',
-    'product_identifier', 'no_physical_card_photography', 'full_color',
+    'product_identifier', 'issuer_logo_within_border', 'no_physical_card_photography',
+    'full_color',
   ];
   return {
     status,
@@ -52,6 +54,20 @@ test('a failing tech check fails its mirrored visual check and blocks approval',
   assert.equal(results.status, 'REQUIRES CHANGES');
   assert.match(results.summary, /visa_brand_mark_margin/);
   assert.ok(changes.some((c) => c.check === 'visa_brand_mark_margin' && c.from === 'pass' && c.to === 'fail'));
+});
+
+test('lockup and partner-logo measurements fail their visual checks', () => {
+  const results = agentResults('APPROVED');
+  applyTechVerdicts(results, techJson({
+    lockup_match: { passed: false, reason_code: 'identifier_size_mismatch', note: 'identifier 33% larger' },
+    issuer_logo_border: { passed: false, reason_code: 'issuer_logo_in_bleed_zone', note: 'right 40px' },
+  }), 'virtual');
+  const byId = Object.fromEntries(results.visual_checks.map((c) => [c.id, c]));
+  assert.equal(byId.product_identifier.result, 'fail');
+  assert.equal(byId.product_identifier.reason_code, 'identifier_size_mismatch');
+  assert.equal(byId.issuer_logo_within_border.result, 'fail');
+  assert.equal(byId.issuer_logo_within_border.reason_code, 'issuer_logo_in_bleed_zone');
+  assert.equal(results.status, 'REQUIRES CHANGES');
 });
 
 test('a tech-only failure (square corners) still blocks approval', () => {
@@ -135,8 +151,11 @@ test('the virtual prompt states the exact-56px rule and drops the minimum readin
   assert.match(prompt, /AT 56px/);
   assert.match(prompt, /margin_above_target/);
   assert.match(prompt, /109px-tall mark/);
+  assert.match(prompt, /including the retired 142px "Option Two"/);
+  assert.match(prompt, /within 53px of any card edge/);
   assert.doesNotMatch(prompt, /do NOT flag it/, 'the contactless indicator is now checked');
   assert.doesNotMatch(prompt, /Option Two \(Signature\/Platinum\/Infinite\): 142px/);
+  assert.doesNotMatch(prompt, /V" flourish/, 'the official wordmark has the V flag');
 });
 
 // ── Wire shape ──────────────────────────────────────────────────────
@@ -148,7 +167,8 @@ test('new tech checks reach the wire with a status and their measurements', () =
     square_corners: { passed: false, actual: 'Rounded corners', radius_px: 57, rounded_corners: ['top-left'] },
   });
   const byId = Object.fromEntries(normalizeTechChecks('virtual', tech).map((c) => [c.id, c]));
-  for (const id of ['mark_size', 'identifier_alignment', 'mark_color', 'square_corners', 'border_frame']) {
+  for (const id of ['mark_size', 'identifier_alignment', 'mark_color', 'lockup_match',
+    'issuer_logo_border', 'square_corners', 'border_frame']) {
     assert.ok(byId[id], `${id} missing from tech_checks`);
   }
   assert.equal(byId.mark_size.status, 'fail');

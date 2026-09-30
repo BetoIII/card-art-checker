@@ -75,9 +75,8 @@ VISA_MARK_MARGIN_TOLERANCE = 3
 # 104-109px tall on the wordmark (anti-aliased letter tips vary a few px).
 VISA_MARK_HEIGHT_PX = 109
 VISA_MARK_HEIGHT_TOLERANCE_PX = 7
-# The 142px "Option Two" in references/visa-requirements.md has no approved
-# example and Visa's recent feedback asks for 109px; a mark at that size is a
-# warning to confirm, not a pass.
+# The retired 142px "Option Two" fails like any other size (the note names it,
+# since designers still work from it).
 VISA_MARK_LEGACY_HEIGHT_PX = 142
 VISA_LOCKUP_COMPOSITE_PX = 170
 # Identifier edge vs. the mark's outer edge. Approved lockups sit within 3px.
@@ -85,6 +84,29 @@ IDENTIFIER_ALIGN_TOLERANCE_PX = 6
 IDENTIFIER_ALIGN_FAIL_PX = 15
 # Visa Blue, per Visa's feedback ("R20 G52 B203").
 VISA_BLUE_RGB = (20, 52, 203)
+# Partner and issuer logos keep out of the same 56px bleed zone as the mark
+# (with the mark's 3px tolerance). Visa: "Please adjust the partner logo to
+# ensure it complies with the border guidelines."
+ISSUER_LOGO_MIN_MARGIN_PX = VISA_MARK_EDGE_MARGIN - VISA_MARK_MARGIN_TOLERANCE
+
+# --- Official Visa lockups (assets/lockups/*.png) ---
+# Rendered from Visa's official lockup artwork (1536x969 canvases with the
+# lockup at 56px in both upper corners): a 109px wordmark, and each product
+# identifier 35px from cap top to baseline, 170px below the mark's top.
+LOCKUP_TIERS = ("platinum", "signature", "infinite", "corporate")
+LOCKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "lockups")
+IDENTIFIER_CAP_HEIGHT_PX = 35
+# Identifier cap height relative to the mark, as a ratio of the official one.
+# Approved cards measure 0.89-1.11; "font too big" rejections 1.18-1.39.
+IDENTIFIER_SIZE_RANGE = (0.87, 1.15)
+# Shape overlap (IoU) with the official artwork. The wordmark matches at
+# 0.88-0.99 on every real card; a redrawn mark falls well below. An identifier
+# is read as a tier only on a confident, unambiguous match — gradients, low
+# contrast and two-word identifiers ("Signature Corporate") score lower
+# without being wrong, so a weak match is never a failure by itself.
+WORDMARK_MIN_IOU = 0.80
+IDENTIFIER_TIER_MIN_IOU = 0.65
+IDENTIFIER_TIER_MIN_MARGIN = 0.25
 
 # --- Physical card constants (CR80, per ISO/IEC 7810) ---
 CR80_ASPECT_RATIO = 3.375 / 2.125            # ≈ 1.5882
@@ -855,12 +877,20 @@ def _locate_visa_mark(img):
                 main = max(lines, key=lambda l: l["area"])
                 row = [l for l in lines if abs(l["y2"] - main["y2"]) < 0.3 * mark_h]
                 bottoms = sorted(v for l in row for v in l["bottoms"])
+                iy1, iy2 = min(l["y1"] for l in row), max(l["y2"] for l in row)
+                ix1, ix2 = min(l["x1"] for l in row), max(l["x2"] for l in row)
                 identifier = {
-                    "top": zy1 + min(l["y1"] for l in row),
+                    "top": zy1 + iy1,
                     # Median glyph bottom: descenders (g, p) are a minority.
                     "baseline": zy1 + bottoms[len(bottoms) // 2],
-                    "left": zx1 + min(l["x1"] for l in row),
-                    "right": zx1 + max(l["x2"] for l in row),
+                    "left": zx1 + ix1,
+                    "right": zx1 + ix2,
+                    # Glyph pixels of the identifier from cap top to baseline
+                    # (descenders excluded — opening can snap a thin "g" tail),
+                    # unopened, at the 1536 scale: the comparison against
+                    # Visa's official lockups (_lockup_match_check).
+                    "_mask": raw[zy1 + iy1:zy1 + bottoms[len(bottoms) // 2] + 1,
+                                 zx1 + ix1:zx1 + ix2 + 1].copy(),
                 }
 
     # Core ink: well inside the strokes, clear of anti-aliasing.
@@ -895,7 +925,11 @@ def _locate_visa_mark(img):
             "baseline": _far(identifier["baseline"], wy),
             "left": _near(identifier["left"], wx),
             "right": _far(identifier["right"], wx),
+            "_mask": identifier["_mask"],
         } if identifier else None),
+        # Wordmark pixels at the 1536 scale (see _identifier_mask above).
+        "_wordmark_mask": grown[top - ry1:bottom - ry1 + 1, left - rx1:right - rx1 + 1].copy(),
+        "_mark_h_canvas": mark_h,
         "ink_rgb": [int(round(v)) for v in np.median(ink, axis=0)],
         "ink_luminance_spread": int(round(float(
             np.percentile(ink_l, 95) - np.percentile(ink_l, 5)))),
@@ -989,10 +1023,9 @@ def _virtual_size_check(mark):
         result.update(passed=True, note=f"Visa Brand Mark height {height}px matches the {target}px lockup{lockup}.")
     elif abs(height - legacy) <= tol:
         result.update(
-            passed=True, borderline=True, reason_code="size_oversized",
-            note=(f"Mark height {height}px matches the legacy {legacy}px \"Option Two\". Visa's "
-                  f"recent feedback asks for a {target}px mark with a {composite_target}px "
-                  f"lockup — confirm before submitting."))
+            passed=False, reason_code="size_oversized",
+            note=(f"FAIL — Visa Brand Mark is {height}px tall, the retired {legacy}px \"Option Two\". "
+                  f"Visa asks for a {target}px mark with a {composite_target}px lockup{lockup}."))
     else:
         code = "size_undersized" if height < target else "size_oversized"
         result.update(
@@ -1052,6 +1085,10 @@ def _classify_mark_ink(rgb):
         return "Visa Blue"
     chroma = max(r, g, b) - min(r, g, b)
     lum = 0.299 * r + 0.587 * g + 0.114 * b
+    # Near-black reads as black whatever its tint (an approved card used
+    # R5 G9 B46); Visa Blue is far lighter (luminance ~60).
+    if lum <= 40 and max(r, g, b) <= 90:
+        return "black"
     if chroma <= 36:
         if lum >= 225:
             return "white"
@@ -1109,13 +1146,15 @@ def _virtual_color_check(mark):
     return result
 
 
-def check_virtual_mark(img):
+def check_virtual_mark(img, declared_product=None):
     """
     Deterministic Visa Brand Mark checks for virtual art, from one locator pass:
-    bleed_zone (placed at 56px), mark_size, identifier_alignment, mark_color.
+    bleed_zone (placed at 56px), mark_size, identifier_alignment, mark_color,
+    lockup_match (against Visa's official lockups), and issuer_logo_border.
 
-    When the mark is not found every check reports passed=None (unverified)
-    rather than a pass: an undetected mark is not evidence of compliance.
+    When the mark is not found every mark check reports passed=None
+    (unverified) rather than a pass: an undetected mark is not evidence of
+    compliance.
     """
     mark = _locate_visa_mark(img)
     if mark is None:
@@ -1132,13 +1171,245 @@ def check_virtual_mark(img):
             "identifier_alignment": dict(unverified, required="identifier aligned with the Visa Brand Mark",
                                          identifier_detected=False),
             "mark_color": dict(unverified, required="white, black, Visa Blue, or gold/silver premium ink — flat"),
+            "lockup_match": dict(unverified, required="Visa's official lockup artwork"),
+            "issuer_logo_border": _issuer_logo_border_check(img, None),
         }
     return {
         "bleed_zone": _virtual_margin_check(mark),
         "mark_size": _virtual_size_check(mark),
         "identifier_alignment": _virtual_identifier_alignment_check(mark),
         "mark_color": _virtual_color_check(mark),
+        "lockup_match": _lockup_match_check(mark, declared_product),
+        "issuer_logo_border": _issuer_logo_border_check(img, mark),
     }
+
+
+# ── Official lockup comparison ──────────────────────────────────────
+
+_REFERENCE_CACHE = {}
+
+
+def _crop_to_content(mask):
+    ys, xs = np.nonzero(mask)
+    if not len(ys):
+        return None
+    return mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+
+
+def _reference_lockups():
+    """
+    Wordmark and identifier masks from the official lockups, keyed by
+    (tier, side). None when the assets are missing — the checks degrade to
+    unverified rather than failing.
+    """
+    if "refs" in _REFERENCE_CACHE:
+        return _REFERENCE_CACHE["refs"]
+    refs = {}
+    try:
+        for tier in LOCKUP_TIERS:
+            ink = np.array(Image.open(os.path.join(LOCKUP_DIR, f"{tier}.png")).convert("L")) > 200
+            for side, (x1, x2) in (("right", (1000, 1536)), ("left", (0, 536))):
+                ident = ink[178:250, x1:x2]
+                glyphs = [g for g in _label_components(ident, min_area=12) if g["y2"] - g["y1"] > 12]
+                bottoms = sorted(g["y2"] for g in glyphs)
+                ys, xs = np.nonzero(ident)
+                refs[(tier, side)] = {
+                    "mark": _crop_to_content(ink[30:175, x1:x2]),
+                    # Cap top to baseline, matching the submission's mask.
+                    "ident": ident[ys.min():bottoms[len(bottoms) // 2] + 1, xs.min():xs.max() + 1],
+                }
+    except Exception:
+        refs = None
+    _REFERENCE_CACHE["refs"] = refs
+    return refs
+
+
+def _mask_iou(sub, ref, shift=2):
+    """Best IoU of `sub` resized onto `ref`, within a few px of alignment."""
+    fitted = np.array(Image.fromarray((sub * 255).astype(np.uint8)).resize(
+        (ref.shape[1], ref.shape[0]), Image.BILINEAR)) > 127
+    best = 0.0
+    for dy in range(-shift, shift + 1):
+        for dx in range(-shift, shift + 1):
+            moved = np.roll(np.roll(fitted, dy, axis=0), dx, axis=1)
+            union = (moved | ref).sum()
+            if union:
+                best = max(best, float((moved & ref).sum()) / union)
+    return best
+
+
+def _lockup_match_check(mark, declared_product=None):
+    """
+    Compare the lockup with Visa's official artwork: the wordmark's shape,
+    the identifier's size relative to the mark, and which product the
+    identifier reads as. A confident tier that differs from the declared
+    product fails as identifier_tier_mismatch.
+    """
+    refs = _reference_lockups()
+    required = "Visa's official lockup: official wordmark, identifier at the official size"
+    if not refs:
+        return {"passed": None, "actual": "Official lockup references unavailable",
+                "required": required, "note": "assets/lockups is missing — verify visually."}
+    side = "right" if mark["corner"].endswith("right") else "left"
+    wordmark = _crop_to_content(mark["_wordmark_mask"])
+    wordmark_iou = round(_mask_iou(wordmark, refs[("platinum", side)]["mark"]), 2) if wordmark is not None else None
+
+    ident = mark.get("identifier")
+    ident_mask = _crop_to_content(ident["_mask"]) if ident is not None else None
+    tier, tier_iou, size_ratio, scores = None, None, None, {}
+    if ident_mask is not None:
+        scores = {t: round(_mask_iou(ident_mask, refs[(t, side)]["ident"]), 2) for t in LOCKUP_TIERS}
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        tier_iou = ranked[0][1]
+        if tier_iou >= IDENTIFIER_TIER_MIN_IOU and tier_iou - ranked[1][1] >= IDENTIFIER_TIER_MIN_MARGIN:
+            tier = ranked[0][0]
+        size_ratio = round((ident_mask.shape[0] / mark["_mark_h_canvas"])
+                           / (IDENTIFIER_CAP_HEIGHT_PX / VISA_MARK_HEIGHT_PX), 2)
+
+    declared = (declared_product or "").strip().lower() or None
+    problems = []
+    if wordmark_iou is not None and wordmark_iou < WORDMARK_MIN_IOU:
+        problems.append(("lockup_not_official_artwork",
+                         f"the wordmark does not match Visa's official artwork (overlap {wordmark_iou:.2f})"))
+    lo, hi = IDENTIFIER_SIZE_RANGE
+    if size_ratio is not None and not lo <= size_ratio <= hi:
+        direction = "larger" if size_ratio > hi else "smaller"
+        problems.append(("identifier_size_mismatch",
+                         f"the identifier is {abs(size_ratio - 1):.0%} {direction} than Visa's lockup relative to the mark"))
+    if declared and tier and tier != declared:
+        problems.append(("identifier_tier_mismatch",
+                         f"the identifier reads \"{tier.capitalize()}\" but the program is \"{declared_product}\""))
+
+    reading = f"identifier reads as {tier.capitalize()}" if tier else (
+        "identifier matches no single official identifier" if ident_mask is not None else "identifier not found")
+    actual = "; ".join(filter(None, [
+        f"wordmark overlap {wordmark_iou:.2f}" if wordmark_iou is not None else None,
+        reading,
+        f"identifier size {size_ratio:.2f}x official" if size_ratio is not None else None,
+    ]))
+    result = {
+        "actual": actual,
+        "required": required,
+        "wordmark_iou": wordmark_iou,
+        "identifier_tier": tier,
+        "identifier_tier_iou": tier_iou,
+        "identifier_scores": scores,
+        "identifier_size_ratio": size_ratio,
+        "reference_side": side,
+    }
+    if declared:
+        result["declared_product"] = declared_product
+    if problems:
+        result.update(passed=False, reason_code=problems[0][0],
+                      note="FAIL — " + "; ".join(p[1] for p in problems) + ".")
+    else:
+        result.update(passed=True, note=(
+            f"Lockup matches Visa's official artwork ({reading}). Compare the identifier's "
+            f"typeface with the mounted reference when it matches no single official identifier."))
+    return result
+
+
+# ── Partner / issuer logo border ────────────────────────────────────
+
+def _logo_runs(rgb, corner, exclude=None):
+    """
+    Logo-like glyph runs in one corner window: at least three glyphs on a line
+    (a wordmark), with a same-row icon absorbed. Small pattern fragments do not
+    qualify, so background art is not mistaken for a logo.
+    """
+    h, w, _ = rgb.shape
+    wh, ww = round(h * 0.40), round(w * 0.45)
+    wy = 0 if corner.startswith("upper") else h - wh
+    wx = w - ww if corner.endswith("right") else 0
+    win = rgb[wy:wy + wh, wx:wx + ww]
+    bg = _local_background(win)
+    dist = np.sqrt(((win - bg) ** 2).sum(axis=-1))
+    lighter = _luminance(win) > _luminance(bg)
+    found = []
+    for side in (lighter, ~lighter):
+        contrast = np.where(side, dist, 0.0)
+        peak = float(np.percentile(contrast, 99.5))
+        if peak < 60:
+            continue
+        glyphs = _merge_split_glyphs(_label_components(_binary_open(contrast > 0.5 * peak, 3), min_area=40))
+        for line in _text_lines(glyphs, 18, 170, max_gap_ratio=0.9, same_height=0.6):
+            box = _line_box(line)
+            bh, bw = box["y2"] - box["y1"] + 1, box["x2"] - box["x1"] + 1
+            if box["n"] < 3 or bw < 80 or bh < 25 or bw < 1.2 * bh:
+                continue
+            if not 0.15 <= box["area"] / (bh * bw) <= 0.75:
+                continue
+            for g in glyphs:
+                gh = g["y2"] - g["y1"] + 1
+                if g in line or not 0.6 * bh <= gh <= 1.8 * bh or g["y1"] > box["y2"] or g["y2"] < box["y1"]:
+                    continue
+                if min(abs(g["x2"] - box["x1"]), abs(g["x1"] - box["x2"])) <= 0.8 * bh:
+                    box.update(x1=min(box["x1"], g["x1"]), x2=max(box["x2"], g["x2"]),
+                               y1=min(box["y1"], g["y1"]), y2=max(box["y2"], g["y2"]))
+            logo = {"top": box["y1"] + wy, "bottom": box["y2"] + wy,
+                    "left": box["x1"] + wx, "right": box["x2"] + wx}
+            if exclude and not (logo["right"] < exclude[0] or logo["left"] > exclude[2]
+                                or logo["bottom"] < exclude[1] or logo["top"] > exclude[3]):
+                continue
+            logo["edges"] = {
+                "top" if corner.startswith("upper") else "bottom":
+                    logo["top"] if corner.startswith("upper") else h - 1 - logo["bottom"],
+                "left" if corner.endswith("left") else "right":
+                    logo["left"] if corner.endswith("left") else w - 1 - logo["right"],
+            }
+            found.append(logo)
+    return min(found, key=lambda l: sum(l["edges"].values())) if found else None
+
+
+def _issuer_logo_border_check(img, mark):
+    """
+    Partner and issuer logos stay out of the 56px bleed zone, like the Visa
+    Brand Mark: no logo within 53px of its nearest edges. Checked in the upper
+    corners and the lower right (the lower left is the PAN zone and has its
+    own check). Background artwork may still bleed to the edge.
+    """
+    native_w = img.size[0]
+    scale = native_w / REQUIRED_WIDTH
+    canvas = img.convert("RGB")
+    if canvas.width != REQUIRED_WIDTH:
+        canvas = canvas.resize((REQUIRED_WIDTH, max(1, round(canvas.height / scale))), Image.LANCZOS)
+    rgb = np.array(canvas, dtype=float)
+    exclude = None
+    if mark is not None:
+        ident = mark.get("identifier")
+        bottom = ident["baseline"] if ident else mark["bottom"]
+        exclude = tuple(int(round(v / scale)) for v in (
+            mark["left"] - 10, mark["top"] - 10, mark["right"] + 10, bottom + 30))
+    corners = [c for c in ("upper-left", "upper-right", "lower-right")
+               if mark is None or c != mark["corner"]]
+    minimum = ISSUER_LOGO_MIN_MARGIN_PX
+    logos, inside = [], []
+    for corner in corners:
+        logo = _logo_runs(rgb, corner, exclude)
+        if not logo:
+            continue
+        edges = {k: int(round(v * scale)) for k, v in logo["edges"].items()}
+        entry = {"corner": corner, "edges_px": edges,
+                 "box": [int(round(logo[k] * scale)) for k in ("left", "top", "right", "bottom")]}
+        logos.append(entry)
+        close = {k: v for k, v in edges.items() if v < round(minimum * scale)}
+        if close:
+            inside.append((corner, close))
+    required = f"logos at least {minimum}px from the card edges (outside the {VISA_MARK_EDGE_MARGIN}px bleed zone)"
+    if not logos:
+        return {"passed": None, "actual": "No partner or issuer logo located", "required": required,
+                "note": "Could not locate a partner/issuer logo programmatically. Verify visually.",
+                "logos": []}
+    measured = "; ".join(f"{l['corner']}: " + ", ".join(f"{k} {v}px" for k, v in l["edges_px"].items())
+                         for l in logos)
+    if inside:
+        where = "; ".join(f"{c} logo " + ", ".join(f"{k} {v}px" for k, v in e.items()) for c, e in inside)
+        return {"passed": False, "actual": measured, "required": required, "logos": logos,
+                "reason_code": "issuer_logo_in_bleed_zone",
+                "note": (f"FAIL — a partner/issuer logo enters the {VISA_MARK_EDGE_MARGIN}px bleed zone "
+                         f"({where}). Keep logos at least {minimum}px from the edges, like the Visa Brand Mark.")}
+    return {"passed": True, "actual": measured, "required": required, "logos": logos,
+            "note": f"Partner/issuer logos keep out of the {VISA_MARK_EDGE_MARGIN}px bleed zone."}
 
 
 def _corner_runs(rgba, corner, max_run):
@@ -1285,6 +1556,34 @@ def check_border_frame(img):
         "border_sides": sides,
         "frame_px": max([*transparent.values(), *[t for t, _ in lined.values()]] or [0]),
     }
+
+
+def reference_lockup_crop(lockup_result=None, corner="upper-right"):
+    """
+    Visa's official lockup, cropped like the brand_mark zoom crop (2x, same
+    corner) so the agent can compare typeface, weight and letterforms side by
+    side. The identified tier when known, else all four tiers on one sheet.
+    Returns PNG bytes, or None when the reference assets are missing.
+    """
+    left_side = corner.endswith("left")
+    box = (0, 20, 436, 260) if left_side else (1100, 20, 1536, 260)
+    tier = (lockup_result or {}).get("identifier_tier")
+    tiers = [tier] if tier in LOCKUP_TIERS else list(LOCKUP_TIERS)
+    try:
+        tiles = [Image.open(os.path.join(LOCKUP_DIR, f"{t}.png")).convert("RGB").crop(box)
+                 for t in tiers]
+    except Exception:
+        return None
+    if len(tiles) == 1:
+        sheet = tiles[0].resize((tiles[0].width * 2, tiles[0].height * 2), Image.LANCZOS)
+    else:
+        tw, th = tiles[0].size
+        sheet = Image.new("RGB", (tw * 2, th * 2))
+        for i, tile in enumerate(tiles):
+            sheet.paste(tile, ((i % 2) * tw, (i // 2) * th))
+    buf = io.BytesIO()
+    sheet.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def generate_zoom_crops(img, bleed_result=None, side="front", trim_offsets=None):
@@ -1812,7 +2111,8 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     tech_col_ratios = [0.28, 0.12, 0.60]
     tech_rows_data = []
     check_order = ["dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
-                   "identifier_alignment", "mark_color", "square_corners", "border_frame"]
+                   "identifier_alignment", "mark_color", "lockup_match", "issuer_logo_border",
+                   "square_corners", "border_frame"]
     check_labels = {
         "dimensions": "Dimensions (1536x969 px)",
         "file_format": "File Format (PNG)",
@@ -1821,8 +2121,10 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
         "mark_size": "Visa Brand Mark size (109px)",
         "identifier_alignment": "Identifier aligned with mark",
         "mark_color": "Visa Brand Mark color",
+        "lockup_match": "Matches Visa's official lockup",
+        "issuer_logo_border": "Partner logo outside bleed zone",
         "square_corners": "Square corners",
-        "border_frame": "No border frame",
+        "border_frame": "No border lines",
     }
     for key in check_order:
         if key not in tech_checks:
@@ -3388,7 +3690,7 @@ def check_physical(front_path: str, back_path: "str | None" = None,
 # Virtual card checks (PNG, 1536x969)
 # ─────────────────────────────────────────────────────────────────
 
-def check_image(image_path: str) -> dict:
+def check_image(image_path: str, declared_product: "str | None" = None) -> dict:
     results = {
         "card_type": "virtual",
         "file": os.path.basename(image_path),
@@ -3439,7 +3741,7 @@ def check_image(image_path: str) -> dict:
     # --- Visa Brand Mark lockup: placed at 56px (bleed_zone), mark size,
     # identifier alignment, mark color — one locator pass ---
     try:
-        results["checks"].update(check_virtual_mark(img))
+        results["checks"].update(check_virtual_mark(img, declared_product))
     except Exception as e:
         results["errors"].append(f"Brand Mark analysis failed: {e}")
 

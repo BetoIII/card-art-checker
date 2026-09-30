@@ -206,7 +206,9 @@ class handler(BaseHTTPRequestHandler):
             with open(image_path, "wb") as f:
                 f.write(image_bytes)
 
-            result = specs.check_image(image_path)
+            # The declared product lets lockup_match fail an identifier that
+            # reads as a different tier; absent, the tier is only reported.
+            result = specs.check_image(image_path, body.get("declared_product"))
 
             if mode == "check":
                 # Zoom crops ride along so the pipeline can mount them as
@@ -214,14 +216,23 @@ class handler(BaseHTTPRequestHandler):
                 # writing its own PIL cropping code. Best-effort: a crop
                 # failure must not sink the tech specs.
                 crops = {}
+                checks = result.get("checks", {})
                 try:
                     crops = {
                         name: base64.b64encode(png).decode("ascii")
                         for name, png in specs.generate_zoom_crops(
                             specs.Image.open(image_path),
-                            result.get("checks", {}).get("bleed_zone"),
+                            checks.get("bleed_zone"),
                         ).items()
                     }
+                    # Visa's official lockup, same corner and zoom as the
+                    # brand_mark crop, for the agent's side-by-side comparison.
+                    reference = specs.reference_lockup_crop(
+                        checks.get("lockup_match"),
+                        (checks.get("bleed_zone") or {}).get("mark_corner") or "upper-right",
+                    )
+                    if reference:
+                        crops["reference_lockup"] = base64.b64encode(reference).decode("ascii")
                 except Exception as e:
                     result.setdefault("errors", []).append(f"Crop generation failed: {e}")
                 return self._json(200, {"tech_specs": result, "crops": crops})

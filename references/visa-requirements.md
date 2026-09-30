@@ -26,7 +26,7 @@ Per Visa Digital Card Brand Standards, these elements must appear on every digit
 
 | Element | Requirement |
 |---------|-------------|
-| **A — Issuer logo** | Must be present and legible. May bleed to edge — no margin requirement. |
+| **A — Issuer logo** | Must be present and legible, and stay out of the 56px bleed zone (at least 53px from every edge). |
 | **B — Issuer card art** | The card design itself. Design elements may extend to the card edge. |
 | **C — Visa Brand Mark** | Must be present, legible, and not distorted |
 
@@ -56,11 +56,11 @@ Visa's submission feedback describes a single lockup geometry on a 1536×969 car
 
 Visa's wording: "Please ensure the Visa logo is set to a height of 109 px. Composite logo is set to a 170px height." Approved cards measure 104–109px on the wordmark.
 
-> **Legacy Option Two (142 px mark, 220 px to the identifier baseline).** Earlier
-> guidance allowed this for Signature/Platinum/Infinite. No approved card in the
-> eval set uses it, and a design that adopted it was rejected. The checker reports
-> a 142px mark as a warning to confirm against the current Visa Product Brand
-> Standards (VPBS) rather than a pass. Confirm with VPBS before relying on it.
+Visa's official lockup files (Platinum, Signature, Infinite, Corporate) set exactly this geometry: a 109px mark at 56px from the top and side edges, the identifier's cap height 35px, and its baseline 170px below the mark's top. On an upper-right lockup the identifier is right-aligned with the mark; on an upper-left lockup it starts under the foot of the V. Rendered copies live in `assets/lockups/`; the checker compares every submission against them and mounts the matching one for the agent.
+
+> **Retired Option Two (142 px mark, 220 px to the identifier baseline).** Earlier
+> guidance allowed this for Signature/Platinum/Infinite. Visa's current lockup is
+> 109px, and a 142px mark now fails like any other wrong size.
 
 ### Visa Brand Mark Color
 
@@ -69,7 +69,7 @@ Permitted versions: **white**, **black**, **Visa Blue (R20 G52 B203)**, or the *
 > Note: Not all digital wallets or mobile applications are able to support placement of the
 > Visa Brand Mark in the upper left or upper right position. Check with the Solution Provider
 > regarding allowed placements.
-- **Artwork and background elements have no margin requirement** — they may bleed to the card edge. Partner and issuer logos: see the open question under Bleed Rules.
+- **Artwork and background elements have no margin requirement** — they may bleed to the card edge. Partner and issuer logos keep out of the 56px bleed zone (see Bleed Rules).
 
 ---
 
@@ -86,7 +86,7 @@ Permitted versions: **white**, **black**, **Visa Blue (R20 G52 B203)**, or the *
 
 - The **56px placement rule is specific to the Visa Brand Mark**
 - Design elements, artwork, and background **may extend to the card edge** (full bleed is allowed)
-- **Open question — partner/issuer logos:** Visa has rejected cards with "Please adjust the partner logo to ensure it complies with the border guidelines." The rule it applies (the same 56px, or a separate safe area) is not confirmed. Until it is, the checker notes a partner or issuer logo that is cut off by or touching the card edge, but does not fail it.
+- **Partner and issuer logos stay out of the 56px bleed zone**, like the Visa Brand Mark: no part of a logo within 53px (56px, −3px tolerance) of any card edge. Visa: "Please adjust the partner logo to ensure it complies with the border guidelines." Unlike the mark, a logo may sit farther in — Visa has approved logos at 71px and 112px.
 
 ## Canvas Edges
 
@@ -164,7 +164,9 @@ identifier is **always required** — there is no valid case where it can be abs
   sized to the 170px lockup. Visa rejects modified identifiers ("it's italicized and
   needs to be straight", "The product identifier was modified").
 - **Official artwork**: the lockup must be Visa's own file (VPBS), not redrawn,
-  re-typeset, an outdated mark (e.g. the old gradient "V" flourish), or the wrong variant.
+  re-typeset, distorted, or the wrong variant. (The flag on the top-left of the V is
+  part of the official wordmark.) The identifier's size relative to the mark must
+  match the official lockup within about ±15%.
 - **Failure conditions**:
   1. No identifier visible on the card.
   2. Identifier in the opposite corner from the Brand Mark.

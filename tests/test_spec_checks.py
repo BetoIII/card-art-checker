@@ -7,6 +7,7 @@ Run: npm run test:py   (or: python3 -m unittest discover -s tests -p 'test_*.py'
 Each synthetic card draws a "VISA" wordmark in the bundled DejaVu Sans Bold at
 the Visa lockup geometry, so a case only has to change the one thing under test.
 """
+import io
 import os
 import sys
 import unittest
@@ -151,10 +152,11 @@ class VisaMarkLockup(unittest.TestCase):
         self.assertIs(size["passed"], False)
         self.assertEqual(size["reason_code"], "size_undersized")
 
-    def test_legacy_142px_mark_warns(self):
+    def test_retired_142px_mark_fails(self):
         size = specs.check_virtual_mark(card(mark_h=142))["mark_size"]
-        self.assertTrue(size["passed"])
-        self.assertTrue(size["borderline"])
+        self.assertIs(size["passed"], False)
+        self.assertEqual(size["reason_code"], "size_oversized")
+        self.assertIn("Option Two", size["note"])
 
     def test_aligned_identifier_passes(self):
         align = specs.check_virtual_mark(card())["identifier_alignment"]
@@ -177,6 +179,7 @@ class VisaMarkColor(unittest.TestCase):
             ((20, 24, 40), (255, 255, 255), "white"),
             ((240, 240, 240), (0, 0, 0), "black"),
             ((250, 250, 250), specs.VISA_BLUE_RGB, "Visa Blue"),
+            ((250, 250, 250), (5, 9, 46), "black"),       # near-black navy
             ((246, 246, 246), (187, 187, 187), "silver/gray"),
         ):
             color = specs.check_virtual_mark(card(bg=bg, ink=ink))["mark_color"]
@@ -257,16 +260,91 @@ class CanvasEdges(unittest.TestCase):
         self.assertEqual(sorted(result["border_sides"]), ["bottom", "left"])
 
 
+def official_card(tier="platinum", bg=(24, 30, 52), ident_scale=1.0, logo=None):
+    """
+    A card carrying Visa's official lockup (assets/lockups), in the upper
+    right at the official geometry. ident_scale resizes only the identifier;
+    logo=(text, left, top) draws a partner wordmark.
+    """
+    ref = Image.open(os.path.join(specs.LOCKUP_DIR, f"{tier}.png")).convert("L")
+    ink = ref.point(lambda v: 255 if v > 200 else 0)
+    im = Image.new("RGB", (W, H), bg)
+    mark = ink.crop((1100, 40, 1536, 176))
+    im.paste((255, 255, 255), (1100, 40), mark)
+    ident = ink.crop((1200, 178, 1536, 250))
+    if ident_scale != 1.0:
+        ident = ident.resize((round(ident.width * ident_scale), round(ident.height * ident_scale)))
+        ident = ident.crop((0, 0, min(ident.width, W - 1200), ident.height))
+    # Right-align the identifier with the mark, as the lockup does.
+    x = 1200 + (336 - ident.width)
+    im.paste((255, 255, 255), (x, 178), ident)
+    if logo:
+        text, left, top = logo
+        font, box = _fit(ImageDraw.Draw(im), text, BOLD, 60)
+        ImageDraw.Draw(im).text((left - box[0], top - box[1]), text, font=font, fill=(255, 255, 255))
+    return im
+
+
+class OfficialLockup(unittest.TestCase):
+    def test_every_official_tier_is_identified(self):
+        for tier in specs.LOCKUP_TIERS:
+            match = specs.check_virtual_mark(official_card(tier))["lockup_match"]
+            self.assertTrue(match["passed"], (tier, match["note"]))
+            self.assertEqual(match["identifier_tier"], tier)
+            self.assertGreaterEqual(match["wordmark_iou"], 0.9)
+
+    def test_declared_product_mismatch_fails(self):
+        match = specs.check_virtual_mark(official_card("platinum"), "Signature")["lockup_match"]
+        self.assertIs(match["passed"], False)
+        self.assertEqual(match["reason_code"], "identifier_tier_mismatch")
+        ok = specs.check_virtual_mark(official_card("platinum"), "Platinum")["lockup_match"]
+        self.assertTrue(ok["passed"], ok["note"])
+
+    def test_oversized_identifier_fails(self):
+        match = specs.check_virtual_mark(official_card("platinum", ident_scale=1.35))["lockup_match"]
+        self.assertIs(match["passed"], False)
+        self.assertEqual(match["reason_code"], "identifier_size_mismatch")
+
+    def test_redrawn_wordmark_fails(self):
+        # The DejaVu "VISA" of card() is not Visa's artwork.
+        match = specs.check_virtual_mark(card())["lockup_match"]
+        self.assertIs(match["passed"], False)
+        self.assertEqual(match["reason_code"], "lockup_not_official_artwork")
+
+    def test_reference_crop_matches_the_tier(self):
+        single = Image.open(io.BytesIO(specs.reference_lockup_crop({"identifier_tier": "infinite"})))
+        sheet = Image.open(io.BytesIO(specs.reference_lockup_crop({}, "upper-left")))
+        self.assertEqual(single.size, (872, 480))   # one lockup at 2x
+        self.assertEqual(sheet.size, (872, 480))    # four lockups at 1x
+
+
+class PartnerLogoBorder(unittest.TestCase):
+    def test_logo_at_or_beyond_the_zone_passes(self):
+        for left, top in ((56, 56), (80, 80)):
+            border = specs.check_virtual_mark(official_card(logo=("ACME PAY", left, top)))["issuer_logo_border"]
+            self.assertTrue(border["passed"], (left, top, border["note"]))
+
+    def test_logo_inside_the_zone_fails(self):
+        border = specs.check_virtual_mark(official_card(logo=("ACME PAY", 30, 56)))["issuer_logo_border"]
+        self.assertIs(border["passed"], False)
+        self.assertEqual(border["reason_code"], "issuer_logo_in_bleed_zone")
+        self.assertEqual(border["logos"][0]["corner"], "upper-left")
+
+    def test_no_logo_is_unverified(self):
+        self.assertIsNone(specs.check_virtual_mark(official_card())["issuer_logo_border"]["passed"])
+
+
 class CheckImage(unittest.TestCase):
     def test_virtual_check_image_emits_every_tech_check(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "card.png")
-            card().save(path)
-            result = specs.check_image(path)
+            official_card(logo=("ACME PAY", 56, 56)).save(path)
+            result = specs.check_image(path, "Platinum")
         self.assertEqual(result["errors"], [])
         for key in ("dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
-                    "identifier_alignment", "mark_color", "square_corners", "border_frame"):
+                    "identifier_alignment", "mark_color", "lockup_match", "issuer_logo_border",
+                    "square_corners", "border_frame"):
             self.assertIn(key, result["checks"])
             self.assertTrue(result["checks"][key]["passed"], (key, result["checks"][key].get("note")))
 

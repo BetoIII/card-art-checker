@@ -176,7 +176,7 @@ Failures publish too, as `card_art_check.failed` with a closed `error.code` (e.g
   "status": "pass | fail",          // legacy two-state; approved_with_notes → pass
   "summary": "1-2 sentence assessment",
   "blocking_failures": ["visa_brand_mark_margin", "bleed_zone"],
-  "counts": { "pass": 19, "fail": 1 },
+  "counts": { "pass": 20, "fail": 1 },
   "checks": [
     { "id": "visa_brand_mark_margin",
       "name": "Visa Brand Mark margin (56px from edges)",
