@@ -18,6 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import check_technical_specs as specs  # noqa: E402
+import numpy as np  # noqa: E402
 
 BOLD = os.path.join(ROOT, "scripts", "fonts", "DejaVuSans-Bold.ttf")
 REGULAR = os.path.join(ROOT, "scripts", "fonts", "DejaVuSans.ttf")
@@ -86,6 +87,15 @@ def silver_gradient(w, h):
     return im
 
 
+def ramp_to_light(light):
+    """Navy under the V rising to `light` under the A, as on REJ-010."""
+    def make(w, h):
+        x = np.clip((np.arange(w) - 1150 * w / W) / (330 * w / W), 0, 1)[None, :, None]
+        art = np.array((5, 20, 45)) * (1 - x) + np.array(light) * x
+        return Image.fromarray(np.broadcast_to(art, (h, w, 3)).astype(np.uint8).copy())
+    return make
+
+
 class VisaMarkPlacement(unittest.TestCase):
     """Visa places the mark AT 56px (±3), on both nearest edges."""
 
@@ -128,6 +138,19 @@ class VisaMarkPlacement(unittest.TestCase):
         # The old detector latched onto line art and reported ~213/153px.
         zone = specs.check_virtual_mark(card(ink=(190, 190, 190), background=chevrons))["bleed_zone"]
         self.assertTrue(zone["passed"], zone["note"])
+
+    def test_mark_over_the_light_end_of_a_gradient_is_located(self):
+        # The "A" falls under half the V's contrast; the second, lower pass
+        # still finds all four letters.
+        zone = specs.check_virtual_mark(card(background=ramp_to_light((130, 190, 200))))["bleed_zone"]
+        self.assertTrue(zone["passed"], zone["note"])
+        self.assertTrue(53 <= zone["strict_right_px"] <= 59)
+
+    def test_partial_wordmark_is_never_measured(self):
+        # "VIS" without its "A" once read as the mark, 185px from the edge.
+        for light in ((120, 200, 215), (200, 240, 245)):
+            zone = specs.check_virtual_mark(card(background=ramp_to_light(light)))["bleed_zone"]
+            self.assertIsNot(zone["passed"], False, (light, zone["actual"]))
 
     def test_oversized_canvas_is_measured_at_scale(self):
         zone = specs.check_virtual_mark(card(scale=2))["bleed_zone"]

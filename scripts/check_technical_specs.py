@@ -90,12 +90,12 @@ IDENTIFIER_ALIGN_FAIL_PX = 15
 # (FAIL-001, REJ-046: circuit traces running into the letters). Pixels
 # within RING_PX of the letters that sit more than OFF_INK (RGB distance)
 # off the ink-to-background line are other artwork; FAIL_PX of them fail,
-# BORDERLINE_PX warn. The two rejections measure 92 and 125; no approved
-# card in the eval set measures over 30 (gold foil grain).
+# BORDERLINE_PX warn. The two rejections measure 59 and 89; no approved
+# card in the eval set measures over 4.
 IDENTIFIER_CLEARANCE_RING_PX = 4
 IDENTIFIER_CLEARANCE_OFF_INK = 45
-IDENTIFIER_CLEARANCE_FAIL_PX = 50
-IDENTIFIER_CLEARANCE_BORDERLINE_PX = 40
+IDENTIFIER_CLEARANCE_FAIL_PX = 30
+IDENTIFIER_CLEARANCE_BORDERLINE_PX = 20
 # Visa Blue, per Visa's feedback ("R20 G52 B203").
 VISA_BLUE_RGB = (20, 52, 203)
 # Partner and issuer logos keep out of the same 56px bleed zone as the mark
@@ -662,6 +662,7 @@ def check_bleed_zone(img, trim_offsets=None, margin_px=None):
 
 _WORDMARK_ASPECT = 3.1
 _MARK_CORNERS = ("upper-right", "lower-right", "upper-left")
+_MARK_CONTRAST_RATIOS = (0.5, 0.35)
 
 
 def _box_sum(mask, k):
@@ -808,7 +809,12 @@ def _identifier_clearance(best, ident_box, mark_box):
     pad = ring + 2
     h, w = contrast.shape
     ry1, ry2, rx1, rx2 = max(0, y1 - pad), min(h, y2 + pad + 1), max(0, x1 - pad), min(w, x2 + pad + 1)
-    px, back = win[ry1:ry2, rx1:rx2], bg[ry1:ry2, rx1:rx2]
+    # A 3x3 median drops per-pixel grain (film-grain gradients) and keeps
+    # strokes a few pixels wide.
+    from PIL import ImageFilter
+    px = np.array(Image.fromarray(np.clip(win[ry1:ry2, rx1:rx2], 0, 255).astype(np.uint8))
+                  .filter(ImageFilter.MedianFilter(3)), dtype=float)
+    back = bg[ry1:ry2, rx1:rx2]
     core = contrast[y1:y2 + 1, x1:x2 + 1] > 0.75 * peak
     if not core.any():
         return None
@@ -868,37 +874,54 @@ def _locate_visa_mark(img):
     open_k = max(3, int(round(h * 0.006)) | 1)
     best = None
 
-    for corner in _MARK_CORNERS:
-        wh, ww = round(h * 0.34), round(w * 0.36)
-        wy = 0 if corner.startswith("upper") else h - wh
-        wx = w - ww if corner.endswith("right") else 0
-        win = rgb[wy:wy + wh, wx:wx + ww]
-        bg = _local_background(win)
-        dist = np.sqrt(((win - bg) ** 2).sum(axis=-1))
-        lighter = _luminance(win) > _luminance(bg)
+    # Mark pixels are those above half the peak contrast. A light mark over
+    # the light end of a gradient falls below that (REJ-010's "A"), so when
+    # nothing reads as the wordmark the corners are searched again lower, on
+    # a 3x3 median of the art so film grain doesn't clear the lower bar.
+    from PIL import ImageFilter
+    for ratio in _MARK_CONTRAST_RATIOS:
+        for corner in _MARK_CORNERS:
+            wh, ww = round(h * 0.34), round(w * 0.36)
+            wy = 0 if corner.startswith("upper") else h - wh
+            wx = w - ww if corner.endswith("right") else 0
+            win = rgb[wy:wy + wh, wx:wx + ww]
+            bg = _local_background(win)
+            seen = win
+            if ratio < _MARK_CONTRAST_RATIOS[0]:
+                seen = np.array(Image.fromarray(win.astype(np.uint8)).filter(
+                    ImageFilter.MedianFilter(3)), dtype=float)
+            dist = np.sqrt(((seen - bg) ** 2).sum(axis=-1))
+            lighter = _luminance(seen) > _luminance(bg)
 
-        for polarity, side in (("light", lighter), ("dark", ~lighter)):
-            contrast = np.where(side, dist, 0.0)
-            peak = float(np.percentile(contrast, 99.5))
-            if peak < 40:
-                continue
-            raw = contrast > 0.5 * peak
-            opened = _binary_open(raw, open_k)
-            glyphs = _merge_split_glyphs(_label_components(opened))
-            for line in _text_lines(glyphs, 0.05 * h, 0.25 * h, same_height=0.35):
-                box = _line_box(line)
-                box_h = box["y2"] - box["y1"] + 1
-                box_w = box["x2"] - box["x1"] + 1
-                aspect, fill = box_w / box_h, box["area"] / (box_h * box_w)
-                if box["n"] < 2 or not 2.3 <= aspect <= 4.1 or not 0.3 <= fill <= 0.65:
+            for polarity, side in (("light", lighter), ("dark", ~lighter)):
+                contrast = np.where(side, dist, 0.0)
+                peak = float(np.percentile(contrast, 99.5))
+                if peak < 40:
                     continue
-                score = (-3 * abs(np.log(aspect / _WORDMARK_ASPECT))
-                         - 0.4 * abs(box["n"] - 4) - 2 * abs(fill - 0.45))
-                if best is None or score > best["score"]:
-                    best = {"score": score, "corner": corner, "polarity": polarity,
-                            "peak": peak, "box": box, "wy": wy, "wx": wx,
-                            "win": win, "bg": bg, "contrast": contrast, "raw": raw,
-                            "opened": opened, "glyphs": glyphs}
+                raw = contrast > ratio * peak
+                opened = _binary_open(raw, open_k)
+                glyphs = _merge_split_glyphs(_label_components(opened))
+                for line in _text_lines(glyphs, 0.05 * h, 0.25 * h, same_height=0.35):
+                    box = _line_box(line)
+                    box_h = box["y2"] - box["y1"] + 1
+                    box_w = box["x2"] - box["x1"] + 1
+                    aspect, fill = box_w / box_h, box["area"] / (box_h * box_w)
+                    if box["n"] < 2 or not 2.3 <= aspect <= 4.1 or not 0.3 <= fill <= 0.65:
+                        continue
+                    # A letter over the light end of a gradient can drop out,
+                    # and "VIS" alone would misplace the mark: only the full
+                    # four letters at the wordmark's proportions count.
+                    if box["n"] != 4 or abs(np.log(aspect / _WORDMARK_ASPECT)) > np.log(1.15):
+                        continue
+                    score = (-3 * abs(np.log(aspect / _WORDMARK_ASPECT))
+                             - 0.4 * abs(box["n"] - 4) - 2 * abs(fill - 0.45))
+                    if best is None or score > best["score"]:
+                        best = {"score": score, "corner": corner, "polarity": polarity,
+                                "ratio": ratio, "peak": peak, "box": box, "wy": wy, "wx": wx,
+                                "win": win, "bg": bg, "contrast": contrast, "raw": raw,
+                                "opened": opened, "glyphs": glyphs}
+        if best is not None:
+            break
 
     if best is None:
         return None
@@ -944,7 +967,17 @@ def _locate_visa_mark(img):
         zx1 = max(0, left - int(0.5 * (right - left)))
         zx2 = min(raw.shape[1], right + int(0.1 * (right - left)) + 1)
         if zy2 > zy1:
-            zone = _binary_open(raw[zy1:zy2, zx1:zx2], 3)
+            zone_raw = raw[zy1:zy2, zx1:zx2]
+            if best["ratio"] < _MARK_CONTRAST_RATIOS[0]:
+                # Low-contrast art: a letter over the light end of a gradient
+                # (REJ-010's final "e") only clears a bar set by its own
+                # neighborhood — the brightest stroke within ~40px.
+                zc = best["contrast"][zy1:zy2, zx1:zx2]
+                cols = zc.max(axis=0)
+                reach = 40
+                local = np.array([cols[max(0, i - reach):i + reach + 1].max() for i in range(len(cols))])
+                zone_raw = zone_raw | ((zc > 0.5 * local[None, :]) & (zc > 0.5 * best["ratio"] * best["peak"]))
+            zone = _binary_open(zone_raw, 3)
             lines = [_line_box(l) for l in _text_lines(
                 _label_components(zone, min_area=12), 0.12 * mark_h, 0.75 * mark_h,
                 max_gap_ratio=0.8)]
