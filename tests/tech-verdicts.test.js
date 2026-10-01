@@ -17,7 +17,7 @@ function techJson(overrides = {}) {
       dimensions: passing(), file_format: passing(), dpi: passing(),
       bleed_zone: passing({ actual: 'Top: 56px, Right: 56px' }),
       mark_size: passing(), identifier_alignment: passing(), mark_color: passing(),
-      lockup_match: passing(), issuer_logo_border: passing(),
+      lockup_match: passing(), identifier_clearance: passing(), issuer_logo_border: passing(),
       square_corners: passing(), border_frame: passing(),
       ...overrides,
     },
@@ -28,7 +28,7 @@ function agentResults(status = 'APPROVED', overrides = {}) {
   const ids = [
     'visa_brand_mark_margin', 'visa_brand_mark_size', 'visa_brand_mark_color',
     'product_identifier', 'issuer_logo_within_border', 'no_physical_card_photography',
-    'full_color',
+    'design_elements_clear_of_identifier', 'full_color',
   ];
   return {
     status,
@@ -83,6 +83,17 @@ test('a border frame fails the photography check with its own reason code', () =
   const photo = results.visual_checks.find((c) => c.id === 'no_physical_card_photography');
   assert.equal(photo.result, 'fail');
   assert.equal(photo.reason_code, 'border_frame_present');
+});
+
+test('artwork touching the identifier fails the clearance check', () => {
+  const results = agentResults('APPROVED');
+  applyTechVerdicts(results, techJson({
+    identifier_clearance: { passed: false, actual: '92px of artwork within 4px of the identifier', foreign_px: 92 },
+  }), 'virtual');
+  const clearance = results.visual_checks.find((c) => c.id === 'design_elements_clear_of_identifier');
+  assert.equal(clearance.result, 'fail');
+  assert.equal(clearance.reason_code, 'identifier_obstructed');
+  assert.equal(results.status, 'REQUIRES CHANGES');
 });
 
 test('a borderline tech check lifts a pass to a warning and approval to approved-with-notes', () => {
@@ -168,7 +179,7 @@ test('new tech checks reach the wire with a status and their measurements', () =
   });
   const byId = Object.fromEntries(normalizeTechChecks('virtual', tech).map((c) => [c.id, c]));
   for (const id of ['mark_size', 'identifier_alignment', 'mark_color', 'lockup_match',
-    'issuer_logo_border', 'square_corners', 'border_frame']) {
+    'identifier_clearance', 'issuer_logo_border', 'square_corners', 'border_frame']) {
     assert.ok(byId[id], `${id} missing from tech_checks`);
   }
   assert.equal(byId.mark_size.status, 'fail');

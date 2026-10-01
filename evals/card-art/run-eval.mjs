@@ -64,7 +64,7 @@ const REASON_CHECKS = {
   mark_missing: ['visa_brand_mark_present'],
   lockup_not_official: ['product_identifier'],
   identifier_missing: ['product_identifier'],
-  identifier_tier_mismatch: ['product_identifier'], // needs a declared product the prompt never gets
+  identifier_tier_mismatch: ['product_identifier'], // needs the case's declared_product
   identifier_misaligned: ['product_identifier'],
   identifier_typography: ['product_identifier'],
   identifier_obstructed: ['design_elements_clear_of_identifier'],
@@ -99,6 +99,7 @@ const REASON_ACCEPT = {
   identifier_typography: ['product_identifier', 'tech:lockup_match'],
   lockup_not_official: ['product_identifier', 'tech:lockup_match'],
   identifier_tier_mismatch: ['product_identifier', 'tech:lockup_match'],
+  identifier_obstructed: ['design_elements_clear_of_identifier', 'tech:identifier_clearance'],
   partner_logo_border: ['issuer_logo_within_border', 'tech:issuer_logo_border'],
   rounded_corners: ['tech:square_corners'],
   white_border: ['tech:border_frame'],

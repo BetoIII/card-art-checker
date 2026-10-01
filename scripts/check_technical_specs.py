@@ -86,6 +86,16 @@ VISA_LOCKUP_COMPOSITE_PX = 170
 # Identifier edge vs. the mark's outer edge. Approved lockups sit within 3px.
 IDENTIFIER_ALIGN_TOLERANCE_PX = 6
 IDENTIFIER_ALIGN_FAIL_PX = 15
+# Identifier clearance: Visa rejects artwork that touches the identifier
+# (FAIL-001, REJ-046: circuit traces running into the letters). Pixels
+# within RING_PX of the letters that sit more than OFF_INK (RGB distance)
+# off the ink-to-background line are other artwork; FAIL_PX of them fail,
+# BORDERLINE_PX warn. The two rejections measure 92 and 125; no approved
+# card in the eval set measures over 30 (gold foil grain).
+IDENTIFIER_CLEARANCE_RING_PX = 4
+IDENTIFIER_CLEARANCE_OFF_INK = 45
+IDENTIFIER_CLEARANCE_FAIL_PX = 50
+IDENTIFIER_CLEARANCE_BORDERLINE_PX = 40
 # Visa Blue, per Visa's feedback ("R20 G52 B203").
 VISA_BLUE_RGB = (20, 52, 203)
 # Partner and issuer logos keep out of the same 56px bleed zone as the mark
@@ -773,6 +783,61 @@ def _local_background(rgb, scale=8, size=21):
     return np.array(med.resize((w, h), Image.BILINEAR), dtype=float)
 
 
+def _identifier_clearance(best, ident_box, mark_box):
+    """
+    Artwork in a thin ring around the identifier's letters, at the 1536px
+    canvas scale (window coordinates of the locator's best corner).
+
+    A pixel between the letters' ink and the local background in RGB is the
+    letters' own anti-aliasing; one well off that line (a gold trace beside
+    white letters) is other artwork. Counts the off-line pixels within
+    IDENTIFIER_CLEARANCE_RING_PX of the glyphs that cluster into strokes,
+    the wordmark excluded. Calibrated on the eval set: background textures
+    (stripes, foil grain, gradients) stay near zero.
+    """
+    win, bg, contrast, peak = best["win"], best["bg"], best["contrast"], best["peak"]
+    y1, y2, x1, x2 = ident_box
+    ring = IDENTIFIER_CLEARANCE_RING_PX
+    pad = ring + 2
+    h, w = contrast.shape
+    ry1, ry2, rx1, rx2 = max(0, y1 - pad), min(h, y2 + pad + 1), max(0, x1 - pad), min(w, x2 + pad + 1)
+    px, back = win[ry1:ry2, rx1:rx2], bg[ry1:ry2, rx1:rx2]
+    core = contrast[y1:y2 + 1, x1:x2 + 1] > 0.75 * peak
+    if not core.any():
+        return None
+    core_px = win[y1:y2 + 1, x1:x2 + 1][core]
+    # The letters' ink, as a few colors across its luminance range: a
+    # gradient identifier's darker letters are still the identifier.
+    lum = _luminance(core_px)
+    inks = [core_px[np.argmin(np.abs(lum - np.percentile(lum, q)))] for q in (10, 30, 50, 70, 90)]
+    # Position along each background -> ink line, and distance off the
+    # nearest. The line runs past the background too: a texture in the
+    # background's own color, darker or lighter (stripes, foil grain), is
+    # not artwork.
+    t = np.full(px.shape[:2], -np.inf)
+    off = np.full(px.shape[:2], np.inf)
+    for ink_c in inks:
+        v = ink_c - back
+        ti = ((px - back) * v).sum(-1) / ((v * v).sum(-1) + 1e-6)
+        oi = np.sqrt(((px - back - np.minimum(ti, 1)[..., None] * v) ** 2).sum(-1))
+        closer = oi < off
+        t, off = np.where(closer, ti, t), np.minimum(oi, off)
+    glyph = (t > 0.5) & (off < IDENTIFIER_CLEARANCE_OFF_INK)
+    # Only the identifier line's letters (descenders included), not other
+    # same-colored text that happens to fall in the padded box.
+    line = np.zeros_like(glyph)
+    line[max(0, y1 - ry1 - 2):y2 - ry1 + 3, max(0, x1 - rx1 - 2):x2 - rx1 + 3] = True
+    glyph &= line
+    near = (_box_sum(glyph, 2 * ring + 1) > 0) & ~(_box_sum(glyph, 3) > 0)
+    my1, my2, mx1, mx2 = mark_box
+    near[max(0, my1 - ry1 - 2):max(0, my2 - ry1 + 3), max(0, mx1 - rx1 - 2):max(0, mx2 - rx1 + 3)] = False
+    foreign = near & (off >= IDENTIFIER_CLEARANCE_OFF_INK) & \
+        (np.sqrt(((px - back) ** 2).sum(-1)) >= IDENTIFIER_CLEARANCE_OFF_INK)
+    # Artwork is strokes and shapes; isolated pixels are grain or noise.
+    foreign &= _box_sum(foreign, 3) >= 3
+    return {"foreign_px": int(foreign.sum()), "ring_px": int(near.sum())}
+
+
 def _locate_visa_mark(img):
     """
     Find the Visa wordmark in the upper-right, lower-right or upper-left corner.
@@ -825,7 +890,7 @@ def _locate_visa_mark(img):
                 if best is None or score > best["score"]:
                     best = {"score": score, "corner": corner, "polarity": polarity,
                             "peak": peak, "box": box, "wy": wy, "wx": wx,
-                            "win": win, "contrast": contrast, "raw": raw,
+                            "win": win, "bg": bg, "contrast": contrast, "raw": raw,
                             "opened": opened, "glyphs": glyphs}
 
     if best is None:
@@ -895,6 +960,9 @@ def _locate_visa_mark(img):
                     # Visa's official lockups (_lockup_match_check).
                     "_mask": raw[zy1 + iy1:zy1 + bottoms[len(bottoms) // 2] + 1,
                                  zx1 + ix1:zx1 + ix2 + 1].copy(),
+                    "_clearance": _identifier_clearance(
+                        best, (zy1 + iy1, zy1 + iy2, zx1 + ix1, zx1 + ix2),
+                        (top, bottom, left, right)),
                 }
 
     # Core ink: well inside the strokes, clear of anti-aliasing.
@@ -930,6 +998,7 @@ def _locate_visa_mark(img):
             "left": _near(identifier["left"], wx),
             "right": _far(identifier["right"], wx),
             "_mask": identifier["_mask"],
+            "_clearance": identifier["_clearance"],
         } if identifier else None),
         # Wordmark pixels at the 1536 scale (see _identifier_mask above).
         "_wordmark_mask": grown[top - ry1:bottom - ry1 + 1, left - rx1:right - rx1 + 1].copy(),
@@ -1082,6 +1151,47 @@ def _virtual_identifier_alignment_check(mark):
     return result
 
 
+def _identifier_clearance_check(mark):
+    """
+    Artwork clear of the product identifier. Visa rejects artwork that
+    touches or crowds the identifier's letters; the agent can't see a gap of
+    a few pixels, so the ring around the letters is measured.
+    """
+    ident = mark.get("identifier")
+    required = f"no artwork within {IDENTIFIER_CLEARANCE_RING_PX}px of the product identifier"
+    clear = (ident or {}).get("_clearance")
+    if not clear:
+        return {
+            "passed": None,
+            "actual": "Product identifier not detected beneath the mark",
+            "required": required,
+            "note": "Could not locate the identifier programmatically. Verify clearance visually.",
+            "identifier_detected": False,
+        }
+    n = clear["foreign_px"]
+    actual = (f"{n}px of artwork within {IDENTIFIER_CLEARANCE_RING_PX}px of the identifier's letters"
+              if n else "Clear background around the identifier")
+    result = {
+        "actual": actual,
+        "required": required,
+        "identifier_detected": True,
+        "foreign_px": n,
+        "ring_px": clear["ring_px"],
+        "identifier_box": [ident["left"], ident["top"], ident["right"], ident["baseline"]],
+    }
+    advice = ("Visa rejects artwork that touches or crowds the identifier; keep a clear gap of "
+              "plain background around its letters.")
+    if n >= IDENTIFIER_CLEARANCE_FAIL_PX:
+        result.update(passed=False, reason_code="identifier_obstructed",
+                      note=f"FAIL — artwork touches the product identifier: {actual}. {advice}")
+    elif n >= IDENTIFIER_CLEARANCE_BORDERLINE_PX:
+        result.update(passed=True, borderline=True, reason_code="identifier_obstructed",
+                      note=f"{actual} — artwork may be crowding the identifier. {advice}")
+    else:
+        result.update(passed=True, note="Artwork stays clear of the product identifier.")
+    return result
+
+
 def _classify_mark_ink(rgb):
     """Name a mark ink against Visa's permitted versions, or None if not permitted."""
     r, g, b = (float(v) for v in rgb)
@@ -1154,7 +1264,8 @@ def check_virtual_mark(img, declared_product=None):
     """
     Deterministic Visa Brand Mark checks for virtual art, from one locator pass:
     bleed_zone (placed at 56px), mark_size, identifier_alignment, mark_color,
-    lockup_match (against Visa's official lockups), and issuer_logo_border.
+    lockup_match (against Visa's official lockups), identifier_clearance, and
+    issuer_logo_border.
 
     When the mark is not found every mark check reports passed=None
     (unverified) rather than a pass: an undetected mark is not evidence of
@@ -1176,6 +1287,8 @@ def check_virtual_mark(img, declared_product=None):
                                          identifier_detected=False),
             "mark_color": dict(unverified, required="white, black, Visa Blue, or gold/silver premium ink — flat"),
             "lockup_match": dict(unverified, required="Visa's official lockup artwork"),
+            "identifier_clearance": dict(unverified, required="no artwork touching the product identifier",
+                                         identifier_detected=False),
             "issuer_logo_border": _issuer_logo_border_check(img, None),
         }
     return {
@@ -1184,6 +1297,7 @@ def check_virtual_mark(img, declared_product=None):
         "identifier_alignment": _virtual_identifier_alignment_check(mark),
         "mark_color": _virtual_color_check(mark),
         "lockup_match": _lockup_match_check(mark, declared_product),
+        "identifier_clearance": _identifier_clearance_check(mark),
         "issuer_logo_border": _issuer_logo_border_check(img, mark),
     }
 
@@ -2130,8 +2244,8 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     tech_col_ratios = [0.28, 0.12, 0.60]
     tech_rows_data = []
     check_order = ["dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
-                   "identifier_alignment", "mark_color", "lockup_match", "issuer_logo_border",
-                   "square_corners", "border_frame"]
+                   "identifier_alignment", "mark_color", "lockup_match", "identifier_clearance",
+                   "issuer_logo_border", "square_corners", "border_frame"]
     check_labels = {
         "dimensions": "Dimensions (1536x969 px)",
         "file_format": "File Format (PNG)",
@@ -2141,6 +2255,7 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
         "identifier_alignment": "Identifier aligned with mark",
         "mark_color": "Visa Brand Mark color",
         "lockup_match": "Matches Visa's official lockup",
+        "identifier_clearance": "Artwork clear of identifier",
         "issuer_logo_border": "Partner logo outside bleed zone",
         "square_corners": "Square corners",
         "border_frame": "No border lines",

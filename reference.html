@@ -1441,12 +1441,13 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         <code>dimensions</code>, <code>file_format</code>, and <code>dpi</code>.
       </p>
       <p>
-        Eight more are deterministic compliance measurements, each with a
+        Nine more are deterministic compliance measurements, each with a
         <code>measurements</code> object: <code>bleed_zone</code> (Brand Mark placed
         <strong>at</strong> 56px ±3 — too far fails as well as too close),
         <code>mark_size</code> (109px mark), <code>identifier_alignment</code>,
         <code>mark_color</code> (white, black, Visa Blue, or silver — flat; gold is a warning),
         <code>lockup_match</code> (against Visa's official lockup artwork),
+        <code>identifier_clearance</code> (no artwork touching the identifier),
         <code>issuer_logo_border</code> (partner logos at least 53px from the edges),
         <code>square_corners</code>, and <code>border_frame</code>. A failing one fails its
         mirrored visual check and forces <code>requires_changes</code>. When the Brand Mark

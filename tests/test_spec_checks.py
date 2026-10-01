@@ -330,6 +330,41 @@ class OfficialLockup(unittest.TestCase):
         self.assertEqual(sheet.size, (872, 480))    # four lockups at 1x
 
 
+class IdentifierClearance(unittest.TestCase):
+    """Visa rejects artwork touching the identifier (FAIL-001, REJ-046)."""
+
+    @staticmethod
+    def traces(y_from, y_to):
+        im = official_card()
+        draw = ImageDraw.Draw(im)
+        for x in (1260, 1330, 1400):   # gold circuit traces, as on FAIL-001
+            draw.line([(x, y_from), (x + 40, y_to)], fill=(140, 110, 30), width=3)
+        return im
+
+    def test_artwork_touching_the_letters_fails(self):
+        check = specs.check_virtual_mark(self.traces(260, 200))["identifier_clearance"]
+        self.assertIs(check["passed"], False, check["actual"])
+        self.assertEqual(check["reason_code"], "identifier_obstructed")
+        self.assertGreaterEqual(check["foreign_px"], specs.IDENTIFIER_CLEARANCE_FAIL_PX)
+
+    def test_artwork_kept_clear_passes(self):
+        check = specs.check_virtual_mark(self.traces(300, 250))["identifier_clearance"]
+        self.assertTrue(check["passed"], check["actual"])
+        self.assertEqual(check["foreign_px"], 0)
+
+    def test_plain_gradient_and_patterned_grounds_pass(self):
+        for name, im in (("official", official_card()), ("chevrons", card(background=chevrons)),
+                         ("gold gradient", card(background=gold_gradient)),
+                         ("light", card(bg=(246, 246, 246), ink=(187, 187, 187)))):
+            check = specs.check_virtual_mark(im)["identifier_clearance"]
+            self.assertTrue(check["passed"], (name, check["actual"]))
+            self.assertFalse(check.get("borderline"), name)
+
+    def test_no_identifier_is_unverified(self):
+        check = specs.check_virtual_mark(card(identifier=False))["identifier_clearance"]
+        self.assertIsNone(check["passed"])
+
+
 class PartnerLogoBorder(unittest.TestCase):
     def test_logo_at_or_beyond_the_zone_passes(self):
         for left, top in ((56, 56), (80, 80)):
@@ -398,8 +433,8 @@ class CheckImage(unittest.TestCase):
             result = specs.check_image(path, "Platinum")
         self.assertEqual(result["errors"], [])
         for key in ("dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
-                    "identifier_alignment", "mark_color", "lockup_match", "issuer_logo_border",
-                    "square_corners", "border_frame"):
+                    "identifier_alignment", "mark_color", "lockup_match", "identifier_clearance",
+                    "issuer_logo_border", "square_corners", "border_frame"):
             self.assertIn(key, result["checks"])
             self.assertTrue(result["checks"][key]["passed"], (key, result["checks"][key].get("note")))
         self.assertNotIn("working_copy", result)
