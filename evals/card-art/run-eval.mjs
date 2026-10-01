@@ -43,7 +43,7 @@
 // wiring can be verified for free before any paid pass.
 
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,6 +96,10 @@ const REASON_ACCEPT = {
   mark_size_wrong: ['visa_brand_mark_size', 'tech:mark_size'],
   mark_color_invalid: ['visa_brand_mark_color', 'tech:mark_color'],
   identifier_misaligned: ['product_identifier', 'tech:identifier_alignment'],
+  identifier_typography: ['product_identifier', 'tech:lockup_match'],
+  lockup_not_official: ['product_identifier', 'tech:lockup_match'],
+  identifier_tier_mismatch: ['product_identifier', 'tech:lockup_match'],
+  partner_logo_border: ['issuer_logo_within_border', 'tech:issuer_logo_border'],
   rounded_corners: ['tech:square_corners'],
   white_border: ['tech:border_frame'],
   contactless_indicator: ['contactless_indicator'],
@@ -295,6 +299,34 @@ async function gradeCase(input, run) {
   return { grade, explanation };
 }
 
+// --regrade: re-score saved rows from the structured result stored as the last
+// turn of each trace, with the CURRENT grader and labels. No model call. Keeps
+// every variant graded by identical logic after a grading or label change.
+async function regrade(vdir, cases) {
+  const p = join(vdir, 'results.jsonl');
+  if (!existsSync(p)) { console.error(`no ${p}`); process.exit(2); }
+  const byId = new Map(cases.map(c => [pathSafeId(c.id), c]));
+  let changed = 0, skipped = 0;
+  const out = readFileSync(p, 'utf8').split('\n').filter(Boolean).map(l => {
+    const row = JSON.parse(l);
+    const input = byId.get(row.prompt_id);
+    const tp = join(vdir, 'traces', `${row.prompt_id}_rep${row.rep}.json`);
+    if (!input || !existsSync(tp)) { skipped++; return row; }
+    const last = JSON.parse(readFileSync(tp, 'utf8')).filter(t => t.role === 'assistant').at(-1)?.content || '';
+    const m = last.match(/```json\n([\s\S]*)\n```\s*$/);
+    if (!m) { skipped++; return row; }
+    return gradeCase(input, { output: JSON.parse(m[1]) }).then(g => {
+      if (JSON.stringify(g.grade) !== JSON.stringify(row.grade)) changed++;
+      return { ...row, grade: g.grade, explanation: g.explanation, tags: input.tags };
+    });
+  });
+  const rows = await Promise.all(out);
+  writeFileSync(p + '.tmp', rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  renameSync(p + '.tmp', p);
+  console.error(`regraded ${rows.length - skipped} row(s) in ${p}: ${changed} grade(s) changed, ${skipped} skipped (no case or trace)`);
+  summarize(vdir, JSON.parse(readFileSync(join(dirname(vdir), '_state.json'), 'utf8')));
+}
+
 // Per-metric mean with a 95% CI (reps averaged within a case first, so the
 // interval reflects case-to-case spread), plus measured cost, latency, errors.
 function summarize(vdir, st) {
@@ -344,7 +376,7 @@ function parseArgs(argv) {
   const a = { flow: join(DEFAULT_DATA, 'hillclimb/virtual'), variant: 'baseline',
               model: undefined, reps: 1, concurrency: 4, timeoutS: 600,
               approveHarness: false, data: DEFAULT_DATA, agentVersion: undefined,
-              only: null, graderCheck: null };
+              only: null, graderCheck: null, regrade: false };
   // A flag at the end of argv would otherwise consume undefined - which for
   // --model equals the default and silently disables the served-model check.
   const val = (i) => { if (argv[i] === undefined) { console.error(`missing value for ${argv[i - 1]}`); usage(); process.exit(2); } return argv[i]; };
@@ -361,6 +393,7 @@ function parseArgs(argv) {
     else if (k === '--agent-version') a.agentVersion = +val(++i);
     else if (k === '--only') a.only = new Set(val(++i).split(',').map(x => x.trim()).filter(Boolean));
     else if (k === '--grader-check') a.graderCheck = val(++i);
+    else if (k === '--regrade') a.regrade = true;
     else if (k === '-h' || k === '--help') { usage(); process.exit(0); }
     else { console.error(`unknown argument: ${k}`); usage(); process.exit(2); }
   }
@@ -384,7 +417,7 @@ function parseArgs(argv) {
   return a;
 }
 function usage() {
-  console.error('usage: node --env-file=.env.local evals/card-art/run-eval.mjs [--flow DIR] --variant ID --model ID --agent-version N [--reps N] [--concurrency N] [--timeout-s N (0 = no ceiling)] [--data DIR] [--only ID,ID] [--grader-check oracle|approve-all|reject-all] [--approve-harness]');
+  console.error('usage: node --env-file=.env.local evals/card-art/run-eval.mjs [--flow DIR] --variant ID --model ID --agent-version N [--reps N] [--concurrency N] [--timeout-s N (0 = no ceiling)] [--data DIR] [--only ID,ID] [--grader-check oracle|approve-all|reject-all] [--regrade] [--approve-harness]');
 }
 
 // Harness integrity gate. The hillclimb loop gets this runner command
@@ -511,6 +544,7 @@ async function main() {
   }
   // --grader-check never calls the model or the app, so it is exempt from the
   // harness gate (which guards unattended paid runs).
+  if (args.regrade) return regrade(vdir, await loadCases({ ...args, only: null }));
   if (!args.graderCheck) checkHarness(statePath, st, args.approveHarness);
   if (!args.graderCheck && !(args.model && args.agentVersion)) {
     // An unpinned agent resolves to "latest": a prompt push mid-run would
