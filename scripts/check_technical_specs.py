@@ -121,6 +121,13 @@ IDENTIFIER_SIZE_RANGE = (0.87, 1.15)
 WORDMARK_MIN_IOU = 0.80
 IDENTIFIER_TIER_MIN_IOU = 0.65
 IDENTIFIER_TIER_MIN_MARGIN = 0.25
+# Below a confident read, the clearly closest tier is still the word to
+# compare against: the agent gets that tier's reference at 2x instead of the
+# four-tier sheet. Overlap alone can't judge typeface — thresholding thickens
+# every submission's strokes, and approved identifiers score 0.21-0.62 here
+# as often as redrawn ones do — so this only picks the reference.
+IDENTIFIER_CANDIDATE_MIN_IOU = 0.45
+IDENTIFIER_CANDIDATE_MIN_MARGIN = 0.15
 
 # --- Physical card constants (CR80, per ISO/IEC 7810) ---
 CR80_ASPECT_RATIO = 3.375 / 2.125            # ≈ 1.5882
@@ -1374,13 +1381,16 @@ def _lockup_match_check(mark, declared_product=None):
 
     ident = mark.get("identifier")
     ident_mask = _crop_to_content(ident["_mask"]) if ident is not None else None
-    tier, tier_iou, size_ratio, scores = None, None, None, {}
+    tier, candidate, tier_iou, size_ratio, scores = None, None, None, None, {}
     if ident_mask is not None:
         scores = {t: round(_mask_iou(ident_mask, refs[(t, side)]["ident"]), 2) for t in LOCKUP_TIERS}
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
         tier_iou = ranked[0][1]
-        if tier_iou >= IDENTIFIER_TIER_MIN_IOU and tier_iou - ranked[1][1] >= IDENTIFIER_TIER_MIN_MARGIN:
+        margin = tier_iou - ranked[1][1]
+        if tier_iou >= IDENTIFIER_TIER_MIN_IOU and margin >= IDENTIFIER_TIER_MIN_MARGIN:
             tier = ranked[0][0]
+        elif tier_iou >= IDENTIFIER_CANDIDATE_MIN_IOU and margin >= IDENTIFIER_CANDIDATE_MIN_MARGIN:
+            candidate = ranked[0][0]
         size_ratio = round((ident_mask.shape[0] / mark["_mark_h_canvas"])
                            / (IDENTIFIER_CAP_HEIGHT_PX / VISA_MARK_HEIGHT_PX), 2)
 
@@ -1398,8 +1408,14 @@ def _lockup_match_check(mark, declared_product=None):
         problems.append(("identifier_tier_mismatch",
                          f"the identifier reads \"{tier.capitalize()}\" but the program is \"{declared_product}\""))
 
-    reading = f"identifier reads as {tier.capitalize()}" if tier else (
-        "identifier matches no single official identifier" if ident_mask is not None else "identifier not found")
+    if tier:
+        reading = f"identifier reads as {tier.capitalize()}"
+    elif candidate:
+        reading = (f"identifier is closest to {candidate.capitalize()} (overlap {tier_iou:.2f}) "
+                   "but not a confident match")
+    else:
+        reading = ("identifier matches no single official identifier" if ident_mask is not None
+                   else "identifier not found")
     actual = "; ".join(filter(None, [
         f"wordmark overlap {wordmark_iou:.2f}" if wordmark_iou is not None else None,
         reading,
@@ -1410,6 +1426,7 @@ def _lockup_match_check(mark, declared_product=None):
         "required": required,
         "wordmark_iou": wordmark_iou,
         "identifier_tier": tier,
+        "identifier_candidate_tier": candidate,
         "identifier_tier_iou": tier_iou,
         "identifier_scores": scores,
         "identifier_size_ratio": size_ratio,
@@ -1423,7 +1440,7 @@ def _lockup_match_check(mark, declared_product=None):
     else:
         result.update(passed=True, note=(
             f"Lockup matches Visa's official artwork ({reading}). Compare the identifier's "
-            f"typeface with the mounted reference when it matches no single official identifier."))
+            f"typeface and weight with the mounted reference when it is not a confident match."))
     return result
 
 
@@ -1687,12 +1704,14 @@ def reference_lockup_crop(lockup_result=None, corner="upper-right"):
     """
     Visa's official lockup, cropped like the brand_mark zoom crop (2x, same
     corner) so the agent can compare typeface, weight and letterforms side by
-    side. The identified tier when known, else all four tiers on one sheet.
-    Returns PNG bytes, or None when the reference assets are missing.
+    side. The identified or closest tier when known (2x), else all four tiers
+    on one sheet (1x). Returns PNG bytes, or None when the reference assets
+    are missing.
     """
     left_side = corner.endswith("left")
     box = (0, 20, 436, 260) if left_side else (1100, 20, 1536, 260)
-    tier = (lockup_result or {}).get("identifier_tier")
+    result = lockup_result or {}
+    tier = result.get("identifier_tier") or result.get("identifier_candidate_tier")
     tiers = [tier] if tier in LOCKUP_TIERS else list(LOCKUP_TIERS)
     try:
         tiles = [Image.open(os.path.join(LOCKUP_DIR, f"{t}.png")).convert("RGB").crop(box)

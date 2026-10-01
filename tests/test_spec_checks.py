@@ -12,7 +12,7 @@ import os
 import sys
 import unittest
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
@@ -328,6 +328,19 @@ class OfficialLockup(unittest.TestCase):
         sheet = Image.open(io.BytesIO(specs.reference_lockup_crop({}, "upper-left")))
         self.assertEqual(single.size, (872, 480))   # one lockup at 2x
         self.assertEqual(sheet.size, (872, 480))    # four lockups at 1x
+        closest = specs.reference_lockup_crop({"identifier_tier": None, "identifier_candidate_tier": "signature"})
+        self.assertEqual(closest, specs.reference_lockup_crop({"identifier_tier": "signature"}))
+
+    def test_unconfirmed_identifier_names_its_closest_tier(self):
+        # A bolder weight drops the overlap below a confident read; the
+        # closest tier still picks the reference the agent compares against.
+        im = official_card("signature")
+        im.paste(im.crop((1150, 180, 1536, 245)).filter(ImageFilter.MaxFilter(3)), (1150, 180))
+        match = specs.check_virtual_mark(im)["lockup_match"]
+        self.assertTrue(match["passed"], match["note"])
+        self.assertIsNone(match["identifier_tier"])
+        self.assertEqual(match["identifier_candidate_tier"], "signature")
+        self.assertIsNone(specs.check_virtual_mark(official_card("signature"))["lockup_match"]["identifier_candidate_tier"])
 
 
 class IdentifierClearance(unittest.TestCase):
