@@ -61,6 +61,10 @@ REQUIRED_FORMAT = "PNG"
 CARD_WIDTH_INCHES = 3.375   # ISO ID-1 standard credit card width
 MIN_DPI_DIGITAL = 72        # Visa minimum DPI for digital card display
 VISA_MARK_EDGE_MARGIN = 56  # pixels — applies ONLY to the Visa Brand Mark
+# Uploads far wider than the canvas (an 8148px export) are measured on a
+# 1536px-wide copy: full-size float arrays of a 40MP image exhaust the
+# spec-check function's memory. Same width the mark locator downscales above.
+WORKING_COPY_MAX_WIDTH = round(REQUIRED_WIDTH * 1.25)
 
 # --- Virtual Visa Brand Mark lockup geometry (1536x969 scale) ---
 # Visa places the mark AT 56px, not "at least" 56px: it rejects marks that sit
@@ -1642,10 +1646,15 @@ def generate_zoom_crops(img, bleed_result=None, side="front", trim_offsets=None)
         brand_box = _box(0.0, 0.0, 0.45, 0.45)
     else:  # upper-right
         brand_box = _box(0.55, 0.0, 1.0, 0.45)
+    # The issuer logo sits in the upper corner the mark doesn't take.
+    if corner == "upper-left":
+        issuer_box = _box(0.55, 0.0, 1.0, 0.40)
+    else:
+        issuer_box = _box(0.0, 0.0, 0.45, 0.40)
 
     return {
         "brand_mark": _png(brand_box, scale=2),
-        "issuer": _png(_box(0.0, 0.0, 0.45, 0.40), scale=2),
+        "issuer": _png(issuer_box, scale=2),
         "lower_left": _png(_box(0.0, 0.55, 0.50, 1.0)),
     }
 
@@ -3690,6 +3699,19 @@ def check_physical(front_path: str, back_path: "str | None" = None,
 # Virtual card checks (PNG, 1536x969)
 # ─────────────────────────────────────────────────────────────────
 
+def working_copy(img):
+    """
+    The image every pixel check measures: a 1536px-wide RGBA copy (aspect
+    kept) of an upload wider than WORKING_COPY_MAX_WIDTH, otherwise the image
+    itself. Lengths are judged at the 1536px canvas scale either way.
+    """
+    w, h = img.size
+    if w <= WORKING_COPY_MAX_WIDTH:
+        return img
+    return img.convert("RGBA").resize(
+        (REQUIRED_WIDTH, max(1, round(h * REQUIRED_WIDTH / w))), Image.LANCZOS)
+
+
 def check_image(image_path: str, declared_product: "str | None" = None) -> dict:
     results = {
         "card_type": "virtual",
@@ -3738,23 +3760,38 @@ def check_image(image_path: str, declared_product: "str | None" = None) -> dict:
         )
     }
 
+    # Dimensions, format and DPI describe the original; every pixel check
+    # below measures the working copy.
+    try:
+        work = working_copy(img)
+    except Exception as e:
+        results["errors"].append(f"Could not read image pixels: {e}")
+        return results
+    if work is not img:
+        results["working_copy"] = {
+            "width": work.width, "height": work.height,
+            "original_width": w, "original_height": h,
+            "note": (f"Measured on a {work.width}x{work.height} copy of the {w}x{h} original; "
+                     "pixel measurements are at that scale."),
+        }
+
     # --- Visa Brand Mark lockup: placed at 56px (bleed_zone), mark size,
     # identifier alignment, mark color — one locator pass ---
     try:
-        results["checks"].update(check_virtual_mark(img, declared_product))
+        results["checks"].update(check_virtual_mark(work, declared_product))
     except Exception as e:
         results["errors"].append(f"Brand Mark analysis failed: {e}")
 
     # --- Canvas edges: square corners, no border frame ---
     for key, fn in (("square_corners", check_square_corners), ("border_frame", check_border_frame)):
         try:
-            results["checks"][key] = fn(img)
+            results["checks"][key] = fn(work)
         except Exception as e:
             results["errors"].append(f"{key} check failed: {e}")
 
     # --- Color Extraction ---
     try:
-        colors = extract_colors(img)
+        colors = extract_colors(work)
         results["colors"] = colors
     except Exception as e:
         results["errors"].append(f"Color extraction failed: {e}")

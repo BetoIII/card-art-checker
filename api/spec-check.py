@@ -16,6 +16,12 @@ spends its time budget on visual inspection only:
   POST {"mode": "render", "image_url": ..., "visual_results": {...}}
     -> application/pdf              (annotated virtual results report)
 
+  POST {"mode": "preview", "image_url": ...}
+    -> image/png                    (the 1536px-wide working copy the virtual
+                                     checks measure; the pipeline mounts it
+                                     for the agent when the upload is too
+                                     large for the agent to read)
+
   POST {"mode": "render-physical", "tech_results": {...},
         "previews": {"front": b64, "back": b64?}, "visual_results": {...}}
     -> application/pdf              (annotated physical results report)
@@ -98,7 +104,7 @@ def _load_source_bytes(body, url_key="image_url", b64_key="image_b64"):
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self._json(200, {"ok": True, "modes": ["check", "render", "render-physical"]})
+        self._json(200, {"ok": True, "modes": ["check", "render", "preview", "render-physical"]})
 
     def do_POST(self):
         try:
@@ -111,7 +117,7 @@ class handler(BaseHTTPRequestHandler):
         try:
             if mode == "check" and (body.get("card_type") or "virtual") == "physical":
                 return self._handle_check_physical(body)
-            if mode in ("check", "render"):
+            if mode in ("check", "render", "preview"):
                 return self._handle_virtual(mode, body)
             if mode == "render-physical":
                 return self._handle_render_physical(body)
@@ -193,7 +199,7 @@ class handler(BaseHTTPRequestHandler):
 
     def _handle_virtual(self, mode, body):
         if (body.get("card_type") or "virtual") != "virtual":
-            return self._json(400, {"error": "check/render modes are virtual-only"})
+            return self._json(400, {"error": "check/render/preview modes are virtual-only"})
         image_bytes, err = _load_source_bytes(body)
         if err:
             return self._json(400, {"error": err})
@@ -205,6 +211,11 @@ class handler(BaseHTTPRequestHandler):
             image_path = os.path.join(tmp, file_name)
             with open(image_path, "wb") as f:
                 f.write(image_bytes)
+
+            if mode == "preview":
+                buf = io.BytesIO()
+                specs.working_copy(specs.Image.open(image_path)).save(buf, "PNG")
+                return self._bytes(200, "image/png", buf.getvalue())
 
             # The declared product lets lockup_match fail an identifier that
             # reads as a different tier; absent, the tier is only reported.
@@ -221,7 +232,7 @@ class handler(BaseHTTPRequestHandler):
                     crops = {
                         name: base64.b64encode(png).decode("ascii")
                         for name, png in specs.generate_zoom_crops(
-                            specs.Image.open(image_path),
+                            specs.working_copy(specs.Image.open(image_path)),
                             checks.get("bleed_zone"),
                         ).items()
                     }
@@ -238,7 +249,8 @@ class handler(BaseHTTPRequestHandler):
                 return self._json(200, {"tech_specs": result, "crops": crops})
 
             visual = body.get("visual_results") or {}
-            img = specs.Image.open(image_path)
+            # Same copy the checks measured, so the overlay lines up.
+            img = specs.working_copy(specs.Image.open(image_path))
             colors = result.get("colors") or specs.extract_colors(img)
             buf = io.BytesIO()
             specs.generate_results_image(

@@ -347,6 +347,28 @@ class CheckImage(unittest.TestCase):
                     "square_corners", "border_frame"):
             self.assertIn(key, result["checks"])
             self.assertTrue(result["checks"][key]["passed"], (key, result["checks"][key].get("note")))
+        self.assertNotIn("working_copy", result)
+
+    def test_oversized_upload_is_measured_on_a_working_copy(self):
+        # An 8148px export ran the spec-check function out of memory.
+        import tempfile
+        big = rounded(official_card().resize((W * 5, H * 5), Image.LANCZOS), 300)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "card.png")
+            big.save(path)
+            result = specs.check_image(path, "Platinum")
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["checks"]["dimensions"]["actual"], f"{W * 5}x{H * 5}")
+        self.assertEqual((result["working_copy"]["width"], result["working_copy"]["height"]), (W, H))
+        zone = result["checks"]["bleed_zone"]
+        self.assertTrue(zone["passed"], zone["note"])
+        self.assertTrue(53 <= zone["strict_top_px"] <= 59)
+        self.assertIs(result["checks"]["square_corners"]["passed"], False)
+
+    def test_working_copy_leaves_canvas_sized_art_alone(self):
+        im = official_card()
+        self.assertIs(specs.working_copy(im), im)
+        self.assertEqual(specs.working_copy(card().resize((1900, 1199))).size, (1900, 1199))
 
 
 if __name__ == "__main__":
