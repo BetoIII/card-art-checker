@@ -11,12 +11,12 @@
 | Dimensions | 1536 × 969 pixels |
 | Aspect ratio | ISO ID-1 card proportional |
 | File format | PNG |
-| Resolution | ≥72 DPI (calculated from pixel width ÷ 3.375″) |
+| Resolution | 72 DPI (declared density) |
 | Orientation for review submission | Horizontal (landscape) only |
 
-> DPI is calculated from image resolution — not read from file metadata.
-> Formula: `pixel_width ÷ 3.375` (ISO ID-1 card width in inches).
-> At the standard 1536px width, calculated DPI is ~455, well above the 72 DPI minimum.
+> DPI is the density the file declares (PNG pHYs, JPEG JFIF/EXIF). Visa rejects files
+> that declare any other value. A file with no density metadata reads as 72 and passes.
+> The pixel size is checked separately (1536 × 969).
 
 ---
 

@@ -3,7 +3,7 @@
 Technical spec checker for Visa virtual/digital AND physical card art.
 
 VIRTUAL (PNG, 1536x969):
-  Dimensions, format (PNG), DPI (pixel_width / CARD_WIDTH_INCHES),
+  Dimensions, format (PNG), DPI (declared density must be 72),
   Visa Brand Mark lockup (placed at 56px, 109px mark height, identifier
   alignment, permitted flat ink color), square corners, no border frame,
   RGB color extraction.
@@ -59,7 +59,7 @@ REQUIRED_WIDTH = 1536
 REQUIRED_HEIGHT = 969
 REQUIRED_FORMAT = "PNG"
 CARD_WIDTH_INCHES = 3.375   # ISO ID-1 standard credit card width
-MIN_DPI_DIGITAL = 72        # Visa minimum DPI for digital card display
+REQUIRED_DPI_DIGITAL = 72   # Visa requires virtual art at exactly 72 DPI
 VISA_MARK_EDGE_MARGIN = 56  # pixels — applies ONLY to the Visa Brand Mark
 # Uploads far wider than the canvas (an 8148px export) are measured on a
 # 1536px-wide copy: full-size float arrays of a 40MP image exhaust the
@@ -2125,7 +2125,7 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     check_labels = {
         "dimensions": "Dimensions (1536x969 px)",
         "file_format": "File Format (PNG)",
-        "dpi": "DPI (>= 72 for digital)",
+        "dpi": "72 DPI",
         "bleed_zone": "Visa Brand Mark placed at 56px",
         "mark_size": "Visa Brand Mark size (109px)",
         "identifier_alignment": "Identifier aligned with mark",
@@ -3699,6 +3699,44 @@ def check_physical(front_path: str, back_path: "str | None" = None,
 # Virtual card checks (PNG, 1536x969)
 # ─────────────────────────────────────────────────────────────────
 
+def _dpi_check(img):
+    """
+    Visa rejects virtual art that declares anything but 72 DPI.
+    Pillow reads the declared density from PNG pHYs and JPEG JFIF/EXIF, and
+    a PNG saved at 72 comes back as 72.009, so the value is rounded. A file
+    with no density metadata reads as 72 and passes.
+    """
+    w = img.size[0]
+    calculated = round(w / CARD_WIDTH_INCHES, 1)
+    dpi = img.info.get("dpi")
+    try:
+        declared = [round(float(v), 1) for v in dpi][:2] if dpi else None
+    except (TypeError, ValueError):
+        declared = None
+    if declared and min(declared) <= 0:
+        declared = None
+    result = {
+        "required": f"{REQUIRED_DPI_DIGITAL} DPI (Visa)",
+        "declared_dpi": declared,
+        "calculated_dpi": calculated,
+    }
+    if declared is None:
+        result.update(passed=True, actual="No DPI metadata (reads as 72)",
+                      note="The file declares no pixel density, which reads as 72 DPI.")
+        return result
+    shown = f"{declared[0]:g}" if declared[0] == declared[-1] else f"{declared[0]:g}x{declared[-1]:g}"
+    if all(round(v) == REQUIRED_DPI_DIGITAL for v in declared):
+        result.update(passed=True, actual=f"{shown} DPI (declared)", note="")
+        return result
+    result.update(
+        passed=False, reason_code="resolution_not_72dpi", actual=f"{shown} DPI (declared)",
+        note=(f"FAIL — the file declares {shown} DPI. Visa requires virtual art at "
+              f"{REQUIRED_DPI_DIGITAL} DPI; re-export the PNG at 72 DPI (the pixel size stays "
+              f"{REQUIRED_WIDTH}x{REQUIRED_HEIGHT})."),
+    )
+    return result
+
+
 def working_copy(img):
     """
     The image every pixel check measures: a 1536px-wide RGBA copy (aspect
@@ -3746,19 +3784,7 @@ def check_image(image_path: str, declared_product: "str | None" = None) -> dict:
         "note": "" if fmt == REQUIRED_FORMAT else f"File format is {fmt}, expected {REQUIRED_FORMAT}"
     }
 
-    # --- DPI (calculated from image resolution, not metadata) ---
-    calculated_dpi = round(w / CARD_WIDTH_INCHES, 1)
-    dpi_ok = calculated_dpi >= MIN_DPI_DIGITAL
-    results["checks"]["dpi"] = {
-        "passed": dpi_ok,
-        "actual": f"{calculated_dpi} DPI (calculated)",
-        "required": f">= {MIN_DPI_DIGITAL} DPI for digital display (Visa spec)",
-        "note": (
-            f"Calculated from image width: {w}px / {CARD_WIDTH_INCHES}\" = {calculated_dpi} DPI. "
-            + ("Meets Visa digital display requirement." if dpi_ok
-               else f"Below Visa minimum of {MIN_DPI_DIGITAL} DPI. A wider source image is needed.")
-        )
-    }
+    results["checks"]["dpi"] = _dpi_check(img)
 
     # Dimensions, format and DPI describe the original; every pixel check
     # below measures the working copy.

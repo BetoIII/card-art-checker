@@ -330,8 +330,9 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 `mark_color` · `lockup_match` · `issuer_logo_border` · `square_corners` · `border_frame`
 
 `dimensions`, `file_format` and `dpi` overlap `validation.ts` and can serve as a
-cross-check. Note `dpi` here means **calculated** DPI ≥ 72, not "declared density equals
-72" — a PNG declaring 300 DPI passes this check.
+cross-check. `dpi` reads the declared density (PNG pHYs, JPEG JFIF/EXIF) and fails
+anything but 72, as Visa does — a PNG declaring 300 DPI fails. A file with no density
+metadata reads as 72 and passes.
 
 The rest are deterministic compliance measurements, not structural ones:
 
@@ -433,9 +434,8 @@ Two consequences:
    `mark_size`, `identifier_alignment`, `mark_color`, `lockup_match`, `issuer_logo_border`,
    `square_corners`, `border_frame`) have no `validation.ts` equivalent and already feed
    `outcome`.
-2. **The DPI difference is moot.** `validation.ts` rejects a *declared* density that isn't
-   exactly 72 and runs first, so a 300-DPI PNG never reaches the checker's more permissive
-   calculated ≥ 72 check (§7).
+2. **Both layers apply the same DPI rule.** `validation.ts` rejects a *declared* density
+   that isn't exactly 72, and so does the checker's `dpi` (§7).
 
 ---
 

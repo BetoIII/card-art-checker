@@ -334,6 +334,35 @@ class PartnerLogoBorder(unittest.TestCase):
         self.assertIsNone(specs.check_virtual_mark(official_card())["issuer_logo_border"]["passed"])
 
 
+class DeclaredDpi(unittest.TestCase):
+    """Visa rejects art that isn't 72 DPI; the declared density decides."""
+
+    def dpi(self, fmt="PNG", **save):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "card.png")
+            official_card().save(path, fmt, **save)
+            return specs.check_image(path)["checks"]["dpi"]
+
+    def test_72_dpi_passes(self):
+        for fmt in ("PNG", "JPEG"):
+            check = self.dpi(fmt, dpi=(72, 72))
+            self.assertTrue(check["passed"], (fmt, check["actual"]))
+            self.assertEqual([round(v) for v in check["declared_dpi"]], [72, 72])
+
+    def test_other_densities_fail(self):
+        for fmt, dpi in (("PNG", 300), ("PNG", 144), ("JPEG", 94)):
+            check = self.dpi(fmt, dpi=(dpi, dpi))
+            self.assertIs(check["passed"], False, (fmt, dpi))
+            self.assertEqual(check["reason_code"], "resolution_not_72dpi")
+            self.assertEqual(check["actual"], f"{dpi} DPI (declared)")
+
+    def test_no_density_metadata_passes(self):
+        check = self.dpi("PNG")
+        self.assertTrue(check["passed"])
+        self.assertIsNone(check["declared_dpi"])
+
+
 class CheckImage(unittest.TestCase):
     def test_virtual_check_image_emits_every_tech_check(self):
         import tempfile

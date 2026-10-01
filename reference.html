@@ -1453,8 +1453,9 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         can't be located they report <code>unverified</code> and the visual review decides.
       </p>
       <p>
-        <code>dpi</code> here means <strong>calculated</strong> DPI ≥ 72, not "declared density
-        equals 72" — a PNG declaring 300 DPI passes this check.
+        <code>dpi</code> reads the declared density and fails anything but 72, as Visa
+        does — a PNG declaring 300 DPI fails. A file with no density metadata reads as 72
+        and passes.
       </p>
 
       <div class="note">

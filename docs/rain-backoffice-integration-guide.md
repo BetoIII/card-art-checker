@@ -65,9 +65,8 @@ Every submission that reaches the checker has already passed `validation.ts`, so
 You can ignore them for the review decision — but a `tech_checks` failure would mean the
 two layers disagree about the same file, which is worth an alert rather than a shrug.
 
-The two layers measure DPI differently and it no longer matters: `validation.ts` rejects a
-*declared* density that isn't exactly 72, and it runs first, so a 300-DPI PNG never
-reaches our (more permissive) calculated ≥ 72 check.
+Both layers apply the same DPI rule: `validation.ts` rejects a *declared* density that
+isn't exactly 72, and so does our `dpi` check.
 
 ---
 
