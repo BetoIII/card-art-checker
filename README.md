@@ -206,7 +206,15 @@ a v1.1 physical schema needs.
 ## Tests
 
 ```bash
-npm test    # node --test 'tests/*.test.js'
+npm test          # node --test 'tests/*.test.js'
+npm run test:py   # spec-check tests (scripts/check_technical_specs.py)
+```
+
+The Python tests need Pillow and numpy. Homebrew's Python won't take a global `pip install`,
+so set up a virtualenv once; `test:py` uses `.venv` when it exists:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 No test framework — `node:test` only. The suite is mostly a drift guard: it replays real check

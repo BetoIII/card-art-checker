@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test 'tests/*.test.js'",
-    "test:py": "python3 -m unittest discover -s tests -p 'test_*.py'"
+    "test:py": "PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python; $PY -m unittest discover -s tests -p 'test_*.py'"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
