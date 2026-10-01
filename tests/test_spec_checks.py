@@ -229,10 +229,22 @@ class CanvasEdges(unittest.TestCase):
             self.assertIs(result["passed"], False, width)
             self.assertEqual(result["frame_px"], width)
 
-    def test_hairline_is_ignored(self):
-        # 1px edges come from resampling and appear on Visa-approved files.
+    def test_hairline_frame_on_all_four_sides_fails(self):
+        # Visa rejected REJ-053's 1px gray frame as white border lines.
         im = card()
-        ImageDraw.Draw(im).rectangle([0, 0, W - 1, H - 1], outline=(150, 150, 150), width=1)
+        ImageDraw.Draw(im).rectangle([0, 0, W - 1, H - 1], outline=(128, 128, 128), width=1)
+        result = specs.check_border_frame(im)
+        self.assertIs(result["passed"], False)
+        self.assertEqual(sorted(result["border_sides"]), ["bottom", "left", "right", "top"])
+        self.assertEqual(result["frame_px"], 1)
+
+    def test_hairline_on_fewer_sides_is_ignored(self):
+        # 1px edges on some sides come from resampling.
+        im = card()
+        draw = ImageDraw.Draw(im)
+        draw.line([(0, 0), (W - 1, 0)], fill=(150, 150, 150))            # top
+        draw.line([(0, H - 1), (W - 1, H - 1)], fill=(150, 150, 150))    # bottom
+        draw.line([(0, 0), (0, H - 1)], fill=(150, 150, 150))            # left
         self.assertTrue(specs.check_border_frame(im)["passed"])
 
     def test_transparent_padding_fails(self):
@@ -332,6 +344,20 @@ class PartnerLogoBorder(unittest.TestCase):
 
     def test_no_logo_is_unverified(self):
         self.assertIsNone(specs.check_virtual_mark(official_card())["issuer_logo_border"]["passed"])
+
+
+class ZoomCrops(unittest.TestCase):
+    def test_issuer_crop_takes_the_free_corner_and_the_side_band(self):
+        im = Image.new("RGB", (W, H), (0, 0, 0))
+        im.paste((255, 255, 255), (W // 2, 0, W, H))   # right half white
+        for corner, value in (("upper-right", 0), ("upper-left", 255)):
+            crop = Image.open(io.BytesIO(
+                specs.generate_zoom_crops(im, {"mark_corner": corner})["issuer"])).convert("L")
+            self.assertEqual(crop.getextrema(), (value, value), corner)
+            # 2x of 45% x 55%: reaches past the 40% line where REJ-042's
+            # contactless symbol sat between crops.
+            self.assertEqual(crop.height, 2 * int(H * 0.55))
+            self.assertAlmostEqual(crop.width, 2 * W * 0.45, delta=2)
 
 
 class DeclaredDpi(unittest.TestCase):

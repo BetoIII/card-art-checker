@@ -1489,17 +1489,19 @@ def check_border_frame(img):
     """
     Flag border lines around the art: the canvas edge is padding, not artwork.
 
-    The rejected cases take two shapes. Transparent padding on any side (the
-    art was placed on a wider canvas), or thin uniform lines of 2px or more on
-    two or more sides (white border lines from an export or a mockup). A 1px
-    hairline is below what Visa has flagged and is typical of resampling, so
-    it is ignored. Every length is judged at the 1536px canvas scale.
+    The rejected cases take three shapes. Transparent padding on any side
+    (the art was placed on a wider canvas); thin uniform lines of 2px or more
+    on two or more sides (white border lines from an export or a mockup); or
+    a 1px line on all four sides, a frame Visa rejected on REJ-053. A 1px
+    line on fewer sides is typical of resampling and is ignored. Every length
+    is judged at the 1536px canvas scale.
     """
     rgba = np.array(img.convert("RGBA"), dtype=float)
     h, w, _ = rgba.shape
     scale = w / REQUIRED_WIDTH
     depth = max(3, int(min(w, h) * 0.03))
     min_band = 2 * scale
+    hairline = max(1, round(scale))
     names = ("top", "bottom", "left", "right")
 
     def _lines(side):
@@ -1514,7 +1516,7 @@ def check_border_frame(img):
             return [rgba[int(h * 0.05):int(h * 0.95), i] for i in range(n)]
         return [rgba[int(h * 0.05):int(h * 0.95), w - 1 - i] for i in range(n)]
 
-    transparent, lined = {}, {}
+    transparent, lined, hairlines = {}, {}, {}
     for side in names:
         lines = _lines(side)
         clear = 0
@@ -1530,14 +1532,18 @@ def check_border_frame(img):
             if np.abs(line[:, :3] - color).max(axis=1).mean() > 6:
                 break
             thickness += 1
-        if not min_band <= thickness <= depth:
+        if not hairline <= thickness <= depth:
             continue
         # The artwork must visibly start past the band (allowing for an
         # anti-aliased transition line or two).
         after = rest[thickness:thickness + 3]
         contrast = max(np.abs(l[:, :3] - color).max(axis=1).mean() for l in after) if after else 0
         if contrast >= 25:
-            lined[side] = (thickness, [int(round(v)) for v in color])
+            hairlines[side] = (thickness, [int(round(v)) for v in color])
+            if thickness >= min_band:
+                lined[side] = hairlines[side]
+    if len(hairlines) == len(names):
+        lined = hairlines
 
     if not transparent and len(lined) < 2:
         return {"passed": True, "actual": "No border lines", "required": "art fills the canvas edge to edge", "note": ""}
@@ -1550,9 +1556,10 @@ def check_border_frame(img):
         parts.append("uniform border lines on the " + ", ".join(
             f"{side} ({t}px R{c[0]} G{c[1]} B{c[2]})" for side, (t, c) in lined.items()))
     sides = list(transparent) + [s for s in lined if len(lined) >= 2]
+    actual = "; ".join(parts)
     return {
         "passed": False,
-        "actual": "; ".join(parts).capitalize(),
+        "actual": actual[:1].upper() + actual[1:],
         "required": "art fills the canvas edge to edge",
         "note": ("FAIL — the art does not reach the canvas edge: " + "; ".join(parts) + ". Visa "
                  "rejects art with white border lines; export the design full-bleed to the "
@@ -1600,7 +1607,8 @@ def generate_zoom_crops(img, bleed_result=None, side="front", trim_offsets=None)
     shift every zone), of the full image otherwise (virtual PNGs).
 
     Front: the brand-mark corner (2x, follows the corner check_bleed_zone
-    localized), the issuer corner (2x), and the lower-left zone (native).
+    localized), the issuer corner and the side band below it (2x), and the
+    lower-left zone (native).
     Back (physical): the magstripe band zone (native) and the issuer-text
     zone (2x) per Rain's standardized back.
 
@@ -1646,11 +1654,13 @@ def generate_zoom_crops(img, bleed_result=None, side="front", trim_offsets=None)
         brand_box = _box(0.0, 0.0, 0.45, 0.45)
     else:  # upper-right
         brand_box = _box(0.55, 0.0, 1.0, 0.45)
-    # The issuer logo sits in the upper corner the mark doesn't take.
+    # The issuer logo sits in the upper corner the mark doesn't take. The
+    # crop runs down to the lower-left zone so it also covers the side band
+    # where contactless symbols sit (REJ-042's was in the gap between crops).
     if corner == "upper-left":
-        issuer_box = _box(0.55, 0.0, 1.0, 0.40)
+        issuer_box = _box(0.55, 0.0, 1.0, 0.55)
     else:
-        issuer_box = _box(0.0, 0.0, 0.45, 0.40)
+        issuer_box = _box(0.0, 0.0, 0.45, 0.55)
 
     return {
         "brand_mark": _png(brand_box, scale=2),

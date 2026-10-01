@@ -345,7 +345,7 @@ The rest are deterministic compliance measurements, not structural ones:
 | `lockup_match` | shape match against Visa's official lockup artwork: wordmark overlap, identifier size relative to the mark (0.87–1.15× passes), and the identifier tier it reads as — a confident tier that differs from `declaredProduct` fails | `product_identifier` |
 | `issuer_logo_border` | partner/issuer logos in the other corners stay at least 53px from the edges (outside the 56px bleed zone) | `issuer_logo_within_border` |
 | `square_corners` | transparent or matte arcs in the corners | — (tech only) |
-| `border_frame` | transparent padding on any side, or uniform border lines (≥2px) on two or more sides | `no_physical_card_photography` |
+| `border_frame` | transparent padding on any side, uniform border lines (≥2px) on two or more sides, or a 1px line on all four sides | `no_physical_card_photography` |
 
 A failing measurement fails its mirrored check and forces `outcome: "requires_changes"`;
 a warning (`status: "warning"`) lifts a passing check to a warning. When the Brand Mark
