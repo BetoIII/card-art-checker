@@ -309,7 +309,7 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 | `visa_brand_mark_contrast` | brand_mark | blocker | `contrast_insufficient_wordmark`, `contrast_insufficient_identifier` |
 | `visa_brand_mark_color` | brand_mark | blocker | `mark_color_not_permitted`, `mark_gradient_applied` |
 | `product_identifier` | product_identifier | blocker | `identifier_absent`, `identifier_wrong_corner`, `identifier_separated_from_mark`, `identifier_in_pan_zone`, `identifier_casing`, `identifier_tier_mismatch`, `identifier_misaligned`, `identifier_font_mismatch`, `identifier_size_mismatch`, `lockup_not_official_artwork` |
-| `issuer_logo_present` | required_elements | required | `issuer_logo_absent` |
+| `issuer_logo_present` | required_elements | advisory | `issuer_logo_absent` |
 | `issuer_logo_within_border` | required_elements | blocker | `issuer_logo_in_bleed_zone` |
 | `contactless_indicator` | required_elements | required | `contactless_indicator_incorrect`, `contactless_indicator_rotated` |
 | `no_emv_chip` | prohibited | blocker | `prohibited_element_present` |

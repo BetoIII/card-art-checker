@@ -172,14 +172,14 @@ test('blocking failures list only blocker-severity failures', () => {
       status: 'REQUIRES CHANGES',
       visual_checks: [
         { id: 'visa_brand_mark_margin', result: 'fail' },   // blocker
-        { id: 'issuer_logo_present', result: 'fail' },      // required
+        { id: 'contactless_indicator', result: 'fail' },    // required
         { id: 'full_color', result: 'warning' },            // not a failure
       ],
     },
     techJson: { checks: { dimensions: { passed: false, actual: '500x315' } } },
   });
   assert.ok(result.blocking_failures.includes('visa_brand_mark_margin'));
-  assert.ok(!result.blocking_failures.includes('issuer_logo_present'));
+  assert.ok(!result.blocking_failures.includes('contactless_indicator'));
   assert.ok(result.blocking_failures.includes('dimensions'), 'failed tech checks block too');
 });
 
