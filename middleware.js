@@ -53,11 +53,14 @@ function loginPage(error) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rain — Admin Sign In</title>
+  <!-- /assets is outside this middleware's matcher, so the 401 page can use
+       the shared design system. Keep it that way. -->
+  <link rel="stylesheet" href="/assets/tokens.css?v=1">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      background: #FFFFFF; color: #000000;
+      font-family: var(--cc-font, "Inter", sans-serif);
+      background: var(--cc-bg, #F8FAFC); color: var(--cc-text, #262626);
       min-height: 100vh; display: flex; align-items: center; justify-content: center;
       padding: 24px; -webkit-font-smoothing: antialiased;
     }
@@ -66,26 +69,32 @@ function loginPage(error) {
     }
     .card::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-      background: linear-gradient(135deg, #EEEEEE 0%, #71FFFF 48%, #71FF7D 100%);
+      background: var(--cc-grad, linear-gradient(45deg, #F73196, #FF8CB2));
       border-radius: 2px;
     }
     h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-    p.sub { font-size: 13px; color: #121212; opacity: 0.7; margin-bottom: 20px; letter-spacing: 0.4px; }
-    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.4px; }
+    p.sub { font-size: 13px; color: var(--cc-text-2, #4D4D4D); margin-bottom: 20px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
     input[type="password"] {
       width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
-      border: 1px solid #D8DCDF; border-radius: 8px; outline: none;
+      background: var(--cc-surface, #FFFFFF); color: var(--cc-text, #262626);
+      border: 1px solid var(--cc-border-strong, #D0D5DD); border-radius: 8px; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    input[type="password"]:focus { border-color: #3B5BDB; }
+    input[type="password"]:focus {
+      border-color: var(--cc-blue-deep, #8AACD4);
+      box-shadow: var(--cc-ring-blue, 0 0 0 3px rgba(138, 172, 212, 0.35));
+    }
     button {
       margin-top: 14px; width: 100%; padding: 11px 20px; border: none; border-radius: 8px;
-      background: #000000; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: opacity 0.2s;
+      background: var(--cc-pink, #FF2FB6); color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
     }
-    button:hover { opacity: 0.85; }
+    button:hover { background: var(--cc-pink-hover, #AA1F79); }
+    button:focus-visible { outline: none; box-shadow: var(--cc-ring, 0 0 0 4px #FFD5F0); }
     .error {
-      margin-bottom: 14px; padding: 8px 12px; font-size: 13px; color: #E84142;
-      background: rgba(232, 65, 66, 0.06); border: 1px solid rgba(232, 65, 66, 0.25); border-radius: 8px;
+      margin-bottom: 14px; padding: 8px 12px; font-size: 13px; color: var(--cc-error-text, #912018);
+      background: var(--cc-error-bg, #FEF3F2); border: 1px solid var(--cc-error, #F04438); border-radius: 8px;
     }
   </style>
 </head>

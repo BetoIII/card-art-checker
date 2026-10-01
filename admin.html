@@ -6,51 +6,13 @@
   <title>Rain — Card Art Checker Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/tokens.css?v=1">
+  <link rel="stylesheet" href="/assets/components.css?v=1">
   <style>
-    :root {
-      /* Base */
-      --rain-black: #000000;
-      --rain-dark-gray: #121212;
-      --rain-white: #FFFFFF;
-      --rain-light-gray: #D8DCDF;
-      --rain-off-white: #EDEDED;
+    /* Page layout only — tokens.css + components.css carry the design system. */
 
-      /* Functional UI */
-      --rain-hot-pink: #FF2FB6;
-      --rain-cta-pink: #E84670;
-      --rain-sidebar-navy: #1B2559;
-      --rain-active-blue: #3B5BDB;
-      --rain-status-green: #40C057;
-      --rain-status-red: #E84142;
-      --rain-status-amber: #D9A400;
-      --rain-container-dark: #1A1A2E;
-      --rain-border-dark: #2A2A3E;
-
-      /* Accent / Gradients */
-      --rain-gradient-green-cyan: linear-gradient(135deg, #EEEEEE 0%, #71FFFF 48%, #71FF7D 100%);
-
-      /* Typography */
-      --rain-font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      --rain-mono: 'SF Mono', 'Fira Code', ui-monospace, monospace;
-
-      /* Spacing */
-      --rain-radius-sm: 4px;
-      --rain-radius-md: 8px;
-      --rain-radius-lg: 12px;
-      --rain-radius-pill: 9999px;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: var(--rain-font);
-      background: var(--rain-white);
-      color: var(--rain-black);
-      padding: 24px;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
+    body { padding: 24px; }
 
     .container {
       max-width: 1100px;
@@ -63,13 +25,12 @@
       position: absolute;
       top: 0; left: 0; right: 0;
       height: 4px;
-      background: var(--rain-gradient-green-cyan);
+      background: var(--cc-grad);
       border-radius: 2px;
     }
-
     /* The shared nav carries this accent at the top of the window, so the
        container's own bar would double it. Keyed to the class nav.js sets:
-       when the page is framed (no nav) this bar is still the page's accent. */
+       when the page is framed (no bar) this bar is still the page's accent. */
     html.rn-nav-on .container::before { display: none; }
 
     .page-head {
@@ -82,15 +43,17 @@
     }
     h1 { font-size: 20px; font-weight: 600; }
     .page-head .sub {
-      font-size: 12px;
-      color: var(--rain-dark-gray);
+      font-family: var(--cc-mono);
+      font-size: 11px;
+      color: var(--cc-text-3);
       letter-spacing: 0.4px;
     }
 
     /* ── Service status ─────────────────────────────────────── */
     .status-card {
-      border: 1px solid var(--rain-light-gray);
-      border-radius: var(--rain-radius-lg);
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border);
+      border-radius: var(--cc-r-xl);
       padding: 16px;
       margin-bottom: 24px;
     }
@@ -103,18 +66,18 @@
     .status-dot {
       width: 12px; height: 12px;
       border-radius: 50%;
-      background: var(--rain-light-gray);
+      background: var(--cc-border-strong);
       flex-shrink: 0;
     }
-    .status-dot.ok { background: var(--rain-status-green); box-shadow: 0 0 0 4px rgba(64,192,87,0.15); }
-    .status-dot.warn { background: var(--rain-status-amber); box-shadow: 0 0 0 4px rgba(217,164,0,0.15); }
-    .status-dot.down { background: var(--rain-status-red); box-shadow: 0 0 0 4px rgba(232,65,66,0.15); }
+    .status-dot.ok { background: var(--cc-success); box-shadow: 0 0 0 4px var(--cc-success-bg); }
+    .status-dot.warn { background: var(--cc-warning); box-shadow: 0 0 0 4px var(--cc-warning-bg); }
+    .status-dot.down { background: var(--cc-error); box-shadow: 0 0 0 4px var(--cc-error-bg); }
     .status-label { font-size: 15px; font-weight: 600; }
     .status-meta {
       margin-left: auto;
       font-size: 12px;
-      color: var(--rain-dark-gray);
-      letter-spacing: 0.4px;
+      color: var(--cc-text-3);
+      letter-spacing: 0.2px;
       display: flex;
       gap: 16px;
       flex-wrap: wrap;
@@ -126,16 +89,17 @@
       flex-wrap: wrap;
     }
     .env-chip {
+      font-family: var(--cc-mono);
       font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.4px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
       padding: 3px 10px;
-      border-radius: var(--rain-radius-pill);
-      border: 1px solid var(--rain-light-gray);
-      color: var(--rain-dark-gray);
+      border-radius: var(--cc-r-pill);
+      border: 1px solid var(--cc-border-strong);
+      color: var(--cc-text-2);
     }
-    .env-chip.ok { border-color: rgba(64,192,87,0.5); color: #237a36; background: rgba(64,192,87,0.07); }
-    .env-chip.missing { border-color: rgba(232,65,66,0.5); color: var(--rain-status-red); background: rgba(232,65,66,0.06); }
+    .env-chip.ok { border-color: var(--cc-success); color: var(--cc-success-text); background: var(--cc-success-bg); }
+    .env-chip.missing { border-color: var(--cc-error); color: var(--cc-error-text); background: var(--cc-error-bg); }
 
     /* ── Runs ───────────────────────────────────────────────── */
     .runs-head {
@@ -147,22 +111,23 @@
     .runs-head h2 { font-size: 15px; font-weight: 600; }
     .refresh-btn {
       appearance: none;
-      border: 1px solid var(--rain-light-gray);
-      background: var(--rain-white);
-      color: var(--rain-dark-gray);
-      font-family: var(--rain-font);
+      border: 1px solid var(--cc-border-strong);
+      background: var(--cc-surface);
+      color: var(--cc-text-2);
+      font-family: var(--cc-font);
       font-size: 12px;
       font-weight: 600;
       padding: 6px 14px;
-      border-radius: var(--rain-radius-pill);
+      border-radius: var(--cc-r-pill);
       cursor: pointer;
-      transition: border-color 0.15s, color 0.15s;
+      transition: border-color var(--cc-transition), color var(--cc-transition);
     }
-    .refresh-btn:hover { border-color: var(--rain-black); color: var(--rain-black); }
+    .refresh-btn:hover { border-color: var(--cc-pink); color: var(--cc-pink); }
 
     .table-wrap {
-      border: 1px solid var(--rain-light-gray);
-      border-radius: var(--rain-radius-lg);
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border);
+      border-radius: var(--cc-r-lg);
       overflow-x: auto;
     }
     table {
@@ -176,16 +141,16 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: var(--rain-dark-gray);
-      background: var(--rain-off-white);
+      color: var(--cc-text-2);
+      background: var(--cc-surface-2);
       padding: 10px 12px;
       white-space: nowrap;
     }
     tbody tr.run-row {
-      border-top: 1px solid var(--rain-off-white);
+      border-top: 1px solid var(--cc-border);
       cursor: pointer;
     }
-    tbody tr.run-row:hover { background: rgba(59, 91, 219, 0.04); }
+    tbody tr.run-row:hover { background: var(--cc-surface-2); }
     tbody td {
       padding: 10px 12px;
       vertical-align: top;
@@ -193,28 +158,29 @@
     }
     td.wrap { white-space: normal; max-width: 260px; overflow-wrap: anywhere; }
 
+    /* Row badges: stratus Tag triples, keyed by the classes the JS emits. */
     .badge {
       display: inline-block;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.4px;
       padding: 3px 10px;
-      border-radius: var(--rain-radius-pill);
+      border-radius: var(--cc-r-xl);
       white-space: nowrap;
+      background: var(--cc-surface-2);
+      color: var(--cc-text-2);
     }
-    .badge.src-rocketlane { background: rgba(59, 91, 219, 0.1); color: var(--rain-active-blue); }
-    .badge.src-dock { background: rgba(255, 47, 182, 0.09); color: #B01F7E; }
-    .badge.src-upload { background: rgba(64, 192, 87, 0.1); color: #237a36; }
-    .badge.src-api { background: rgba(120, 92, 219, 0.1); color: #5a3fb8; }
-    .badge.src-unknown { background: var(--rain-off-white); color: var(--rain-dark-gray); }
+    .badge.src-rocketlane { background: var(--cc-info-bg); color: var(--cc-info-text); }
+    .badge.src-dock { background: var(--cc-pink-soft); color: var(--cc-pink); }
+    .badge.src-upload { background: var(--cc-success-bg); color: var(--cc-success-text); }
+    .badge.src-api { background: var(--cc-blue-soft); color: var(--cc-text-2); }
 
-    .badge.st-running { background: rgba(59, 91, 219, 0.1); color: var(--rain-active-blue); }
-    .badge.st-completed { background: rgba(64, 192, 87, 0.1); color: #237a36; }
-    .badge.st-failed { background: rgba(232, 65, 66, 0.09); color: var(--rain-status-red); }
-    .badge.st-skipped { background: var(--rain-off-white); color: var(--rain-dark-gray); }
+    .badge.st-running { background: var(--cc-info-bg); color: var(--cc-info-text); }
+    .badge.st-completed { background: var(--cc-success-bg); color: var(--cc-success-text); }
+    .badge.st-failed { background: var(--cc-error-bg); color: var(--cc-error-text); }
 
-    .badge.v-pass { background: rgba(64, 192, 87, 0.1); color: #237a36; }
-    .badge.v-fail { background: rgba(232, 65, 66, 0.09); color: var(--rain-status-red); }
+    .badge.v-pass { background: var(--cc-success-bg); color: var(--cc-success-text); }
+    .badge.v-fail { background: var(--cc-error-bg); color: var(--cc-error-text); }
 
     .pulse {
       display: inline-block;
@@ -227,14 +193,27 @@
     }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-    .muted { color: var(--rain-dark-gray); opacity: 0.65; }
-    a.report-link { color: var(--rain-active-blue); font-weight: 600; text-decoration: none; }
+    .badge.v-notes { background: var(--cc-warning-bg); color: var(--cc-warning-text); }
+
+    .expand-btn {
+      appearance: none;
+      background: none;
+      border: none;
+      color: var(--cc-text-3);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 6px 2px 0;
+      vertical-align: baseline;
+    }
+
+    .muted { color: var(--cc-text-3); }
+    a.report-link { color: var(--cc-pink); font-weight: 600; text-decoration: none; }
     a.report-link:hover { text-decoration: underline; }
 
     /* Expanded detail */
     tr.detail-row td {
-      background: #FAFAFB;
-      border-top: 1px solid var(--rain-off-white);
+      background: var(--cc-surface-2);
+      border-top: 1px solid var(--cc-border);
       padding: 14px 16px 18px;
       white-space: normal;
     }
@@ -248,7 +227,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: var(--rain-dark-gray);
+      color: var(--cc-text-2);
       margin-bottom: 6px;
     }
     .kv { font-size: 12.5px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -260,19 +239,19 @@
       padding: 3px 0;
       align-items: baseline;
     }
-    .timeline .t { font-family: var(--rain-mono); font-size: 11px; color: var(--rain-dark-gray); opacity: 0.7; flex-shrink: 0; }
+    .timeline .t { font-family: var(--cc-mono); font-size: 11px; color: var(--cc-text-3); flex-shrink: 0; }
     .timeline .icon { width: 14px; text-align: center; flex-shrink: 0; }
-    .timeline .icon.done { color: var(--rain-status-green); }
-    .timeline .icon.pending { color: var(--rain-status-amber); }
-    .timeline .icon.error { color: var(--rain-status-red); }
+    .timeline .icon.done { color: var(--cc-success); }
+    .timeline .icon.pending { color: var(--cc-warning); }
+    .timeline .icon.error { color: var(--cc-error); }
     .error-box {
       margin-top: 4px;
-      font-family: var(--rain-mono);
+      font-family: var(--cc-mono);
       font-size: 12px;
-      color: var(--rain-status-red);
-      background: rgba(232, 65, 66, 0.06);
-      border: 1px solid rgba(232, 65, 66, 0.25);
-      border-radius: var(--rain-radius-md);
+      color: var(--cc-error-text);
+      background: var(--cc-error-bg);
+      border: 1px solid var(--cc-error);
+      border-radius: var(--cc-r-md);
       padding: 8px 10px;
       overflow-wrap: anywhere;
     }
@@ -281,12 +260,16 @@
       padding: 32px;
       text-align: center;
       font-size: 13px;
-      color: var(--rain-dark-gray);
-      letter-spacing: 0.4px;
+      color: var(--cc-text-3);
+      letter-spacing: 0.2px;
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 16px 12px; }
     }
   </style>
   <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" data-tag="Admin"></script>
+  <script src="/assets/nav.js" data-tag="Admin" data-theme-toggle></script>
 
 </head>
 <body>
@@ -426,8 +409,11 @@
       if (!run.results || !run.results.length) return '<span class="muted">—</span>';
       return run.results.map((r) => {
         if (r.error) return '<span class="badge v-fail">ERROR</span>';
-        if (r.status === 'pass') return '<span class="badge v-pass">APPROVED</span>';
-        if (r.status === 'fail') return '<span class="badge v-fail">REQUIRES CHANGES</span>';
+        // Prefer the three-state outcome; older runs only carry pass/fail.
+        const outcome = r.outcome || (r.status === 'pass' ? 'approved' : r.status === 'fail' ? 'requires_changes' : null);
+        if (outcome === 'approved') return '<span class="badge v-pass">APPROVED</span>';
+        if (outcome === 'approved_with_notes') return '<span class="badge v-notes">WITH NOTES</span>';
+        if (outcome === 'requires_changes') return '<span class="badge v-fail">REQUIRES CHANGES</span>';
         return `<span class="badge">${esc(r.status || '—')}</span>`;
       }).join(' ');
     }
@@ -503,10 +489,13 @@
 
       if (run.results?.length) {
         blocks.push(`<div class="detail-block"><h3>Results</h3><div class="kv">${run.results.map((r) => {
-          if (r.error) return `✗ ${esc(r.filename || r.attachmentId || '')}: <span style="color: var(--rain-status-red)">${esc(r.error)}</span>`;
+          if (r.error) return `✗ ${esc(r.filename || r.attachmentId || '')}: <span style="color: var(--cc-error)">${esc(r.error)}</span>`;
           const delivery = r.delivery ? `<br><b>Delivery:</b> ${esc(typeof r.delivery === 'string' ? r.delivery : Object.entries(r.delivery).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', '))}` : '';
-          return `<b>${esc(r.filename || r.attachmentId || '')}</b> — ${r.status === 'pass' ? 'APPROVED' : 'REQUIRES CHANGES'}<br>${esc(r.summary || '')}${r.pdfUrl ? `<br><a class="report-link" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">Open PDF report</a>` : ''}${delivery}`;
-        }).join('<hr style="border:0;border-top:1px solid var(--rain-off-white);margin:8px 0">')}</div></div>`);
+          const outcome = r.outcome || (r.status === 'pass' ? 'approved' : 'requires_changes');
+          const verdict = outcome === 'approved' ? 'APPROVED' : outcome === 'approved_with_notes' ? 'APPROVED WITH NOTES' : 'REQUIRES CHANGES';
+          const resultUrl = r.resultUrl ? `<br><b>Result:</b> ${esc(r.resultUrl)} <span class="muted">(needs the webhook secret)</span>` : '';
+          return `<b>${esc(r.filename || r.attachmentId || '')}</b> — ${verdict}<br>${esc(r.summary || '')}${r.pdfUrl ? `<br><a class="report-link" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">Open PDF report</a>` : ''}${resultUrl}${delivery}`;
+        }).join('<hr style="border:0;border-top:1px solid var(--cc-border);margin:8px 0">')}</div></div>`);
       }
 
       if (run.events?.length) {
@@ -533,7 +522,7 @@
         const isOpen = expanded.has(run.runId);
         return `
           <tr class="run-row" data-run="${esc(run.runId)}">
-            <td title="${esc(absTime(run.startedAt))}">${esc(relTime(run.startedAt))}</td>
+            <td title="${esc(absTime(run.startedAt))}"><button type="button" class="expand-btn" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Collapse' : 'Expand'} run details">${isOpen ? '&#9662;' : '&#9656;'}</button>${esc(relTime(run.startedAt))}</td>
             <td>${sourceBadge(run)}</td>
             <td class="wrap">${esc(runProject(run))}</td>
             <td class="wrap">${esc(runFile(run)) || '<span class="muted">—</span>'}</td>
@@ -557,10 +546,24 @@
     }
 
     let lastRuns = [];
+    let sessionExpired = false;
+
+    // The admin cookie lasts 30 days; when it lapses the fetches start
+    // returning 401. Stop the refresh loop and offer the way back in —
+    // reloading the page serves the middleware's sign-in form.
+    function handleSessionExpired() {
+      if (sessionExpired) return;
+      sessionExpired = true;
+      document.getElementById('refresh-note').textContent = 'auto-refresh paused';
+      document.getElementById('runs-body').innerHTML =
+        '<tr><td colspan="9" class="empty">Your session expired. <a class="report-link" href="/admin">Sign in again</a></td></tr>';
+    }
+
     async function loadRuns() {
       const tbody = document.getElementById('runs-body');
       try {
         const res = await fetch('/api/admin/runs?limit=100', { cache: 'no-store' });
+        if (res.status === 401) return handleSessionExpired();
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const { runs } = await res.json();
         lastRuns = runs;
@@ -577,6 +580,7 @@
       await Promise.all([loadHealth(), loadRuns()]);
     }
     setInterval(() => {
+      if (sessionExpired) return;
       countdown -= 1;
       document.getElementById('refresh-note').textContent = `auto-refresh in ${countdown}s`;
       if (countdown <= 0) refreshAll();

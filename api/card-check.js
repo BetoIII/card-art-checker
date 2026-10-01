@@ -237,6 +237,11 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       runId: runLog.runId,
       outcome: emitted.outcome,
       resultUrl: emitted.resultUrl,
+      // The full structured result (lib/result-schema.js), so the browser can
+      // render per-check verdicts and markers without the secret-gated
+      // /api/result endpoint. Null when result emission failed — the client
+      // falls back to the status/summary rendering.
+      result: emitted.result,
       delivery: {
         projectId,
         projectName,
@@ -276,6 +281,137 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
   }
 }
 
+// ── Mock mode ────────────────────────────────────────────────────────
+//
+// CARD_CHECK_MOCK=1 (set only in a local .env.local, never in prod) replays a
+// canned event script so UI work doesn't burn a real Claude run. The multipart
+// body still goes through the real parser, so client-side validation and the
+// 400 paths behave exactly as in production. A filename containing "fail"
+// yields the requires-changes outcome; anything else passes. The delivery
+// payload pins slackDelivery: false, which makes deliverReport a no-op.
+
+async function mockResponse(request) {
+  let parsed;
+  try {
+    parsed = await parseMultipart(request, { requireProjectId: false });
+  } catch (err) {
+    return new Response(String(err?.message || err), { status: 400 });
+  }
+
+  // Filename picks the scenario: "fail" → requires_changes, "notes" →
+  // approved_with_notes, anything else → approved.
+  const failing = /fail/i.test(parsed.fileName || '');
+  const withNotes = !failing && /note/i.test(parsed.fileName || '');
+  const mockOutcome = failing ? 'requires_changes' : withNotes ? 'approved_with_notes' : 'approved';
+  const status = failing ? 'fail' : 'pass';
+  const summary = failing
+    ? 'Mock run: the network logo sits inside the quiet zone and the contrast ratio on the cardholder name falls below the minimum.'
+    : withNotes
+      ? 'Mock run: approved, with minor gradient banding worth a look before print.'
+      : 'Mock run: artwork meets all checked requirements.';
+  const pdfUrl = 'https://example.com/mock-card-art-report.pdf';
+
+  const encoder = new TextEncoder();
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event, data) => {
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch { /* client gone */ }
+      };
+
+      send('progress', { step: 'upload', message: 'File received', status: 'done' });
+      await sleep(300);
+      if (parsed.projectId) {
+        send('progress', { step: 'rocketlane', message: 'Looking up project details...', status: 'pending' });
+        await sleep(500);
+        send('progress', { step: 'rocketlane', message: 'Project: Mock Project', status: 'done' });
+      }
+      send('progress', { step: 'analysis', message: 'Analyzing card art...', status: 'pending' });
+      await sleep(400);
+      send('agent_delta', { text: 'Reviewing the artwork against the compliance checklist. ' });
+      send('agent_tool', { tool: 'Read', command: 'card-art.png' });
+      await sleep(600);
+      send('agent_delta', { text: 'Checking network logo placement, quiet zone, and contrast ratios...\n' });
+      await sleep(600);
+      send('progress', { step: 'analysis', message: 'Analysis complete', status: 'done' });
+      send('progress', { step: 'blob_upload', message: 'Report stored', status: 'done' });
+      await sleep(200);
+      const mockChecks = failing
+        ? [
+            { id: 'network_logo_quiet_zone', name: 'Network logo quiet zone', category: 'Network marks', severity: 'blocker', status: 'fail', reason_code: 'quiet_zone_intrusion', notes: 'The Visa logo sits 4px inside the required quiet zone.', marker: { x: 0.84, y: 0.82 } },
+            { id: 'cardholder_name_contrast', name: 'Cardholder name contrast', category: 'Personalization area', severity: 'blocker', status: 'fail', reason_code: 'contrast_below_minimum', notes: 'Contrast ratio 2.7:1 against the background; minimum is 4.5:1.', marker: { x: 0.18, y: 0.62 } },
+            { id: 'background_gradient_banding', name: 'Background gradient banding', category: 'Artwork quality', severity: 'advisory', status: 'warning', reason_code: 'other', notes: 'Slight banding visible in the upper-left gradient.', marker: { x: 0.22, y: 0.18 } },
+            { id: 'bin_area_clear', name: 'BIN area clear', category: 'Personalization area', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'no_emv_chip', name: 'No EMV chip artwork', category: 'Physical features', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'brand_mark_present', name: 'Brand mark present', category: 'Network marks', severity: 'blocker', status: 'unverified', reason_code: null, notes: 'Not reported by the analysis.' },
+          ]
+        : [
+            ...(withNotes ? [{ id: 'background_gradient_banding', name: 'Background gradient banding', category: 'Artwork quality', severity: 'advisory', status: 'warning', reason_code: 'other', notes: 'Slight banding visible in the upper-left gradient.', marker: { x: 0.22, y: 0.18 } }] : []),
+            { id: 'network_logo_quiet_zone', name: 'Network logo quiet zone', category: 'Network marks', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'cardholder_name_contrast', name: 'Cardholder name contrast', category: 'Personalization area', severity: 'blocker', status: 'pass', reason_code: null, notes: 'Measured 7.9:1.' },
+            { id: 'bin_area_clear', name: 'BIN area clear', category: 'Personalization area', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'no_emv_chip', name: 'No EMV chip artwork', category: 'Physical features', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'brand_mark_present', name: 'Brand mark present', category: 'Network marks', severity: 'blocker', status: 'unverified', reason_code: null, notes: 'Not reported by the analysis.' },
+          ];
+      const mockResult = {
+        schema_version: '1.0',
+        run_id: 'mock-run',
+        card_type: parsed.cardType,
+        generated_at: new Date().toISOString(),
+        outcome: mockOutcome,
+        status,
+        summary,
+        project: { id: parsed.projectId || null, name: 'Mock Project' },
+        submission: { file_name: parsed.fileName },
+        report: { pdf_url: pdfUrl },
+        counts: mockChecks.reduce((acc, c) => { acc[c.status] = (acc[c.status] || 0) + 1; return acc; }, {}),
+        blocking_failures: mockChecks.filter((c) => c.status === 'fail' && c.severity === 'blocker').map((c) => c.id),
+        checks: mockChecks,
+        tech_checks: [
+          { id: 'dimensions', status: 'pass', actual: '1536x969', required: '1536x969', note: null },
+          { id: 'color_mode', status: failing ? 'warning' : 'pass', actual: failing ? 'sRGB (embedded profile missing)' : 'sRGB', required: 'RGB', note: failing ? 'Profile assumed from pixel data.' : null, ...(failing ? { borderline: true } : {}) },
+        ],
+        colors: {
+          background: { rgb: [40, 40, 60], hex: '#28283C' },
+          primary: { rgb: [255, 47, 182], hex: '#FF2FB6' },
+        },
+        unmapped_checks: [],
+      };
+      send('complete', {
+        status,
+        summary,
+        cardType: parsed.cardType,
+        pdfUrl,
+        runId: 'mock-run',
+        outcome: mockOutcome,
+        resultUrl: null,
+        result: mockResult,
+        delivery: {
+          projectId: parsed.projectId || 'mock-project',
+          projectName: 'Mock Project',
+          pdfUrl,
+          status,
+          summary,
+          cardType: parsed.cardType,
+          slackDelivery: false,
+        },
+      });
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+
 // ── Main handler ─────────────────────────────────────────────────────
 
 export async function POST(request) {
@@ -287,6 +423,10 @@ export async function POST(request) {
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {
     return new Response('Bad request: expected multipart/form-data', { status: 400 });
+  }
+
+  if (/^(1|true|yes)$/i.test(process.env.CARD_CHECK_MOCK || '')) {
+    return mockResponse(request);
   }
 
   const authenticated = isAuthenticated(request);

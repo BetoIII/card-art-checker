@@ -6,20 +6,31 @@
   <title>Rain — Iframe Diagnostic</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/tokens.css?v=1">
+  <link rel="stylesheet" href="/assets/components.css?v=1">
   <style>
-    body { font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif; padding: 24px; background: #FFFFFF; color: #000000; -webkit-font-smoothing: antialiased; }
-    h2 { margin-top: 0; font-size: 20px; font-weight: 600; }
-    pre { background: #FFFFFF; border: 1px solid #D8DCDF; border-radius: 8px; padding: 16px; overflow-x: auto; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+    body { padding: 24px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+    pre {
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border);
+      border-radius: var(--cc-r-md);
+      padding: 16px;
+      overflow-x: auto;
+      font-family: var(--cc-mono);
+      font-size: 13px;
+      color: var(--cc-text);
+    }
     .section { margin-bottom: 20px; }
-    .label { font-weight: 600; color: #121212; margin-bottom: 4px; font-size: 14px; letter-spacing: 0.6px; }
+    .label { font-weight: 600; color: var(--cc-text-2); margin-bottom: 4px; font-size: 14px; }
   </style>
   <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" data-tag="Diagnostic"></script>
+  <script src="/assets/nav.js" data-tag="Diagnostic" data-theme-toggle></script>
 
 </head>
 <body>
-  <h2>Rocketlane Iframe Diagnostic</h2>
+  <h1>Rocketlane Iframe Diagnostic</h1>
   <div class="section">
     <div class="label">Full URL:</div>
     <pre id="url"></pre>

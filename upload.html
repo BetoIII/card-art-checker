@@ -1,387 +1,65 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rain — Card Art Submission</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/tokens.css?v=1">
+  <link rel="stylesheet" href="/assets/components.css?v=1">
   <style>
-    :root {
-      /* Base */
-      --rain-black: #000000;
-      --rain-dark-gray: #121212;
-      --rain-white: #FFFFFF;
-      --rain-light-gray: #D8DCDF;
-      --rain-off-white: #EDEDED;
+    /* Page layout only — tokens.css + components.css carry the design system.
+       This page lives in a 576×324 Rocketlane iframe: the layout is a single
+       compact column, and anything taller scrolls inside the frame. */
 
-      /* Functional UI */
-      --rain-hot-pink: #FF2FB6;
-      --rain-cta-pink: #E84670;
-      --rain-sidebar-navy: #1B2559;
-      --rain-active-blue: #3B5BDB;
-      --rain-status-green: #40C057;
-      --rain-status-red: #E84142;
-      --rain-container-dark: #1A1A2E;
-      --rain-border-dark: #2A2A3E;
-
-      /* Accent / Gradients */
-      --rain-neon-green: #71FF7D;
-      --rain-cyan: #7BC4FF;
-      --rain-bright-cyan: #71FFFF;
-      --rain-gradient-green-cyan: linear-gradient(135deg, #EEEEEE 0%, #71FFFF 48%, #71FF7D 100%);
-      --rain-gradient-blue-yellow: linear-gradient(135deg, #7CC4FF 0%, #E6D1FF 48%, #F0FF65 100%);
-      --rain-gradient-purple-orange: linear-gradient(135deg, #EEDFFF 0%, #F49FFF 45%, #FF924D 100%);
-      --rain-gradient-red-pink: linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%);
-
-      /* Typography */
-      --rain-font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-
-      /* Spacing */
-      --rain-radius-sm: 4px;
-      --rain-radius-md: 8px;
-      --rain-radius-lg: 12px;
-      --rain-radius-xl: 16px;
-      --rain-radius-pill: 9999px;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: var(--rain-font);
-      background: var(--rain-white);
-      color: var(--rain-black);
-      padding: 24px;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
+    body { padding: 16px; }
 
     .container {
       max-width: 640px;
       margin: 0 auto;
       position: relative;
-      padding-top: 20px;
+      padding-top: 16px;
     }
     .container::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
+      top: 0; left: 0; right: 0;
       height: 4px;
-      background: var(--rain-gradient-green-cyan);
+      background: var(--cc-grad);
       border-radius: 2px;
     }
-
     /* The shared nav carries this accent at the top of the window, so the
        container's own bar would double it. Keyed to the class nav.js sets:
-       when the page is framed (no nav) this bar is still the page's accent. */
+       when the page is framed (no bar) this bar is still the page's accent. */
     html.rn-nav-on .container::before { display: none; }
 
     h1 {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 24px;
-      color: var(--rain-black);
-    }
-
-    /* Card type toggle */
-    .field-block {
-      margin-bottom: 16px;
-    }
-    .field-label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--rain-black);
-      margin-bottom: 8px;
-      letter-spacing: 0.4px;
-    }
-    .field-hint {
-      font-size: 12px;
-      color: var(--rain-dark-gray);
-      margin-top: 6px;
-      letter-spacing: 0.4px;
-    }
-    .segmented {
-      display: inline-flex;
-      padding: 4px;
-      background: var(--rain-off-white);
-      border: 1px solid var(--rain-light-gray);
-      border-radius: var(--rain-radius-pill);
-      font-family: var(--rain-font);
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .segmented button {
-      appearance: none;
-      border: 0;
-      background: transparent;
-      color: var(--rain-dark-gray);
-      padding: 7px 18px;
-      border-radius: var(--rain-radius-pill);
-      cursor: pointer;
-      transition: background 0.15s ease, color 0.15s ease;
-      font-family: inherit;
-      font-size: inherit;
-      font-weight: inherit;
-      letter-spacing: inherit;
-      text-transform: inherit;
-    }
-    .segmented button.active {
-      background: var(--rain-black);
-      color: var(--rain-white);
-    }
-    .segmented button:not(.active):hover {
-      color: var(--rain-black);
-    }
-
-    /* Drop zone */
-    .drop-zone {
-      border: 2px dashed var(--rain-light-gray);
-      border-radius: var(--rain-radius-lg);
-      padding: 40px 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      background: var(--rain-white);
-      position: relative;
-    }
-    .drop-zone.dragover {
-      border-color: var(--rain-active-blue);
-      background: rgba(59, 91, 219, 0.04);
-    }
-    .drop-zone.has-file {
-      border-color: var(--rain-status-green);
-      background: rgba(64, 192, 87, 0.06);
-      border-style: solid;
-    }
-    .drop-zone input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-    }
-    .drop-zone-icon {
-      display: block;
-      height: 52px;
-      width: auto;
-      margin: 0 auto 12px;
-      border-radius: 4px;
-      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.08));
-    }
-    .drop-zone-text {
-      font-size: 14px;
-      color: var(--rain-dark-gray);
-      letter-spacing: 0.6px;
-    }
-    .drop-zone-text strong {
-      color: var(--rain-cta-pink);
-    }
-
-    /* Preview */
-    .preview-section {
-      display: none;
-      margin-top: 16px;
-      background: var(--rain-white);
-      border-radius: var(--rain-radius-lg);
-      padding: 16px;
-      border: 1px solid var(--rain-light-gray);
-    }
-    .preview-section.visible { display: block; }
-    .preview-img {
-      width: 100%;
-      border-radius: var(--rain-radius-md);
-      border: 1px solid var(--rain-light-gray);
-    }
-    .preview-meta {
-      margin-top: 12px;
-      font-size: 14px;
-      color: var(--rain-dark-gray);
-      letter-spacing: 0.6px;
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    /* Validation checks */
-    .validation-checks {
-      display: none;
-      margin-top: 12px;
-      font-size: 14px;
-      letter-spacing: 0.6px;
-    }
-    .validation-checks.visible { display: block; }
-    .val-check {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 0;
-    }
-    .val-check .icon { width: 16px; text-align: center; }
-    .val-check.pass .icon { color: var(--rain-status-green); }
-    .val-check.fail .icon { color: var(--rain-status-red); }
-
-    /* Submit */
-    .submit-btn {
-      margin-top: 20px;
-      width: 100%;
-      padding: 12px 20px;
-      border: none;
-      border-radius: var(--rain-radius-md);
-      background: var(--rain-black);
-      color: var(--rain-white);
-      font-family: var(--rain-font);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    .submit-btn:hover { opacity: 0.85; }
-    .submit-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* Progress feed */
-    .progress-section {
-      display: none;
-      margin-top: 24px;
-    }
-    .progress-section.visible { display: block; }
-
-    .progress-steps {
-      background: var(--rain-white);
-      border-radius: var(--rain-radius-lg);
-      border: 1px solid var(--rain-light-gray);
-      padding: 16px;
-    }
-    .step {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 8px 0;
-      font-size: 14px;
-      letter-spacing: 0.6px;
-      color: var(--rain-dark-gray);
-      border-bottom: 1px solid var(--rain-off-white);
-    }
-    .step:last-child { border-bottom: none; }
-    .step.done { color: var(--rain-black); }
-    .step.error { color: var(--rain-status-red); }
-    .step .step-icon {
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-    }
-    .step.pending .step-icon { color: var(--rain-light-gray); }
-    .step.done .step-icon { color: var(--rain-status-green); }
-    .step.error .step-icon { color: var(--rain-status-red); }
-
-    /* Spinner */
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .spinner {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid var(--rain-light-gray);
-      border-top-color: var(--rain-bright-cyan);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    /* Agent output */
-    .agent-output {
-      display: none;
-      margin-top: 16px;
-      background: var(--rain-container-dark);
-      border-radius: var(--rain-radius-lg);
-      padding: 16px;
-      max-height: 300px;
-      overflow-y: auto;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      color: var(--rain-light-gray);
-    }
-    .agent-output.visible { display: block; }
-    .agent-output .tool-badge {
-      display: inline-block;
-      background: var(--rain-border-dark);
-      color: var(--rain-light-gray);
-      padding: 2px 8px;
-      border-radius: var(--rain-radius-sm);
-      font-size: 12px;
-      margin: 4px 0;
-    }
-
-    /* Result */
-    .result-section {
-      display: none;
-      margin-top: 24px;
-      border-radius: var(--rain-radius-lg);
-      padding: 24px;
-      text-align: center;
-    }
-    .result-section.visible { display: block; }
-    .result-section.pass {
-      background: rgba(64, 192, 87, 0.06);
-      border: 2px solid var(--rain-status-green);
-    }
-    .result-section.fail {
-      background: rgba(232, 65, 66, 0.06);
-      border: 2px solid var(--rain-status-red);
-    }
-    .result-status {
       font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .result-section.pass .result-status { color: var(--rain-status-green); }
-    .result-section.fail .result-status { color: var(--rain-status-red); }
-    .result-summary {
-      font-size: 14px;
-      color: var(--rain-dark-gray);
-      letter-spacing: 0.6px;
-      margin-bottom: 16px;
-      line-height: 1.5;
-    }
-    .pdf-link {
-      display: inline-block;
-      padding: 10px 24px;
-      background: var(--rain-black);
-      color: var(--rain-white);
-      text-decoration: none;
-      border-radius: var(--rain-radius-md);
-      font-family: var(--rain-font);
       font-weight: 600;
-      font-size: 14px;
-      transition: opacity 0.2s;
+      margin-bottom: 16px;
     }
-    .pdf-link:hover { opacity: 0.85; }
 
-    /* Error banner */
-    .error-banner {
-      display: none;
-      margin-top: 16px;
-      background: rgba(232, 65, 66, 0.06);
-      border: 1px solid var(--rain-status-red);
-      border-radius: var(--rain-radius-md);
-      padding: 16px;
-      color: var(--rain-status-red);
-      font-size: 14px;
-      letter-spacing: 0.6px;
+    /* Compact dropzone: fits the frame with the toggle + button in view. */
+    .drop-zone { padding: 20px 16px; }
+    .drop-zone-icon { height: 40px; margin-bottom: 8px; }
+    .drop-zone-text { font-size: 13px; }
+
+    .submit-btn { margin-top: 16px; }
+
+    .progress-section { display: none; margin-top: 16px; }
+    .progress-section.visible { display: block; }
+    .progress-steps {
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border);
+      border-radius: var(--cc-r-lg);
+      padding: 10px 16px;
     }
-    .error-banner.visible { display: block; }
+    .elapsed { text-align: right; margin-bottom: 6px; }
+
+    .result-section, .error-banner { margin-top: 16px; }
+    .result-status { font-size: 14px; }
   </style>
   <link rel="stylesheet" href="/assets/nav.css">
   <script src="/assets/nav.js" data-tag="Submit"></script>
@@ -392,14 +70,14 @@
     <h1>Submit Card Art for Review</h1>
 
     <form id="upload-form">
-      <div class="field-block">
-        <label class="field-label">Card type</label>
-        <div class="segmented" id="card-type-toggle" role="tablist">
-          <button type="button" data-value="virtual" class="active" role="tab">Virtual</button>
-          <button type="button" data-value="physical" role="tab">Physical</button>
+      <fieldset class="field-block">
+        <legend class="field-label">Card type</legend>
+        <div class="segmented" id="card-type-toggle">
+          <label><input type="radio" name="cardType" value="virtual" checked><span>Virtual</span></label>
+          <label><input type="radio" name="cardType" value="physical"><span>Physical</span></label>
         </div>
         <div class="field-hint">Virtual = 1536&times;969 PNG digital art. Physical = .ai, .eps, or 1536&times;969 PNG artwork for CR80 plastic cards.</div>
-      </div>
+      </fieldset>
 
       <div class="drop-zone" id="drop-zone">
         <input type="file" id="file-input" accept="image/png">
@@ -417,7 +95,7 @@
       </div>
 
       <div class="field-block" id="back-file-field" style="display: none; margin-top: 16px;">
-        <label class="field-label">Back of card <span style="font-weight: 400; color: var(--rain-dark-gray);">(optional)</span></label>
+        <label class="field-label" for="back-file-input">Back of card <span style="font-weight: 400; color: var(--cc-text-3);">(optional)</span></label>
         <div class="drop-zone" id="back-drop-zone">
           <input type="file" id="back-file-input" accept=".ai,.eps,.png,application/postscript,application/illustrator,image/png">
           <div class="drop-zone-text" id="back-drop-zone-text">
@@ -435,422 +113,68 @@
       <button type="submit" class="submit-btn" id="submit-btn" disabled>
         Submit Card Art for Review
       </button>
+      <div class="field-hint" style="text-align: center; margin-top: 8px;">Analysis typically takes 2&ndash;3 minutes.</div>
     </form>
 
+    <div class="empty-state" id="missing-project" style="display: none;">
+      <strong>This form needs a project link.</strong><br>
+      Open it from the card art task in your Rocketlane project &mdash; that link carries your
+      project id, so your review lands in the right place. If you reached this page from a
+      bookmark or a pasted URL, head back to your Rocketlane portal and open the task there.
+    </div>
+
     <div class="progress-section" id="progress-section">
-      <div class="progress-steps" id="progress-steps"></div>
+      <div class="elapsed" id="elapsed-timer"></div>
+      <div class="progress-steps" id="progress-steps" role="status" aria-live="polite"></div>
       <div class="agent-output" id="agent-output"></div>
     </div>
 
-    <div class="result-section" id="result-section">
+    <div class="result-section" id="result-section" tabindex="-1">
       <div class="result-status" id="result-status"></div>
       <div class="result-summary" id="result-summary"></div>
       <a class="pdf-link" id="pdf-link" href="#" target="_blank">Download PDF Report</a>
+      <div id="result-detail"></div>
     </div>
 
-    <div class="error-banner" id="error-banner"></div>
+    <div class="error-banner" id="error-banner" role="alert"></div>
   </div>
 
+  <script src="/assets/form-engine.js"></script>
   <script>
-    const dropZone = document.getElementById('drop-zone');
-    const fileInput = document.getElementById('file-input');
-    const dropZoneText = document.getElementById('drop-zone-text');
-    const previewSection = document.getElementById('preview-section');
-    const previewImg = document.getElementById('preview-img');
-    const previewMeta = document.getElementById('preview-meta');
-    const validationChecks = document.getElementById('validation-checks');
-    const cardTypeToggle = document.getElementById('card-type-toggle');
-    const backFileField = document.getElementById('back-file-field');
-    const backDropZone = document.getElementById('back-drop-zone');
-    const backFileInput = document.getElementById('back-file-input');
-    const backPreviewMeta = document.getElementById('back-preview-meta');
-    const backValidationChecks = document.getElementById('back-validation-checks');
-    const submitBtn = document.getElementById('submit-btn');
-    const form = document.getElementById('upload-form');
-    const progressSection = document.getElementById('progress-section');
-    const progressSteps = document.getElementById('progress-steps');
-    const agentOutput = document.getElementById('agent-output');
     const resultSection = document.getElementById('result-section');
-    const errorBanner = document.getElementById('error-banner');
 
-    let selectedFile = null;
-    let selectedBackFile = null;
-    let isFileValid = false;
-    let isBackValid = true; // true when no back file or back is valid; false only on bad back ext
-    let cardType = 'virtual';
-
-    const PHYSICAL_EXT_RE = /\.(ai|eps|png)$/i;
-
-    // Get projectId from URL
+    // projectId comes only from the URL: the Rocketlane task embeds this page
+    // with the project already attached. Without it there is nothing to
+    // submit to, so say so up front instead of erroring after the upload.
     const params = new URLSearchParams(window.location.search);
-    const projectId = params.get('projectId') || params.get('project_id');
+    const projectId = (params.get('projectId') || params.get('project_id') || '').trim();
 
-    // ── Card type toggle ──
-    function setCardType(next) {
-      if (next !== 'virtual' && next !== 'physical') return;
-      cardType = next;
-      for (const btn of cardTypeToggle.querySelectorAll('button')) {
-        btn.classList.toggle('active', btn.dataset.value === cardType);
-      }
-
-      if (cardType === 'physical') {
-        fileInput.setAttribute('accept', '.ai,.eps,.png,application/postscript,application/illustrator,image/png');
-        dropZoneText.innerHTML = 'Drag &amp; drop front card art (.ai, .eps, or .png)<br>or <strong>click to browse</strong>';
-        backFileField.style.display = '';
-      } else {
-        fileInput.setAttribute('accept', 'image/png');
-        dropZoneText.innerHTML = 'Drag &amp; drop your card art PNG here<br>or <strong>click to browse</strong>';
-        backFileField.style.display = 'none';
-        selectedBackFile = null;
-        backFileInput.value = '';
-        backPreviewMeta.innerHTML = '';
-        backValidationChecks.innerHTML = '';
-        backDropZone.classList.remove('has-file');
-        isBackValid = true;
-      }
-
-      if (selectedFile) handleFile(selectedFile);
-      updateSubmitState();
+    if (!projectId) {
+      document.getElementById('upload-form').style.display = 'none';
+      document.getElementById('missing-project').style.display = '';
     }
-    cardTypeToggle.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-value]');
-      if (btn) setCardType(btn.dataset.value);
+
+    CardCheckForm.create({
+      labels: { idle: 'Submit Card Art for Review', busy: 'Analyzing...' },
+      dropText: {
+        virtual: 'Drag & drop your card art PNG here<br>or <strong>click to browse</strong>',
+        physical: 'Drag &amp; drop front card art (.ai, .eps, or .png)<br>or <strong>click to browse</strong>',
+      },
+      getProjectId: () => projectId,
+      missingProjectMessage: 'Missing projectId in URL. This page must be accessed from the Rocketlane portal.',
+      resultDetail: 'compact',
+      renderResult: (payload) => {
+        // Three-state outcome; older payloads without one fall back to status.
+        const outcome = payload.outcome || (payload.status === 'pass' ? 'approved' : 'requires_changes');
+        const cls = outcome === 'requires_changes' ? 'fail' : outcome === 'approved_with_notes' ? 'notes' : 'pass';
+        resultSection.className = `result-section visible ${cls}`;
+        document.getElementById('result-status').textContent =
+          outcome === 'requires_changes' ? 'REQUIRES CHANGES'
+            : outcome === 'approved_with_notes' ? 'APPROVED WITH NOTES' : 'APPROVED';
+        document.getElementById('result-summary').textContent = payload.summary;
+        document.getElementById('pdf-link').href = payload.pdfUrl;
+      },
     });
-
-    // Drag and drop
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropZone.classList.add('dragover');
-    });
-    dropZone.addEventListener('dragleave', () => {
-      dropZone.classList.remove('dragover');
-    });
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('dragover');
-      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-    });
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files.length) handleFile(fileInput.files[0]);
-    });
-
-    function handleFile(file) {
-      selectedFile = file;
-      previewSection.classList.add('visible');
-
-      if (cardType === 'physical') {
-        const extOk = PHYSICAL_EXT_RE.test(file.name || '');
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        const sizeOk = file.size < 25 * 1024 * 1024;
-        const isPng = /\.png$/i.test(file.name || '') || file.type === 'image/png';
-        const checks = [
-          { label: 'File extension is .ai, .eps, or .png', pass: extOk },
-          { label: 'File size under 25 MB', pass: sizeOk },
-        ];
-
-        if (isPng && extOk) {
-          // PNG physical submissions can be decoded in-browser — show preview + dimensions.
-          previewImg.style.display = '';
-          const url = URL.createObjectURL(file);
-          previewImg.src = url;
-          const img = new Image();
-          img.onload = () => {
-            const w = img.naturalWidth;
-            const h = img.naturalHeight;
-            previewMeta.innerHTML = `
-              <span>${escapeHtml(file.name)}</span>
-              <span>${w} x ${h} px</span>
-              <span>${sizeMB} MB</span>
-            `;
-            checks.push({ label: 'PNG dimensions 1536 x 969', pass: w === 1536 && h === 969 });
-            validationChecks.innerHTML = checks.map(c => `
-              <div class="val-check ${c.pass ? 'pass' : 'fail'}">
-                <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
-                <span>${c.label}</span>
-              </div>
-            `).join('');
-            validationChecks.classList.add('visible');
-            isFileValid = checks.every(c => c.pass);
-            dropZone.classList.toggle('has-file', isFileValid);
-            updateSubmitState();
-          };
-          img.src = url;
-          return;
-        }
-
-        // Vector (.ai/.eps) files can't be decoded in-browser. Extension + size only.
-        previewImg.removeAttribute('src');
-        previewImg.style.display = 'none';
-        previewMeta.innerHTML = `
-          <span>${escapeHtml(file.name)}</span>
-          <span>${sizeMB} MB</span>
-        `;
-        validationChecks.innerHTML = checks.map(c => `
-          <div class="val-check ${c.pass ? 'pass' : 'fail'}">
-            <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
-            <span>${c.label}</span>
-          </div>
-        `).join('');
-        validationChecks.classList.add('visible');
-        isFileValid = checks.every(c => c.pass);
-        dropZone.classList.toggle('has-file', isFileValid);
-        updateSubmitState();
-        return;
-      }
-
-      // Virtual: raster validation via <img> decoding
-      previewImg.style.display = '';
-      const url = URL.createObjectURL(file);
-      previewImg.src = url;
-
-      const img = new Image();
-      img.onload = () => {
-        const w = img.naturalWidth;
-        const h = img.naturalHeight;
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-
-        previewMeta.innerHTML = `
-          <span>${w} x ${h} px</span>
-          <span>${sizeMB} MB</span>
-          <span>${file.type}</span>
-        `;
-
-        const checks = [
-          { label: 'PNG format', pass: file.type === 'image/png' },
-          { label: 'Dimensions 1536 x 969', pass: w === 1536 && h === 969 },
-          { label: 'File size under 10 MB', pass: file.size < 10 * 1024 * 1024 },
-        ];
-
-        validationChecks.innerHTML = checks.map(c => `
-          <div class="val-check ${c.pass ? 'pass' : 'fail'}">
-            <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
-            <span>${c.label}</span>
-          </div>
-        `).join('');
-        validationChecks.classList.add('visible');
-
-        isFileValid = checks.every(c => c.pass);
-        dropZone.classList.toggle('has-file', isFileValid);
-        updateSubmitState();
-      };
-      img.src = url;
-    }
-
-    function handleBackFile(file) {
-      selectedBackFile = file;
-      const extOk = PHYSICAL_EXT_RE.test(file.name || '');
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-      const sizeOk = file.size < 25 * 1024 * 1024;
-      backPreviewMeta.innerHTML = `
-        <span>${escapeHtml(file.name)}</span>
-        <span>${sizeMB} MB</span>
-      `;
-      const checks = [
-        { label: 'File extension is .ai or .eps', pass: extOk },
-        { label: 'File size under 25 MB', pass: sizeOk },
-      ];
-      backValidationChecks.innerHTML = checks.map(c => `
-        <div class="val-check ${c.pass ? 'pass' : 'fail'}">
-          <span class="icon">${c.pass ? '&#10003;' : '&#10007;'}</span>
-          <span>${c.label}</span>
-        </div>
-      `).join('');
-      backValidationChecks.classList.add('visible');
-      isBackValid = checks.every(c => c.pass);
-      backDropZone.classList.toggle('has-file', isBackValid);
-      updateSubmitState();
-    }
-
-    // Back dropzone events (only meaningful in physical mode)
-    backDropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      backDropZone.classList.add('dragover');
-    });
-    backDropZone.addEventListener('dragleave', () => {
-      backDropZone.classList.remove('dragover');
-    });
-    backDropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      backDropZone.classList.remove('dragover');
-      if (e.dataTransfer.files.length) handleBackFile(e.dataTransfer.files[0]);
-    });
-    backFileInput.addEventListener('change', () => {
-      if (backFileInput.files.length) handleBackFile(backFileInput.files[0]);
-    });
-
-    function updateSubmitState() {
-      const frontOk = selectedFile && isFileValid;
-      const backOk = cardType !== 'physical' || !selectedBackFile || isBackValid;
-      submitBtn.disabled = !(frontOk && backOk);
-    }
-
-    // Submit
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (submitBtn.disabled) return;
-
-      if (!projectId) {
-        showError('Missing projectId in URL. This page must be accessed from the Rocketlane portal.');
-        return;
-      }
-
-      // Lock UI
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Analyzing...';
-      progressSection.classList.add('visible');
-      errorBanner.classList.remove('visible');
-      resultSection.classList.remove('visible');
-      progressSteps.innerHTML = '';
-      agentOutput.innerHTML = '';
-      agentOutput.classList.remove('visible');
-
-      const formData = new FormData();
-      formData.append('cardType', cardType);
-      formData.append('file', selectedFile);
-      formData.append('projectId', projectId);
-      if (cardType === 'physical' && selectedBackFile) {
-        formData.append('backFile', selectedBackFile);
-      }
-
-      try {
-        const response = await fetch('/api/card-check', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `Server error: ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const chunks = buffer.split('\n\n');
-          buffer = chunks.pop(); // keep incomplete chunk
-
-          for (const chunk of chunks) {
-            const match = chunk.match(/^event: (\w+)\ndata: (.+)$/s);
-            if (!match) continue;
-            const [, eventType, data] = match;
-            try {
-              const payload = JSON.parse(data);
-              handleEvent(eventType, payload);
-            } catch { /* skip malformed */ }
-          }
-        }
-      } catch (err) {
-        showError(err.message);
-      }
-    });
-
-    function handleEvent(type, payload) {
-      switch (type) {
-        case 'progress':
-          upsertStep(payload.step, payload.message, payload.status);
-          break;
-        case 'agent_delta':
-          agentOutput.classList.add('visible');
-          agentOutput.insertAdjacentText('beforeend', payload.text);
-          agentOutput.scrollTop = agentOutput.scrollHeight;
-          break;
-        case 'agent_tool':
-          agentOutput.classList.add('visible');
-          const badge = document.createElement('div');
-          badge.innerHTML = `<span class="tool-badge">${payload.tool}${payload.command ? ': ' + escapeHtml(payload.command) : ''}</span>`;
-          agentOutput.appendChild(badge);
-          agentOutput.scrollTop = agentOutput.scrollHeight;
-          break;
-        case 'complete':
-          showResult(payload.status, payload.summary, payload.pdfUrl);
-          // Fire delivery (Slack + Rocketlane) in the background
-          if (payload.delivery) {
-            triggerDelivery(payload.delivery);
-          }
-          break;
-        case 'error':
-          showError(payload.message);
-          break;
-      }
-    }
-
-    const stepElements = {};
-    function upsertStep(stepId, message, status) {
-      if (stepElements[stepId]) {
-        const el = stepElements[stepId];
-        el.className = `step ${status}`;
-        el.querySelector('.step-msg').textContent = message;
-        el.querySelector('.step-icon').innerHTML = iconFor(status);
-      } else {
-        const el = document.createElement('div');
-        el.className = `step ${status}`;
-        el.innerHTML = `
-          <span class="step-icon">${iconFor(status)}</span>
-          <span class="step-msg">${escapeHtml(message)}</span>
-        `;
-        progressSteps.appendChild(el);
-        stepElements[stepId] = el;
-      }
-    }
-
-    function iconFor(status) {
-      if (status === 'done') return '&#10003;';
-      if (status === 'warn') return '&#9888;';
-      if (status === 'error') return '&#10007;';
-      return '<span class="spinner"></span>';
-    }
-
-    async function triggerDelivery(delivery) {
-      upsertStep('slack_deliver', 'Posting to Slack...', 'pending');
-      try {
-        const res = await fetch('/api/card-deliver', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(delivery),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Delivery failed');
-
-        if (data.results.slack === 'ok') {
-          upsertStep('slack_deliver', 'Posted to Slack', 'done');
-        } else if (data.results.slack === 'skipped') {
-          upsertStep('slack_deliver', 'Slack not configured — skipping', 'done');
-        } else {
-          upsertStep('slack_deliver', data.results.slack, 'warn');
-        }
-      } catch (err) {
-        upsertStep('slack_deliver', `Delivery error: ${err.message}`, 'warn');
-      }
-    }
-
-    function showResult(status, summary, pdfUrl) {
-      resultSection.className = `result-section visible ${status}`;
-      document.getElementById('result-status').textContent =
-        status === 'pass' ? 'APPROVED' : 'REQUIRES CHANGES';
-      document.getElementById('result-summary').textContent = summary;
-      document.getElementById('pdf-link').href = pdfUrl;
-      submitBtn.textContent = 'Submit Card Art for Review';
-      submitBtn.disabled = false;
-    }
-
-    function showError(msg) {
-      errorBanner.textContent = msg;
-      errorBanner.classList.add('visible');
-      submitBtn.textContent = 'Submit Card Art for Review';
-      submitBtn.disabled = false;
-    }
-
-    function escapeHtml(str) {
-      const d = document.createElement('div');
-      d.textContent = str;
-      return d.innerHTML;
-    }
   </script>
 </body>
 </html>
