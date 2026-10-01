@@ -150,6 +150,8 @@ test('the virtual prompt carries the declared product only when one is given', (
   const tech = techJson();
   const withProduct = buildVisualPrompt(tech, 'virtual', false, [], { declaredProduct: 'Signature Corporate' });
   assert.match(withProduct, /DECLARED PRODUCT: the program is provisioned as "Signature Corporate"/);
+  // REJ-023 read "Corporate Signature" and passed 1 of 3 reps as "both words present".
+  assert.match(withProduct, /read exactly "Signature Corporate": every word, in that\s+order/);
   assert.match(withProduct, /identifier_tier_mismatch/);
 
   const without = buildVisualPrompt(tech, 'virtual', false, []);
