@@ -15,14 +15,14 @@ The case data itself (partner card art, Visa feedback, PDR numbers) is private a
 | Metric | Cases behind it | Noise at 3 reps | Supports |
 |---|---|---|---|
 | `recall_covered` (headline) | 35 | about ±10 pts | Baseline vs. variant decisions on large effects |
-| `specificity` | 36 | about ±10 pts | A coarse false-alarm rate |
+| `specificity` | 35 | about ±10 pts | A coarse false-alarm rate |
 | `specificity_explicit` | 18 | about ±14 pts | A rough read only |
 | Per-reason recall | 1–12 per reason | ±30–100 pts | Anecdotes, except the margin (12) and dimension (8) reasons |
 | `recall_gap` / `recall_declared` | 7 / 3 | — | Case-by-case review, not percentages |
 
 ## 1. Add explicitly approved cards
 
-Specificity is the weakest side. Only 18 of the 42 approved cards have a written Visa approval: 17 rest only on tokenization, which proved wrong at least once (a design tokenized a week before Visa rejected it), and 6 are files that probably aren't what Visa reviewed. Two partners account for 12 of the 42 approved cards.
+Specificity is the weakest side. Only 18 of the 42 approved cards have a written Visa approval: 17 rest only on tokenization, which proved wrong at least once (a design tokenized a week before Visa rejected it), and 7 are files that probably aren't what Visa reviewed. Two partners account for 12 of the 42 approved cards.
 
 - The tracking canvas lists about 300 tokenized designs. Pull the ones whose thread carries a written approval ("approved", "Visa approved the card art") and whose submitted file is still attached.
 - Prefer partners not already in the set, and designs close to a rule boundary (a mark near 56px, busy backgrounds, light or metallic marks), because those are where false alarms come from.
@@ -78,12 +78,13 @@ Visa's feedback usually names one problem. The label audit (`evals/card-art/audi
 
 ## 6. Resolve the open label conflicts
 
-The audit flags these for a human decision rather than changing them:
+The audit flags these for a human decision rather than changing them. It still measures margins with the old right-corner-only detector, so the readings below come from the current mark locator (`check_virtual_mark`):
 
-- **Tokenization-only approvals that measure off 56px:** REJ-003-FIXED (60/60), REJ-025-FIXED (52/51) and REJ-043-FIXED (66/59). Confirm whether Visa approved these exact files.
-- **Explicit approvals that contradict a rule:** REJ-021-FIXED (rounded corners) and REJ-035-FIXED (65/65). Find the file that was actually approved.
-- **Two quarantined approved cards:** one had a lower-right mark and no identifier. The other's 80/53px reading came from the old detector; the newer mark locator measures it at 56/56. Re-measure it and decide whether it returns to the set.
-- **Seven rejected cards that measure off 56px where Visa didn't mention the margin.** These are tagged `margin_off56_unconfirmed`, and a person should confirm each one.
+- **Tokenization-only approvals that measure off 56px:** REJ-003-FIXED (60/60) and REJ-025-FIXED (52/51). Confirm whether Visa approved these exact files. If it did, the ±3 band is too tight, since every Visa margin rejection has an edge at 70px or more.
+- **REJ-043-FIXED:** its 66/59 reading came from the old detector, and it measures 56/57. It fails the mark-color check instead, and its approval is also tokenization-only.
+- **Explicit approvals that contradict a rule:** REJ-021-FIXED (rounded corners), REJ-035-FIXED (65/65) and PASS-009 (identifier about 1.46× the official size). Find the file that was actually approved.
+- **Two quarantined approved cards:** one has a lower-right mark and no identifier. The other stays out: the current locator confirms its 80/53px reading, and the art has rounded corners.
+- **Six rejected cards that measure off 56px where Visa didn't mention the margin.** These are tagged `margin_off56_unconfirmed`, and a person should confirm each one.
 
 ## 7. Cover checks that never fail in real submissions
 
