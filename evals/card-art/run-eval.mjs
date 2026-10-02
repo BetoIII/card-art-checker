@@ -103,7 +103,7 @@ const REASON_ACCEPT = {
   identifier_obstructed: ['design_elements_clear_of_identifier', 'tech:identifier_clearance'],
   partner_logo_border: ['issuer_logo_within_border', 'tech:issuer_logo_border'],
   rounded_corners: ['tech:square_corners'],
-  white_border: ['tech:border_frame'],
+  white_border: ['tech:border_frame', 'art_fills_canvas'],
   contactless_indicator: ['contactless_indicator'],
 };
 

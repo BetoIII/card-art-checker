@@ -665,7 +665,7 @@ tbody tr { transition: opacity 0.18s; }
     <section id="overview">
       <h2>Overview <a class="anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
       <p>
-        A check is a visual review: a Claude agent inspects the art against 21 Visa rules and
+        A check is a visual review: a Claude agent inspects the art against 22 Visa rules and
         returns a decision. That takes <strong>100–160 seconds</strong>, so no endpoint returns a
         verdict synchronously. Every integration has the same four beats.
       </p>
@@ -1426,6 +1426,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <tr data-zone="card"><td><code>no_physical_card_photography</code></td><td>prohibited</td><td><span class="sev required">required</span></td><td><code>prohibited_element_present</code> <code>border_frame_present</code></td></tr>
             <tr data-zone="pan"><td><code>lower_left_area_clear</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>pan_zone_obstructed</code> <code>pan_zone_legibility_risk</code></td></tr>
             <tr data-zone="identifier"><td><code>design_elements_clear_of_identifier</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_obstructed</code></td></tr>
+            <tr data-zone="card"><td><code>art_fills_canvas</code></td><td>layout</td><td><span class="sev required">required</span></td><td><code>border_frame_present</code></td></tr>
             <tr data-zone="card"><td><code>landscape_orientation</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>orientation_not_landscape</code></td></tr>
             <tr data-zone="card"><td><code>full_color</code></td><td>layout</td><td><span class="sev required">required</span></td><td><code>grayscale_or_monochrome</code></td></tr>
           </tbody>

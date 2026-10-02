@@ -119,9 +119,9 @@ test('checks the agent omits are reported as unverified, not absent', () => {
     runId: 'r1', cardType: 'virtual',
     results: { status: 'APPROVED', visual_checks: [{ id: 'full_color', result: 'pass' }] },
   });
-  assert.equal(result.checks.length, 21, 'every catalog check is present');
+  assert.equal(result.checks.length, 22, 'every catalog check is present');
   const missing = result.checks.filter((c) => c.status === 'unverified');
-  assert.equal(missing.length, 20);
+  assert.equal(missing.length, 21);
 });
 
 // ── Tech checks ─────────────────────────────────────────────────────
@@ -227,10 +227,10 @@ test('golden Coinflow artifact normalizes cleanly', { skip: !existsSync(GOLDEN) 
   assert.deepEqual(result.unmapped_checks, [], 'every name in the artifact resolves');
   // The artifact predates the checks added from docs/visa-rejection-gaps.md;
   // those are recorded as unverified rather than dropped.
-  assert.equal(result.checks.length, 21);
+  assert.equal(result.checks.length, 22);
   assert.deepEqual(
     result.checks.filter((c) => c.status === 'unverified').map((c) => c.id).sort(),
-    ['contactless_indicator', 'issuer_logo_within_border', 'visa_brand_mark_color'],
+    ['art_fills_canvas', 'contactless_indicator', 'issuer_logo_within_border', 'visa_brand_mark_color'],
   );
 
   const byId = Object.fromEntries(result.checks.map((c) => [c.id, c]));

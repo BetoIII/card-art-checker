@@ -298,7 +298,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 `warning` is a real, common state — a borderline measurement that didn't fail. Treat
 anything that isn't `pass` as "not clean", but only `blocking_failures` should reject.
 
-### Virtual check IDs (21)
+### Virtual check IDs (22)
 
 | id | category | severity | reason codes |
 |---|---|---|---|
@@ -318,9 +318,10 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 | `no_cardholder_name` | prohibited | blocker | `prohibited_element_present` |
 | `no_pan` | prohibited | blocker | `prohibited_element_present` |
 | `no_expiry_date` | prohibited | blocker | `prohibited_element_present` |
-| `no_physical_card_photography` | prohibited | required | `prohibited_element_present`, `border_frame_present` |
+| `no_physical_card_photography` | prohibited | required | `prohibited_element_present`, `border_frame_present` (kept for older reports; new frame failures use `art_fills_canvas`) |
 | `lower_left_area_clear` | layout | blocker | `pan_zone_obstructed`, `pan_zone_legibility_risk` |
 | `design_elements_clear_of_identifier` | layout | blocker | `identifier_obstructed` |
+| `art_fills_canvas` | layout | required | `border_frame_present` |
 | `landscape_orientation` | layout | blocker | `orientation_not_landscape` |
 | `full_color` | layout | required | `grayscale_or_monochrome` |
 
@@ -348,7 +349,7 @@ The rest are deterministic compliance measurements, not structural ones:
 | `identifier_clearance` | artwork pixels within 4px of the identifier's letters, other than the letters' own anti-aliasing and the background's texture (50+ fails, 40–49 warns) | `design_elements_clear_of_identifier` |
 | `issuer_logo_border` | partner/issuer logos in the other corners stay at least 53px from the edges (outside the 56px bleed zone) | `issuer_logo_within_border` |
 | `square_corners` | transparent or matte arcs in the corners | — (tech only) |
-| `border_frame` | transparent padding on any side, uniform border lines (≥2px) on two or more sides, or a 1px line on all four sides | `no_physical_card_photography` |
+| `border_frame` | transparent padding on any side, uniform border lines (≥2px) on two or more sides, or a 1px line on all four sides | `art_fills_canvas` |
 
 A failing measurement fails its mirrored check and forces `outcome: "requires_changes"`;
 a warning (`status: "warning"`) lifts a passing check to a warning. When the Brand Mark

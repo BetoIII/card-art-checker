@@ -28,7 +28,7 @@ function techJson(overrides = {}) {
 function agentResults(status = 'APPROVED', overrides = {}) {
   const ids = [
     'visa_brand_mark_margin', 'visa_brand_mark_position', 'visa_brand_mark_size', 'visa_brand_mark_color',
-    'product_identifier', 'issuer_logo_within_border', 'no_physical_card_photography',
+    'product_identifier', 'issuer_logo_within_border', 'no_physical_card_photography', 'art_fills_canvas',
     'design_elements_clear_of_identifier', 'full_color',
   ];
   return {
@@ -78,12 +78,14 @@ test('a tech-only failure (square corners) still blocks approval', () => {
   assert.match(results.summary, /square_corners/);
 });
 
-test('a border frame fails the photography check with its own reason code', () => {
+test('a border frame fails the canvas check, not the photography check', () => {
   const results = agentResults('APPROVED');
   applyTechVerdicts(results, techJson({ border_frame: { passed: false, actual: 'Uniform 4px frame' } }), 'virtual');
+  const canvas = results.visual_checks.find((c) => c.id === 'art_fills_canvas');
+  assert.equal(canvas.result, 'fail');
+  assert.equal(canvas.reason_code, 'border_frame_present');
   const photo = results.visual_checks.find((c) => c.id === 'no_physical_card_photography');
-  assert.equal(photo.result, 'fail');
-  assert.equal(photo.reason_code, 'border_frame_present');
+  assert.equal(photo.result, 'pass');
 });
 
 test('a mark in a lower corner fails the position check', () => {

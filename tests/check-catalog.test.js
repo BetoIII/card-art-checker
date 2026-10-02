@@ -17,10 +17,10 @@ import {
 
 // ── Catalog integrity ───────────────────────────────────────────────
 
-test('virtual catalog has the canonical 21 checks with unique ids', () => {
+test('virtual catalog has the canonical 22 checks with unique ids', () => {
   const checks = getCatalog('virtual');
-  assert.equal(checks.length, 21);
-  assert.equal(new Set(checks.map((c) => c.id)).size, 21);
+  assert.equal(checks.length, 22);
+  assert.equal(new Set(checks.map((c) => c.id)).size, 22);
 });
 
 test('physical catalog has the canonical 18 checks with unique ids', () => {

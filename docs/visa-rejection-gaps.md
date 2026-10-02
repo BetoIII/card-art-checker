@@ -175,9 +175,9 @@ Every Visa-approved card measures 54–57px on the `strict_*_px` letter-tip meas
 
 **Pre-screens only** (no verbatim Visa feedback yet): "the card design has white border lines, pls review and modify" / "automatically rejected due to it having white border lines".
 
-**Fix:**
-- Lower confidence. Add the reason code `border_frame_present`, either under `no_physical_card_photography` (a framed card-on-background render) or as its own check.
-- A thin uniform-color frame along all four edges can also be detected deterministically.
+**Fix (done):**
+- Its own visual check, `art_fills_canvas`, with reason code `border_frame_present`. It mirrors the `border_frame` tech check, which catches transparent padding and uniform edge lines, including a 1px line on all four sides.
+- Frame failures used to land under `no_physical_card_photography`, which named the wrong problem in partner reports; that check keeps the code only for older reports.
 - These eval cases are tagged `prescreen_label`.
 - **Eval cases:** REJ-039, REJ-040, REJ-041.
 
