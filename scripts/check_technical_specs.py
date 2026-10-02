@@ -1514,6 +1514,26 @@ def _lockup_match_check(mark, declared_product=None):
 
 # ── Partner / issuer logo border ────────────────────────────────────
 
+def _wordmark_box(line, line_h):
+    """
+    A text line's box without a lone element set apart at either end (a
+    sparkle, an icon): a gap well beyond the line's usual spacing marks it off.
+    At least three glyphs stay in the wordmark.
+    """
+    g = sorted(line, key=lambda c: c["x1"])
+    if len(g) >= 4:
+        gaps = [b["x1"] - a["x2"] for a, b in zip(g, g[1:])]
+
+        def apart(gap, others):
+            return gap > max(1.8 * float(np.median(others)), 0.2 * line_h)
+        if apart(gaps[0], gaps[1:]):
+            g, gaps = g[1:], gaps[1:]
+        if len(g) >= 4 and apart(gaps[-1], gaps[:-1]):
+            g = g[:-1]
+    return {"x1": min(c["x1"] for c in g), "y1": min(c["y1"] for c in g),
+            "x2": max(c["x2"] for c in g), "y2": max(c["y2"] for c in g)}
+
+
 def _logo_runs(rgb, corner, exclude=None):
     """
     Logo-like glyph runs in one corner window: at least three glyphs on a line
@@ -1525,6 +1545,15 @@ def _logo_runs(rgb, corner, exclude=None):
     wy = 0 if corner.startswith("upper") else h - wh
     wx = w - ww if corner.endswith("right") else 0
     win = rgb[wy:wy + wh, wx:wx + ww]
+
+    def edges(b):
+        """Distances from a window-space box to the corner's two card edges."""
+        return {
+            "top" if corner.startswith("upper") else "bottom":
+                b["y1"] + wy if corner.startswith("upper") else h - 1 - (b["y2"] + wy),
+            "left" if corner.endswith("left") else "right":
+                b["x1"] + wx if corner.endswith("left") else w - 1 - (b["x2"] + wx),
+        }
     bg = _local_background(win)
     dist = np.sqrt(((win - bg) ** 2).sum(axis=-1))
     lighter = _luminance(win) > _luminance(bg)
@@ -1542,6 +1571,7 @@ def _logo_runs(rgb, corner, exclude=None):
                 continue
             if not 0.15 <= box["area"] / (bh * bw) <= 0.75:
                 continue
+            word = _wordmark_box(line, bh)
             for g in glyphs:
                 gh = g["y2"] - g["y1"] + 1
                 if g in line or not 0.6 * bh <= gh <= 1.8 * bh or g["y1"] > box["y2"] or g["y2"] < box["y1"]:
@@ -1554,12 +1584,10 @@ def _logo_runs(rgb, corner, exclude=None):
             if exclude and not (logo["right"] < exclude[0] or logo["left"] > exclude[2]
                                 or logo["bottom"] < exclude[1] or logo["top"] > exclude[3]):
                 continue
-            logo["edges"] = {
-                "top" if corner.startswith("upper") else "bottom":
-                    logo["top"] if corner.startswith("upper") else h - 1 - logo["bottom"],
-                "left" if corner.endswith("left") else "right":
-                    logo["left"] if corner.endswith("left") else w - 1 - logo["right"],
-            }
+            logo["edges"] = edges(box)
+            # The wordmark alone, without the icons beside it: a sparkle or
+            # flourish next to the name can reach the zone while the name stays clear.
+            logo["wordmark_edges"] = edges(word)
             found.append(logo)
     return min(found, key=lambda l: sum(l["edges"].values())) if found else None
 
@@ -1571,7 +1599,9 @@ def _issuer_logo_border_check(img, mark):
     corners and the lower right (the lower left is the PAN zone and has its
     own check). Background artwork may still bleed to the edge: a shape that
     runs to within LOGO_EDGE_BLEED_PX of an edge is reported as background
-    bleed and never fails.
+    bleed and never fails. When only an element beside the wordmark (an icon,
+    a sparkle) is within 53px and the wordmark itself keeps clear, the result
+    is a warning (borderline), not a fail: it may not be part of the logo.
     """
     native_w = img.size[0]
     scale = native_w / REQUIRED_WIDTH
@@ -1588,21 +1618,24 @@ def _issuer_logo_border_check(img, mark):
     corners = [c for c in ("upper-left", "upper-right", "lower-right")
                if mark is None or c != mark["corner"]]
     minimum = ISSUER_LOGO_MIN_MARGIN_PX
-    logos, inside, background = [], [], []
+    logos, inside, attached, background = [], [], [], []
     for corner in corners:
         logo = _logo_runs(rgb, corner, exclude)
         if not logo:
             continue
         edges = {k: int(round(v * scale)) for k, v in logo["edges"].items()}
-        entry = {"corner": corner, "edges_px": edges,
+        word = {k: int(round(v * scale)) for k, v in logo["wordmark_edges"].items()}
+        entry = {"corner": corner, "edges_px": edges, "wordmark_edges_px": word,
                  "box": [int(round(logo[k] * scale)) for k in ("left", "top", "right", "bottom")]}
         if min(edges.values()) < round(LOGO_EDGE_BLEED_PX * scale):
             background.append(entry)
             continue
         logos.append(entry)
         close = {k: v for k, v in edges.items() if v < round(minimum * scale)}
-        if close:
+        if close and any(v < round(minimum * scale) for v in word.values()):
             inside.append((corner, close))
+        elif close:
+            attached.append((corner, close, word))
     required = f"logos at least {minimum}px from the card edges (outside the {VISA_MARK_EDGE_MARGIN}px bleed zone)"
     bleed_note = ("" if not background else
                   " Ignored as background art bleeding off the card: "
@@ -1621,6 +1654,16 @@ def _issuer_logo_border_check(img, mark):
                 "note": (f"FAIL — a partner/issuer logo enters the {VISA_MARK_EDGE_MARGIN}px bleed zone "
                          f"({where}). Keep logos at least {minimum}px from the edges, like the Visa Brand Mark."
                          + bleed_note)}
+    if attached:
+        where = "; ".join(f"{c} logo " + ", ".join(f"{k} {v}px" for k, v in e.items())
+                          + " (wordmark " + ", ".join(f"{k} {v}px" for k, v in wd.items()) + ")"
+                          for c, e, wd in attached)
+        return {"passed": True, "borderline": True, "actual": measured, "required": required, "logos": logos,
+                "background_bleed": background, "reason_code": "issuer_logo_in_bleed_zone",
+                "note": (f"WARNING — part of a partner/issuer logo enters the {VISA_MARK_EDGE_MARGIN}px bleed zone "
+                         f"({where}). The wordmark itself keeps clear; the element beside it (an icon or "
+                         f"decoration) is within {minimum}px of the edge. If it belongs to the primary logo, "
+                         f"keep it at least {minimum}px from the edges." + bleed_note)}
     return {"passed": True, "actual": measured, "required": required, "logos": logos,
             "background_bleed": background,
             "note": f"Partner/issuer logos keep out of the {VISA_MARK_EDGE_MARGIN}px bleed zone." + bleed_note}
@@ -3961,6 +4004,29 @@ def _dpi_check(img):
     return result
 
 
+def _native_mark_size(check, width, height, measured_width):
+    """
+    Visa sets the mark at VISA_MARK_HEIGHT_PX on a 1536x969 canvas, in pixels.
+    mark_size judges proportion, so a correct lockup scaled into a file of
+    another size passes there; at the file's own pixels it is the wrong size
+    (a 2048px export carries a ~145px mark). Judge it there too, and fail it.
+    """
+    if (not check or check.get("passed") is not True or not check.get("mark_height_px")
+            or (width, height) == (REQUIRED_WIDTH, REQUIRED_HEIGHT)):
+        return
+    native = int(round(check["mark_height_px"] * width / measured_width))
+    check["native_mark_height_px"] = native
+    lo, hi = VISA_MARK_HEIGHT_PX - VISA_MARK_HEIGHT_TOLERANCE_PX, VISA_MARK_HEIGHT_PX + VISA_MARK_HEIGHT_TOLERANCE_PX
+    if lo <= native <= hi:
+        return
+    check.update(
+        passed=False, reason_code="size_oversized" if native > hi else "size_undersized",
+        actual=f"{check['actual']}; {native}px at the file's own {width}x{height} size",
+        note=(f"FAIL — at the file's own {width}x{height} size the Visa Brand Mark is {native}px tall. "
+              f"Visa sets it at {VISA_MARK_HEIGHT_PX}px on a {REQUIRED_WIDTH}x{REQUIRED_HEIGHT} canvas "
+              f"(accepted {lo}-{hi}px). Export the art at {REQUIRED_WIDTH}x{REQUIRED_HEIGHT}."))
+
+
 def working_copy(img):
     """
     The image every pixel check measures: a 1536px-wide RGBA copy (aspect
@@ -4029,6 +4095,7 @@ def check_image(image_path: str, declared_product: "str | None" = None) -> dict:
     # identifier alignment, mark color — one locator pass ---
     try:
         results["checks"].update(check_virtual_mark(work, declared_product))
+        _native_mark_size(results["checks"].get("mark_size"), w, h, work.width)
     except Exception as e:
         results["errors"].append(f"Brand Mark analysis failed: {e}")
 

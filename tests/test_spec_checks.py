@@ -455,6 +455,17 @@ class PartnerLogoBorder(unittest.TestCase):
         self.assertTrue(border["passed"], border["note"])
         self.assertEqual([b["corner"] for b in border["background_bleed"]], ["lower-right"])
 
+    def test_icon_beside_a_clear_wordmark_only_warns(self):
+        # A sparkle left of the name sat 39px from the edge while the name kept clear.
+        im = official_card(logo=("ACME PAY", 80, 80))
+        ImageDraw.Draw(im).polygon([(34, 80), (48, 110), (34, 140), (20, 110)], fill=(255, 255, 255))
+        border = specs.check_virtual_mark(im)["issuer_logo_border"]
+        self.assertIs(border["passed"], True, border["note"])
+        self.assertIs(border.get("borderline"), True, border["note"])
+        self.assertEqual(border["reason_code"], "issuer_logo_in_bleed_zone")
+        self.assertLess(border["logos"][0]["edges_px"]["left"], 53)
+        self.assertGreaterEqual(border["logos"][0]["wordmark_edges_px"]["left"], 53)
+
     def test_logo_inside_the_zone_but_off_the_edge_still_fails(self):
         im = official_card()
         font, box = _fit(ImageDraw.Draw(im), "ACME", BOLD, 60)
@@ -537,6 +548,30 @@ class CheckImage(unittest.TestCase):
         self.assertTrue(zone["passed"], zone["note"])
         self.assertTrue(53 <= zone["strict_top_px"] <= 59)
         self.assertIs(result["checks"]["square_corners"]["passed"], False)
+
+    def test_scaled_export_fails_mark_size_at_its_own_size(self):
+        # A 2048px export of correct art carries a ~145px mark.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "card.png")
+            official_card().resize((2048, 1292), Image.LANCZOS).save(path)
+            result = specs.check_image(path, "Platinum")
+        size = result["checks"]["mark_size"]
+        self.assertIs(result["checks"]["dimensions"]["passed"], False)
+        self.assertIs(size["passed"], False, size["note"])
+        self.assertEqual(size["reason_code"], "size_oversized")
+        self.assertTrue(138 <= size["native_mark_height_px"] <= 152, size["native_mark_height_px"])
+
+    def test_near_canvas_size_keeps_a_correct_mark(self):
+        # 1538x971 is the wrong canvas, but its mark is still Visa's 109px.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "card.png")
+            official_card().resize((1538, 971), Image.LANCZOS).save(path)
+            result = specs.check_image(path, "Platinum")
+        size = result["checks"]["mark_size"]
+        self.assertIs(result["checks"]["dimensions"]["passed"], False)
+        self.assertTrue(size["passed"], size["note"])
 
     def test_working_copy_leaves_canvas_sized_art_alone(self):
         im = official_card()
