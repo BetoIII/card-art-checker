@@ -179,7 +179,7 @@ test('the virtual prompt states the exact-56px rule and drops the minimum readin
   assert.match(prompt, /margin_above_target/);
   assert.match(prompt, /109px-tall mark/);
   assert.match(prompt, /including the retired 142px "Option Two"/);
-  assert.match(prompt, /within 53px of any card edge/);
+  assert.match(prompt, /main\s+line or those letters sit within 53px of a card edge/);
   assert.doesNotMatch(prompt, /do NOT flag it/, 'the contactless indicator is now checked');
   assert.doesNotMatch(prompt, /Option Two \(Signature\/Platinum\/Infinite\): 142px/);
   assert.doesNotMatch(prompt, /V" flourish/, 'the official wordmark has the V flag');

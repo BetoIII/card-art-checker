@@ -466,6 +466,22 @@ class PartnerLogoBorder(unittest.TestCase):
         self.assertLess(border["logos"][0]["edges_px"]["left"], 53)
         self.assertGreaterEqual(border["logos"][0]["wordmark_edges_px"]["left"], 53)
 
+    def test_ascenders_alone_in_the_zone_only_warn(self):
+        # A lowercase name whose b and d ascenders reach 44px from the top
+        # while the line its other letters share sits farther in than 53px.
+        border = specs.check_virtual_mark(official_card(logo=("brand", 80, 44)))["issuer_logo_border"]
+        self.assertIs(border["passed"], True, border["note"])
+        self.assertIs(border.get("borderline"), True, border["note"])
+        self.assertEqual(border["reason_code"], "issuer_logo_in_bleed_zone")
+        self.assertLess(border["logos"][0]["edges_px"]["top"], 53)
+        self.assertGreaterEqual(border["logos"][0]["body_edges_px"]["top"], 53)
+
+    def test_letters_main_line_in_the_zone_still_fails(self):
+        for logo in (("brand", 80, 24), ("ACME PAY", 80, 44)):
+            border = specs.check_virtual_mark(official_card(logo=logo))["issuer_logo_border"]
+            self.assertIs(border["passed"], False, (logo, border["note"]))
+            self.assertLess(border["logos"][0]["body_edges_px"]["top"], 53, logo)
+
     def test_logo_inside_the_zone_but_off_the_edge_still_fails(self):
         im = official_card()
         font, box = _fit(ImageDraw.Draw(im), "ACME", BOLD, 60)

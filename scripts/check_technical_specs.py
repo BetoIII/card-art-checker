@@ -1518,7 +1518,9 @@ def _wordmark_box(line, line_h):
     """
     A text line's box without a lone element set apart at either end (a
     sparkle, an icon): a gap well beyond the line's usual spacing marks it off.
-    At least three glyphs stay in the wordmark.
+    At least three glyphs stay in the wordmark. body_y1/body_y2 are the
+    letters' main line: the median glyph top and bottom, which the tips of a
+    few tall letters (ascenders, a raised stroke) or descenders don't move.
     """
     g = sorted(line, key=lambda c: c["x1"])
     if len(g) >= 4:
@@ -1531,7 +1533,9 @@ def _wordmark_box(line, line_h):
         if len(g) >= 4 and apart(gaps[-1], gaps[:-1]):
             g = g[:-1]
     return {"x1": min(c["x1"] for c in g), "y1": min(c["y1"] for c in g),
-            "x2": max(c["x2"] for c in g), "y2": max(c["y2"] for c in g)}
+            "x2": max(c["x2"] for c in g), "y2": max(c["y2"] for c in g),
+            "body_y1": int(round(float(np.median([c["y1"] for c in g])))),
+            "body_y2": int(round(float(np.median([c["y2"] for c in g]))))}
 
 
 def _logo_runs(rgb, corner, exclude=None):
@@ -1588,6 +1592,11 @@ def _logo_runs(rgb, corner, exclude=None):
             # The wordmark alone, without the icons beside it: a sparkle or
             # flourish next to the name can reach the zone while the name stays clear.
             logo["wordmark_edges"] = edges(word)
+            # The letters' main line, across the wordmark's first to last
+            # letter: ascenders or one raised stroke can reach the zone while
+            # the line most letters share stays clear.
+            logo["body_edges"] = edges({"x1": word["x1"], "x2": word["x2"],
+                                        "y1": word["body_y1"], "y2": word["body_y2"]})
             found.append(logo)
     return min(found, key=lambda l: sum(l["edges"].values())) if found else None
 
@@ -1599,9 +1608,15 @@ def _issuer_logo_border_check(img, mark):
     corners and the lower right (the lower left is the PAN zone and has its
     own check). Background artwork may still bleed to the edge: a shape that
     runs to within LOGO_EDGE_BLEED_PX of an edge is reported as background
-    bleed and never fails. When only an element beside the wordmark (an icon,
-    a sparkle) is within 53px and the wordmark itself keeps clear, the result
-    is a warning (borderline), not a fail: it may not be part of the logo.
+    bleed and never fails.
+
+    A logo is placed by its letters' main line (the cap or x-height line most
+    of them share, i.e. the median glyph top or bottom), not by the tips of a
+    few tall letters: Visa approves logos whose ascenders or one raised stroke
+    reach 44-48px from the top edge while that line clears 53px. So the logo
+    fails when its main line, or the wordmark's first or last letter, is within
+    53px. When only an outlying part is (ascenders, a raised stroke, or an
+    icon or sparkle beside the name), the result is a warning (borderline).
     """
     native_w = img.size[0]
     scale = native_w / REQUIRED_WIDTH
@@ -1625,17 +1640,18 @@ def _issuer_logo_border_check(img, mark):
             continue
         edges = {k: int(round(v * scale)) for k, v in logo["edges"].items()}
         word = {k: int(round(v * scale)) for k, v in logo["wordmark_edges"].items()}
-        entry = {"corner": corner, "edges_px": edges, "wordmark_edges_px": word,
+        body = {k: int(round(v * scale)) for k, v in logo["body_edges"].items()}
+        entry = {"corner": corner, "edges_px": edges, "wordmark_edges_px": word, "body_edges_px": body,
                  "box": [int(round(logo[k] * scale)) for k in ("left", "top", "right", "bottom")]}
         if min(edges.values()) < round(LOGO_EDGE_BLEED_PX * scale):
             background.append(entry)
             continue
         logos.append(entry)
         close = {k: v for k, v in edges.items() if v < round(minimum * scale)}
-        if close and any(v < round(minimum * scale) for v in word.values()):
+        if close and any(v < round(minimum * scale) for v in body.values()):
             inside.append((corner, close))
         elif close:
-            attached.append((corner, close, word))
+            attached.append((corner, close, body))
     required = f"logos at least {minimum}px from the card edges (outside the {VISA_MARK_EDGE_MARGIN}px bleed zone)"
     bleed_note = ("" if not background else
                   " Ignored as background art bleeding off the card: "
@@ -1656,14 +1672,15 @@ def _issuer_logo_border_check(img, mark):
                          + bleed_note)}
     if attached:
         where = "; ".join(f"{c} logo " + ", ".join(f"{k} {v}px" for k, v in e.items())
-                          + " (wordmark " + ", ".join(f"{k} {v}px" for k, v in wd.items()) + ")"
+                          + " (letters " + ", ".join(f"{k} {v}px" for k, v in wd.items()) + ")"
                           for c, e, wd in attached)
         return {"passed": True, "borderline": True, "actual": measured, "required": required, "logos": logos,
                 "background_bleed": background, "reason_code": "issuer_logo_in_bleed_zone",
                 "note": (f"WARNING — part of a partner/issuer logo enters the {VISA_MARK_EDGE_MARGIN}px bleed zone "
-                         f"({where}). The wordmark itself keeps clear; the element beside it (an icon or "
-                         f"decoration) is within {minimum}px of the edge. If it belongs to the primary logo, "
-                         f"keep it at least {minimum}px from the edges." + bleed_note)}
+                         f"({where}). The logo's letters keep clear at their main line; only an outlying "
+                         f"part (the tips of tall letters, a raised stroke, or an icon or decoration beside "
+                         f"the name) is within {minimum}px of the edge. Keep the whole logo at least "
+                         f"{minimum}px from the edges to be safe." + bleed_note)}
     return {"passed": True, "actual": measured, "required": required, "logos": logos,
             "background_bleed": background,
             "note": f"Partner/issuer logos keep out of the {VISA_MARK_EDGE_MARGIN}px bleed zone." + bleed_note}
