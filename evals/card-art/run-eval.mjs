@@ -336,9 +336,12 @@ function summarize(vdir, st) {
   const scored = new Set(rows.map(r => `${r.prompt_id}\0${r.rep}`));
   const openErrs = errs.filter(e => !scored.has(`${e.prompt_id}\0${e.rep}`));
   const prices = { 'claude-opus-4-8': { in: 5, out: 25 }, ...(st.prices || {}) };
+  // Cache rates default to 0.1x / 1.25x of input; a price entry may set its own
+  // `cache_read` / `cache_write` ($/MTok) where a model's ratio differs.
   const cost = r => { const p = prices[r.model]; const u = r.usage || {}; if (!p) return NaN;
     return ((u.input_tokens || 0) * p.in + (u.output_tokens || 0) * p.out
-      + (u.cache_read_input_tokens || 0) * p.in * 0.1 + (u.cache_creation_input_tokens || 0) * p.in * 1.25) / 1e6; };
+      + (u.cache_read_input_tokens || 0) * (p.cache_read ?? p.in * 0.1)
+      + (u.cache_creation_input_tokens || 0) * (p.cache_write ?? p.in * 1.25)) / 1e6; };
   const lines = [`${basename(vdir)}: ${rows.length} scored attempt(s), ${new Set(rows.map(r => r.prompt_id)).size} case(s), ${openErrs.length} unresolved error(s)`];
   for (const m of st.metrics || []) {
     const byCase = new Map();
