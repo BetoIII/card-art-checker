@@ -238,6 +238,15 @@ async function runCase(input, ctx) {
     // Carry billed usage onto the error row; name the failure so plumbing and
     // model failures stay distinguishable in errors.jsonl.
     if (e.telemetry) { e.model = e.telemetry.agent?.model; e.usage = e.telemetry.usage; }
+    // A session whose model requests all failed upstream (retries exhausted)
+    // ends with no output: a serving error, not an unparseable answer. Naming
+    // the error type in the message lets withBackoff retry an overload or rate
+    // limit like any other transient error.
+    const served = (e.telemetry?.events || []).filter(ev => ev.type === 'session.error').at(-1)?.error;
+    if (served?.retry_status?.type === 'exhausted') {
+      e.failure_class ??= 'serving_error';
+      e.message = `${served.type}: ${served.message} (${e.message})`;
+    }
     e.failure_class ??= /RESULTS_JSON/.test(e.message) ? 'agent_output_unparseable'
       : e.step === 'tech_specs' ? 'spec_check_error' : 'harness_error';
     throw e;
