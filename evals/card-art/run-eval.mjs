@@ -73,6 +73,7 @@ const REASON_CHECKS = {
   partner_logo_border: [],
   resolution_not_72dpi: ['tech:dpi'],
   dimensions_not_1536x969: ['tech:dimensions'],
+  file_not_png: ['tech:file_format'],
   rounded_corners: [],
   white_border: [],
   contactless_indicator: [],
