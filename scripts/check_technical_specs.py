@@ -87,15 +87,28 @@ VISA_LOCKUP_COMPOSITE_PX = 170
 IDENTIFIER_ALIGN_TOLERANCE_PX = 6
 IDENTIFIER_ALIGN_FAIL_PX = 15
 # Identifier clearance: Visa rejects artwork that touches the identifier
-# (FAIL-001, REJ-046: circuit traces running into the letters). Pixels
+# (FAIL-001, REJ-046: circuit traces running into the letters) and approves
+# diffuse texture behind it (film grain, a soft glow, a dot screen). Pixels
 # within RING_PX of the letters that sit more than OFF_INK (RGB distance)
-# off the ink-to-background line are other artwork; FAIL_PX of them fail,
-# BORDERLINE_PX warn. The two rejections measure 59 and 89; no approved
-# card in the eval set measures over 4.
+# off the ink-to-background line, and as far from their own immediate
+# surroundings, count when they belong to a discrete element: a connected
+# shape of ELEMENT_MIN_AREA_PX or more, traced at the lower ELEMENT_BODY bar
+# up to ELEMENT_REACH_PX past the identifier, in surroundings without heavy
+# speckle (mean fine detail up to GRAIN_MAX; ordinary film grain stays well
+# under it). FAIL_PX of them fail, BORDERLINE_PX warn. The two rejections
+# measure 42 and 66, and no other card in the eval set measures over 0
+# (approved grain, glow and dot-screen cards measured 206 and 702 before
+# texture was told apart). Across BODY 20-30, MIN_AREA 30-60, GRAIN_MAX
+# 30-40 and REACH 14-28 the rejections stay at 39 or more and the approved
+# cards under 3; from GRAIN_MAX 50 the speckled card leaks back in.
 IDENTIFIER_CLEARANCE_RING_PX = 4
 IDENTIFIER_CLEARANCE_OFF_INK = 45
-IDENTIFIER_CLEARANCE_FAIL_PX = 30
-IDENTIFIER_CLEARANCE_BORDERLINE_PX = 20
+IDENTIFIER_CLEARANCE_FAIL_PX = 20
+IDENTIFIER_CLEARANCE_BORDERLINE_PX = 10
+IDENTIFIER_ELEMENT_BODY = 25
+IDENTIFIER_ELEMENT_MIN_AREA_PX = 40
+IDENTIFIER_ELEMENT_REACH_PX = 20
+IDENTIFIER_GRAIN_MAX = 40
 # Visa Blue, per Visa's feedback ("R20 G52 B203").
 VISA_BLUE_RGB = (20, 52, 203)
 # Partner and issuer logos keep out of the same 56px bleed zone as the mark
@@ -796,6 +809,75 @@ def _local_background(rgb, scale=8, size=21):
     return np.array(med.resize((w, h), Image.BILINEAR), dtype=float)
 
 
+def _box_mean(values, weights, k):
+    """Mean of `values` over the k x k window, counting only pixels where `weights` is set."""
+    def total(a):
+        h, w = a.shape
+        r = k // 2
+        padded = np.zeros((h + k, w + k))
+        padded[r:r + h, r:r + w] = a
+        cs = np.zeros((h + k + 1, w + k + 1))
+        cs[1:, 1:] = np.cumsum(np.cumsum(padded, axis=0), axis=1)
+        return cs[k:k + h, k:k + w] - cs[:h, k:k + w] - cs[k:k + h, :w] + cs[:h, :w]
+    weights = weights.astype(float)
+    n = np.maximum(total(weights), 1e-6)
+    if values.ndim == 3:
+        return np.stack([total(values[..., c] * weights) / n for c in range(values.shape[-1])], axis=-1)
+    return total(values * weights) / n
+
+
+def _fine_background(rgb, valid, step=3, size=7):
+    """
+    The background immediately around each pixel: the median of the `valid`
+    pixels over ~21px windows (step x size), sampled every step-th pixel.
+    Sampling keeps the median a median: a box-averaged downscale (as in
+    _local_background) blends a dot screen's dots into its ground, and both
+    the dots and the ground between them would then stand out from it.
+    """
+    import warnings
+    h, w = valid.shape
+    o = step // 2
+    sub = np.where(valid[o::step, o::step][..., None], rgb[o::step, o::step], np.nan)
+    r = size // 2
+    padded = np.pad(sub, ((r, r), (r, r), (0, 0)), constant_values=np.nan)
+    windows = np.lib.stride_tricks.sliding_window_view(padded, (size, size), axis=(0, 1))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # all-letter windows
+        med = np.nanmedian(windows.reshape(*windows.shape[:3], -1), axis=-1)
+        overall = np.nanmedian(sub.reshape(-1, sub.shape[-1]), axis=0)
+    med = np.where(np.isnan(med), np.nan_to_num(overall), med)
+    return np.array(Image.fromarray(np.clip(med, 0, 255).astype(np.uint8)).resize((w, h), Image.BILINEAR),
+                    dtype=float)
+
+
+def _large_components(mask, min_area):
+    """The pixels of `mask` whose 8-connected component has at least min_area pixels."""
+    from collections import deque
+    h, w = mask.shape
+    grid = mask.tolist()
+    seen = [[False] * w for _ in range(h)]
+    keep = np.zeros_like(mask, dtype=bool)
+    for y0, x0 in zip(*[a.tolist() for a in np.nonzero(mask)]):
+        if seen[y0][x0]:
+            continue
+        seen[y0][x0] = True
+        queue, members = deque([(y0, x0)]), []
+        while queue:
+            y, x = queue.popleft()
+            members.append((y, x))
+            for yy in (y - 1, y, y + 1):
+                if 0 <= yy < h:
+                    row, seen_row = grid[yy], seen[yy]
+                    for xx in (x - 1, x, x + 1):
+                        if 0 <= xx < w and row[xx] and not seen_row[xx]:
+                            seen_row[xx] = True
+                            queue.append((yy, xx))
+        if len(members) >= min_area:
+            ys, xs = zip(*members)
+            keep[list(ys), list(xs)] = True
+    return keep
+
+
 def _identifier_clearance(best, ident_box, mark_box):
     """
     Artwork in a thin ring around the identifier's letters, at the 1536px
@@ -805,20 +887,32 @@ def _identifier_clearance(best, ident_box, mark_box):
     letters' own anti-aliasing; one well off that line (a gold trace beside
     white letters) is other artwork. Counts the off-line pixels within
     IDENTIFIER_CLEARANCE_RING_PX of the glyphs that cluster into strokes,
-    the wordmark excluded. Calibrated on the eval set: background textures
-    (stripes, foil grain, gradients) stay near zero.
+    the wordmark excluded.
+
+    Off-line is not enough on its own: the coarse background the line runs
+    to is a ~170px median, and diffuse texture behind the letters sits off it
+    too. Visa approves that texture, so an off-line pixel counts only as part
+    of a discrete element (see _identifier_elements): a soft glow does not
+    stand out from its immediate surroundings, heavy speckle is detail a 3x3
+    median removes, and a dot screen's dots are too small to be shapes.
+    Calibrated on the eval set: background textures (stripes, foil grain,
+    gradients, speckle, glows, dot screens) measure zero.
     """
     win, bg, contrast, peak = best["win"], best["bg"], best["contrast"], best["peak"]
     y1, y2, x1, x2 = ident_box
     ring = IDENTIFIER_CLEARANCE_RING_PX
+    # The ring is measured within ring + 2px of the identifier's box; the
+    # region reaches farther so an element is judged by its whole visible
+    # shape, not by the sliver of it inside the ring.
     pad = ring + 2
+    reach = max(pad, IDENTIFIER_ELEMENT_REACH_PX)
     h, w = contrast.shape
-    ry1, ry2, rx1, rx2 = max(0, y1 - pad), min(h, y2 + pad + 1), max(0, x1 - pad), min(w, x2 + pad + 1)
+    ry1, ry2, rx1, rx2 = max(0, y1 - reach), min(h, y2 + reach + 1), max(0, x1 - reach), min(w, x2 + reach + 1)
     # A 3x3 median drops per-pixel grain (film-grain gradients) and keeps
     # strokes a few pixels wide.
     from PIL import ImageFilter
-    px = np.array(Image.fromarray(np.clip(win[ry1:ry2, rx1:rx2], 0, 255).astype(np.uint8))
-                  .filter(ImageFilter.MedianFilter(3)), dtype=float)
+    raw = np.clip(win[ry1:ry2, rx1:rx2], 0, 255)
+    px = np.array(Image.fromarray(raw.astype(np.uint8)).filter(ImageFilter.MedianFilter(3)), dtype=float)
     back = bg[ry1:ry2, rx1:rx2]
     core = contrast[y1:y2 + 1, x1:x2 + 1] > 0.75 * peak
     if not core.any():
@@ -848,19 +942,110 @@ def _identifier_clearance(best, ident_box, mark_box):
     glyph &= line
     near = (_box_sum(glyph, 2 * ring + 1) > 0) & ~(_box_sum(glyph, 3) > 0)
     my1, my2, mx1, mx2 = mark_box
-    near[max(0, my1 - ry1 - 2):max(0, my2 - ry1 + 3), max(0, mx1 - rx1 - 2):max(0, mx2 - rx1 + 3)] = False
-    foreign = near & (off >= IDENTIFIER_CLEARANCE_OFF_INK) & \
-        (np.sqrt(((px - back) ** 2).sum(-1)) >= IDENTIFIER_CLEARANCE_OFF_INK)
+    mark_zone = (slice(max(0, my1 - ry1 - 2), max(0, my2 - ry1 + 3)),
+                 slice(max(0, mx1 - rx1 - 2), max(0, mx2 - rx1 + 3)))
+    near[mark_zone] = False
+    off_back = np.sqrt(((px - back) ** 2).sum(-1))
+    foreign = near & (off >= IDENTIFIER_CLEARANCE_OFF_INK) & (off_back >= IDENTIFIER_CLEARANCE_OFF_INK)
     # Artwork is strokes and shapes; isolated pixels are grain or noise.
     foreign &= _box_sum(foreign, 3) >= 3
-    return {"foreign_px": int(foreign.sum()), "ring_px": int(near.sum())}
+    off_line = int(foreign.sum())
+    foreign &= _identifier_elements(raw, px, glyph, off, off_back, mark_zone)
+    return {"foreign_px": int(foreign.sum()), "ring_px": int(near.sum()),
+            "texture_px": off_line - int(foreign.sum())}
+
+
+def _identifier_elements(raw, px, glyph, off, off_back, mark_zone):
+    """
+    Pixels that belong to a discrete element near the identifier, as opposed
+    to the background's diffuse texture, which Visa approves behind it.
+
+    Three kinds of texture sit off the ink line yet are background art:
+      - a glow or soft gradient: it differs from the coarse background but
+        not from its own immediate surroundings (a ~21px median with the
+        letters left out), so a pixel must stand IDENTIFIER_CLEARANCE_OFF_INK
+        off that too;
+      - heavy speckle: dense enough that a 3x3 median leaves clumps of it
+        that read as strokes, so the surroundings must not be covered in
+        detail the median removes (its 9px mean, letters left out, up to
+        IDENTIFIER_GRAIN_MAX; ordinary film grain stays well under it);
+      - a dot screen: each dot stands out, but is small. A discrete element
+        is a connected shape of at least IDENTIFIER_ELEMENT_MIN_AREA_PX,
+        traced at the lower IDENTIFIER_ELEMENT_BODY bar so a trace's darker
+        body joins its highlight, and only outside the letters' anti-aliasing.
+    The result also marks pixels next to an element, where the ring meets it.
+    """
+    letters = _box_sum(glyph, 3) > 0
+    clear = ~(_box_sum(glyph, 5) > 0)
+    stand = np.sqrt(((px - _fine_background(px, ~letters)) ** 2).sum(-1))
+    grain = _box_mean(np.sqrt(((raw - px) ** 2).sum(-1)), clear, 9)
+    smooth = grain <= IDENTIFIER_GRAIN_MAX
+    lo = IDENTIFIER_ELEMENT_BODY
+    body = clear & smooth & (stand >= lo) & (off >= lo) & (off_back >= lo)
+    body[mark_zone] = False
+    elements = _large_components(body, IDENTIFIER_ELEMENT_MIN_AREA_PX)
+    return (_box_sum(elements, 3) > 0) & smooth & (stand >= IDENTIFIER_CLEARANCE_OFF_INK)
+
+
+def _refine_wordmark(cand, open_k):
+    """
+    The wordmark's pixels on the unopened mask: opening shaves anti-aliased
+    tips and thin tapers (the flag on the V is the leftmost point of an
+    upper-left mark). Grow the solid glyph bodies back along connected mark
+    pixels, a bounded distance, so tapers return but pattern lines that
+    merely come near the mark stay out of the measurement. Tapers only run
+    sideways — the top and bottom are flat letter ends — so the vertical
+    reach stays short and an identifier set close beneath is never absorbed.
+    Returns the grown mask and its window offset.
+    """
+    b, raw, opened = cand["box"], cand["raw"], cand["opened"]
+    pad = 3 * open_k
+    ry1, ry2 = max(0, b["y1"] - open_k), min(raw.shape[0], b["y2"] + open_k + 1)
+    rx1, rx2 = max(0, b["x1"] - pad), min(raw.shape[1], b["x2"] + pad + 1)
+    body = np.zeros_like(opened)
+    for g in cand["glyphs"]:
+        if g["x1"] >= b["x1"] and g["x2"] <= b["x2"] and g["y1"] >= b["y1"] and g["y2"] <= b["y2"]:
+            body[g["y1"]:g["y2"] + 1, g["x1"]:g["x2"] + 1] |= opened[g["y1"]:g["y2"] + 1, g["x1"]:g["x2"] + 1]
+    raw_box = raw[ry1:ry2, rx1:rx2]
+    grown = body[ry1:ry2, rx1:rx2] & raw_box
+    for _ in range(pad):
+        nxt = (_box_sum(grown, 3) > 0) & raw_box
+        if nxt.sum() == grown.sum():
+            break
+        grown = nxt
+    return grown, ry1, rx1
+
+
+def _pick_wordmark(candidates, open_k):
+    """
+    The wordmark among the locator's candidates. Any four-letter word at the
+    wordmark's proportions passes the shape test, so an issuer's four-letter
+    name in another corner can compete with the mark, and its shape score
+    can be the better one. With more than one candidate the mark is the one
+    that matches Visa's official wordmark — the overlap lockup_match reports
+    (an official mark measures about 0.9; another word about 0.3). The shape
+    score breaks ties, and decides alone without the reference lockups.
+    """
+    for cand in candidates:
+        cand["grown"], cand["grown_y"], cand["grown_x"] = _refine_wordmark(cand, open_k)
+        cand["wordmark_iou"] = 0.0
+    refs = _reference_lockups() if len(candidates) > 1 else None
+    if refs:
+        for cand in candidates:
+            side = "right" if cand["corner"].endswith("right") else "left"
+            wordmark = _crop_to_content(cand["grown"])
+            if wordmark is not None:
+                cand["wordmark_iou"] = _mask_iou(wordmark, refs[("platinum", side)]["mark"])
+    return max(candidates, key=lambda c: (round(c["wordmark_iou"], 2), c["score"]))
 
 
 def _locate_visa_mark(img):
     """
     Find the Visa wordmark in the upper-right, lower-right or upper-left corner.
 
-    Returns None when no glyph run looks like the wordmark. Otherwise returns
+    Returns None when no glyph run looks like the wordmark. When more than
+    one does (an issuer's four-letter name in another corner), the one that
+    matches Visa's official wordmark is the mark (_pick_wordmark). Returns
     the mark's box in card pixels (edges measured on the half-contrast
     anti-aliased boundary, letter tips included), the product identifier line
     beneath it when one is found, and the mark's core ink color.
@@ -877,7 +1062,7 @@ def _locate_visa_mark(img):
     rgb = np.array(img.convert("RGB"), dtype=float)
     h, w, _ = rgb.shape
     open_k = max(3, int(round(h * 0.006)) | 1)
-    best = None
+    candidates = []
 
     # Mark pixels are those above half the peak contrast. A light mark over
     # the light end of a gradient falls below that (REJ-010's "A"), so when
@@ -920,39 +1105,18 @@ def _locate_visa_mark(img):
                         continue
                     score = (-3 * abs(np.log(aspect / _WORDMARK_ASPECT))
                              - 0.4 * abs(box["n"] - 4) - 2 * abs(fill - 0.45))
-                    if best is None or score > best["score"]:
-                        best = {"score": score, "corner": corner, "polarity": polarity,
-                                "ratio": ratio, "peak": peak, "box": box, "wy": wy, "wx": wx,
-                                "win": win, "bg": bg, "contrast": contrast, "raw": raw,
-                                "opened": opened, "glyphs": glyphs}
-        if best is not None:
+                    candidates.append({"score": score, "corner": corner, "polarity": polarity,
+                                       "ratio": ratio, "peak": peak, "box": box, "wy": wy, "wx": wx,
+                                       "win": win, "bg": bg, "contrast": contrast, "raw": raw,
+                                       "opened": opened, "glyphs": glyphs})
+        if candidates:
             break
 
-    if best is None:
+    if not candidates:
         return None
-
-    # Refine the box on the unopened mask: opening shaves anti-aliased tips
-    # and thin tapers (the flag on the V is the leftmost point of an
-    # upper-left mark). Grow the solid glyph bodies back along connected mark
-    # pixels, a bounded distance, so tapers return but pattern lines that
-    # merely come near the mark stay out of the measurement. Tapers only run
-    # sideways — the top and bottom are flat letter ends — so the vertical
-    # reach stays short and an identifier set close beneath is never absorbed.
-    b, raw, opened = best["box"], best["raw"], best["opened"]
-    pad = 3 * open_k
-    ry1, ry2 = max(0, b["y1"] - open_k), min(raw.shape[0], b["y2"] + open_k + 1)
-    rx1, rx2 = max(0, b["x1"] - pad), min(raw.shape[1], b["x2"] + pad + 1)
-    body = np.zeros_like(opened)
-    for g in best["glyphs"]:
-        if g["x1"] >= b["x1"] and g["x2"] <= b["x2"] and g["y1"] >= b["y1"] and g["y2"] <= b["y2"]:
-            body[g["y1"]:g["y2"] + 1, g["x1"]:g["x2"] + 1] |= opened[g["y1"]:g["y2"] + 1, g["x1"]:g["x2"] + 1]
-    raw_box = raw[ry1:ry2, rx1:rx2]
-    grown = body[ry1:ry2, rx1:rx2] & raw_box
-    for _ in range(pad):
-        nxt = (_box_sum(grown, 3) > 0) & raw_box
-        if nxt.sum() == grown.sum():
-            break
-        grown = nxt
+    best = _pick_wordmark(candidates, open_k)
+    raw, opened = best["raw"], best["opened"]
+    grown, ry1, rx1 = best["grown"], best["grown_y"], best["grown_x"]
     ys, xs = np.nonzero(grown)
     top, bottom = ry1 + int(ys.min()), ry1 + int(ys.max())
     left, right = rx1 + int(xs.min()), rx1 + int(xs.max())
@@ -1227,7 +1391,9 @@ def _identifier_clearance_check(mark):
     """
     Artwork clear of the product identifier. Visa rejects artwork that
     touches or crowds the identifier's letters; the agent can't see a gap of
-    a few pixels, so the ring around the letters is measured.
+    a few pixels, so the ring around the letters is measured. Diffuse texture
+    behind the letters (grain, a glow, a dot screen) is background art that
+    Visa approves: it is reported as texture_px and never counted.
     """
     ident = mark.get("identifier")
     required = f"no artwork within {IDENTIFIER_CLEARANCE_RING_PX}px of the product identifier"
@@ -1241,6 +1407,7 @@ def _identifier_clearance_check(mark):
             "identifier_detected": False,
         }
     n = clear["foreign_px"]
+    texture = clear.get("texture_px", 0)
     actual = (f"{n}px of artwork within {IDENTIFIER_CLEARANCE_RING_PX}px of the identifier's letters"
               if n else "Clear background around the identifier")
     result = {
@@ -1249,10 +1416,13 @@ def _identifier_clearance_check(mark):
         "identifier_detected": True,
         "foreign_px": n,
         "ring_px": clear["ring_px"],
+        "texture_px": texture,
         "identifier_box": [ident["left"], ident["top"], ident["right"], ident["baseline"]],
     }
     advice = ("Visa rejects artwork that touches or crowds the identifier; keep a clear gap of "
               "plain background around its letters.")
+    texture_note = (f" Background texture behind the letters ({texture}px: grain, a glow or a dot "
+                    "screen) is background art and is not counted." if texture else "")
     if n >= IDENTIFIER_CLEARANCE_FAIL_PX:
         result.update(passed=False, reason_code="identifier_obstructed",
                       note=f"FAIL — artwork touches the product identifier: {actual}. {advice}")
@@ -1260,7 +1430,7 @@ def _identifier_clearance_check(mark):
         result.update(passed=True, borderline=True, reason_code="identifier_obstructed",
                       note=f"{actual} — artwork may be crowding the identifier. {advice}")
     else:
-        result.update(passed=True, note="Artwork stays clear of the product identifier.")
+        result.update(passed=True, note="Artwork stays clear of the product identifier." + texture_note)
     return result
 
 

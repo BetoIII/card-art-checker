@@ -350,6 +350,35 @@ def official_card(tier="platinum", bg=(24, 30, 52), ident_scale=1.0, logo=None):
     return im
 
 
+NAVY = (10, 16, 48)
+
+
+def textured(kind, seed=0):
+    """
+    The official lockup on navy with background texture behind the
+    identifier, the letters kept on top: heavy speckle, a soft glow, or a
+    dot screen. Each sits off the ink line around the letters, and each is
+    background art Visa approves there.
+    """
+    art = np.array(official_card(bg=NAVY), dtype=float)
+    ink = art.min(axis=-1) > 200
+    ys, xs = np.mgrid[0:H, 0:W]
+    zone = (ys >= 150) & (ys < 290) & (xs >= 1080)
+    rng = np.random.default_rng(seed)
+    if kind == "speckle":
+        speck = zone & (rng.random((H, W)) < 0.45)
+        tone = rng.uniform(0.4, 1.0, (H, W))[..., None] * np.array([70, 110, 255])
+        art = np.where(speck[..., None], tone, art)
+    elif kind == "glow":
+        falloff = np.exp(-((xs - 1290) ** 2 + (ys - 208) ** 2) / (2.0 * 30 ** 2))
+        art = np.clip(art + falloff[..., None] * np.array([20, 120, 210]), 0, 255)
+    elif kind == "dot screen":
+        dots = zone & (((ys % 12) - 6) ** 2 + ((xs % 12) - 6) ** 2 <= 5)
+        art = np.where(dots[..., None], np.array([40, 90, 220]), art)
+    art[ink] = 255
+    return Image.fromarray(art.astype(np.uint8))
+
+
 class OfficialLockup(unittest.TestCase):
     def test_every_official_tier_is_identified(self):
         for tier in specs.LOCKUP_TIERS:
@@ -395,13 +424,35 @@ class OfficialLockup(unittest.TestCase):
         self.assertEqual(match["identifier_candidate_tier"], "signature")
         self.assertIsNone(specs.check_virtual_mark(official_card("signature"))["lockup_match"]["identifier_candidate_tier"])
 
+    def test_issuer_four_letter_name_is_not_taken_for_the_mark(self):
+        # A four-letter issuer name in the upper left passes the wordmark's
+        # shape test with a better shape score than the mark itself, and was
+        # measured as the mark: its margins, its height, its overlap with
+        # the official artwork. The mark is the candidate that matches Visa's
+        # official wordmark.
+        im = official_card()
+        draw = ImageDraw.Draw(im)
+        font, box = _fit(draw, "KITE", BOLD, 109)
+        draw.text((56 - box[0], 56 - box[1]), "KITE", font=font, fill=(255, 255, 255))
+        checks = specs.check_virtual_mark(im)
+        self.assertEqual(checks["mark_position"]["mark_corner"], "upper-right")
+        for key in ("bleed_zone", "mark_size", "identifier_alignment", "lockup_match"):
+            self.assertTrue(checks[key]["passed"], (key, checks[key].get("note")))
+        self.assertEqual(checks["lockup_match"]["identifier_tier"], "platinum")
+        self.assertGreaterEqual(checks["lockup_match"]["wordmark_iou"], 0.9)
+        # The name is measured as the partner logo it is.
+        self.assertEqual([l["corner"] for l in checks["issuer_logo_border"]["logos"]], ["upper-left"])
+
 
 class IdentifierClearance(unittest.TestCase):
-    """Visa rejects artwork touching the identifier (FAIL-001, REJ-046)."""
+    """
+    Visa rejects artwork touching the identifier (FAIL-001, REJ-046) and
+    approves diffuse texture behind it.
+    """
 
     @staticmethod
-    def traces(y_from, y_to):
-        im = official_card()
+    def traces(y_from, y_to, im=None):
+        im = official_card() if im is None else im
         draw = ImageDraw.Draw(im)
         for x in (1260, 1330, 1400):   # gold circuit traces, as on FAIL-001
             draw.line([(x, y_from), (x + 40, y_to)], fill=(140, 110, 30), width=3)
@@ -429,6 +480,24 @@ class IdentifierClearance(unittest.TestCase):
     def test_no_identifier_is_unverified(self):
         check = specs.check_virtual_mark(card(identifier=False))["identifier_clearance"]
         self.assertIsNone(check["passed"])
+
+    def test_diffuse_texture_behind_the_letters_passes(self):
+        # Visa approves grain, a glow or a dot screen behind the identifier.
+        # Each sits off the ink line around the letters (it used to count as
+        # artwork crowding them), but none is a discrete element, so all of
+        # it is reported as texture.
+        for kind in ("speckle", "glow", "dot screen"):
+            check = specs.check_virtual_mark(textured(kind))["identifier_clearance"]
+            self.assertTrue(check["passed"], (kind, check["actual"]))
+            self.assertFalse(check.get("borderline"), kind)
+            self.assertEqual(check["foreign_px"], 0, kind)
+            self.assertGreaterEqual(check["texture_px"], specs.IDENTIFIER_CLEARANCE_FAIL_PX, kind)
+
+    def test_artwork_touching_the_letters_over_texture_still_fails(self):
+        for kind in ("speckle", "glow", "dot screen"):
+            check = specs.check_virtual_mark(self.traces(260, 200, textured(kind)))["identifier_clearance"]
+            self.assertIs(check["passed"], False, (kind, check["actual"]))
+            self.assertEqual(check["reason_code"], "identifier_obstructed")
 
 
 class PartnerLogoBorder(unittest.TestCase):
