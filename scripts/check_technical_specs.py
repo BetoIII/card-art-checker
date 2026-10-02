@@ -1109,6 +1109,33 @@ def _virtual_margin_check(mark):
     return result
 
 
+def _virtual_position_check(mark):
+    """
+    Visa places the Brand Mark in the upper-left or upper-right corner of
+    virtual art. The locator also searches the lower-right corner, where the
+    margin check can still measure a correct 56px, so the corner is judged on
+    its own: a mark found in a lower corner fails here even at 56px.
+    """
+    corner = mark["corner"]
+    passed = corner.startswith("upper")
+    if passed:
+        note = f"Visa Brand Mark is in the {corner} corner."
+    else:
+        note = (f"FAIL — the Visa Brand Mark is in the {corner} corner. Visa places it in "
+                "the upper-left or upper-right corner only; move the whole lockup.")
+    result = {
+        "passed": passed,
+        "actual": f"{corner} corner",
+        "required": "upper-left or upper-right corner",
+        "note": note,
+        "mark_detected": True,
+        "mark_corner": corner,
+    }
+    if not passed:
+        result["reason_code"] = "position_lower_edge"
+    return result
+
+
 def _virtual_size_check(mark):
     """109px wordmark, 170px from the top of the mark to the identifier baseline."""
     scale = _mark_scale(mark)
@@ -1303,7 +1330,8 @@ def _virtual_color_check(mark):
 def check_virtual_mark(img, declared_product=None):
     """
     Deterministic Visa Brand Mark checks for virtual art, from one locator pass:
-    bleed_zone (placed at 56px), mark_size, identifier_alignment, mark_color,
+    bleed_zone (placed at 56px), mark_position (upper corner), mark_size,
+    identifier_alignment, mark_color,
     lockup_match (against Visa's official lockups), identifier_clearance, and
     issuer_logo_border.
 
@@ -1322,6 +1350,7 @@ def check_virtual_mark(img, declared_product=None):
         }
         return {
             "bleed_zone": dict(unverified, required=f"{VISA_MARK_EDGE_MARGIN}px from the nearest edges (±{VISA_MARK_MARGIN_TOLERANCE}px)"),
+            "mark_position": dict(unverified, required="upper-left or upper-right corner"),
             "mark_size": dict(unverified, required=f"{VISA_MARK_HEIGHT_PX}px mark height"),
             "identifier_alignment": dict(unverified, required="identifier aligned with the Visa Brand Mark",
                                          identifier_detected=False),
@@ -1333,6 +1362,7 @@ def check_virtual_mark(img, declared_product=None):
         }
     return {
         "bleed_zone": _virtual_margin_check(mark),
+        "mark_position": _virtual_position_check(mark),
         "mark_size": _virtual_size_check(mark),
         "identifier_alignment": _virtual_identifier_alignment_check(mark),
         "mark_color": _virtual_color_check(mark),
@@ -2295,7 +2325,7 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
     tech_headers = ["Check", "Result", "Detail"]
     tech_col_ratios = [0.28, 0.12, 0.60]
     tech_rows_data = []
-    check_order = ["dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
+    check_order = ["dimensions", "file_format", "dpi", "bleed_zone", "mark_position", "mark_size",
                    "identifier_alignment", "mark_color", "lockup_match", "identifier_clearance",
                    "issuer_logo_border", "square_corners", "border_frame"]
     check_labels = {
@@ -2303,6 +2333,7 @@ def generate_results_image(img, colors, tech_checks, visual_checks,
         "file_format": "File Format (PNG)",
         "dpi": "72 DPI",
         "bleed_zone": "Visa Brand Mark placed at 56px",
+        "mark_position": "Visa Brand Mark in an upper corner",
         "mark_size": "Visa Brand Mark size (109px)",
         "identifier_alignment": "Identifier aligned with mark",
         "mark_color": "Visa Brand Mark color",

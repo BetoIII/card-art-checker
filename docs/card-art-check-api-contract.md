@@ -326,9 +326,9 @@ anything that isn't `pass` as "not clean", but only `blocking_failures` should r
 
 ### Technical check IDs (virtual)
 
-`dimensions` · `file_format` · `dpi` · `bleed_zone` · `mark_size` · `identifier_alignment` ·
-`mark_color` · `lockup_match` · `identifier_clearance` · `issuer_logo_border` · `square_corners` ·
-`border_frame`
+`dimensions` · `file_format` · `dpi` · `bleed_zone` · `mark_position` · `mark_size` ·
+`identifier_alignment` · `mark_color` · `lockup_match` · `identifier_clearance` · `issuer_logo_border` ·
+`square_corners` · `border_frame`
 
 `dimensions`, `file_format` and `dpi` overlap `validation.ts` and can serve as a
 cross-check. `dpi` reads the declared density (PNG pHYs, JPEG JFIF/EXIF) and fails
@@ -340,6 +340,7 @@ The rest are deterministic compliance measurements, not structural ones:
 | Tech check | Measures | Mirrored into |
 |---|---|---|
 | `bleed_zone` | Brand Mark placed **at** 56px (±3) from its nearest top/bottom and side edges — too far fails as well as too close | `visa_brand_mark_margin` |
+| `mark_position` | Brand Mark in the upper-left or upper-right corner; a mark located in a lower corner fails even at 56px | `visa_brand_mark_position` |
 | `mark_size` | 109px mark height (±7); reports the mark-top-to-identifier-baseline distance (Visa: 170px). The retired 142px size fails | `visa_brand_mark_size` |
 | `identifier_alignment` | identifier edge vs. the mark's outer edge (±6px passes, >15px fails) | `product_identifier` |
 | `mark_color` | sampled ink: white, black, Visa Blue, silver — flat. Gold is a warning (premium products only); brown fails | `visa_brand_mark_color` |
@@ -433,7 +434,7 @@ Two consequences:
    already passed the equivalent structural validation, so `dimensions`, `file_format` and
    `dpi` should always pass — a failure means the two layers disagree about the same
    file, which is worth an alert. The lockup and canvas tech checks (`bleed_zone`,
-   `mark_size`, `identifier_alignment`, `mark_color`, `lockup_match`, `identifier_clearance`,
+   `mark_position`, `mark_size`, `identifier_alignment`, `mark_color`, `lockup_match`, `identifier_clearance`,
    `issuer_logo_border`, `square_corners`, `border_frame`) have no `validation.ts`
    equivalent and already feed `outcome`.
 2. **Both layers apply the same DPI rule.** `validation.ts` rejects a *declared* density

@@ -60,6 +60,15 @@ def card(bg=(20, 24, 40), ink=(255, 255, 255), top=56, right=56, mark_h=109,
     return im
 
 
+def lower_right_card(bottom=56, right=56, mark_h=109):
+    """The VISA wordmark alone in the lower-right corner, 56px from both edges."""
+    im = Image.new("RGB", (W, H), (20, 24, 40))
+    draw = ImageDraw.Draw(im)
+    font, box = _fit(draw, "VISA", BOLD, mark_h)
+    draw.text((W - right - box[2], H - bottom - box[3]), "VISA", font=font, fill=(255, 255, 255))
+    return im
+
+
 def chevrons(w, h):
     """Dark card with mid-contrast diagonal line art running under the corner."""
     im = Image.new("RGB", (w, h), (16, 25, 36))
@@ -162,6 +171,27 @@ class VisaMarkPlacement(unittest.TestCase):
         for key in ("bleed_zone", "mark_size", "identifier_alignment", "mark_color"):
             self.assertIsNone(checks[key]["passed"], key)
             self.assertFalse(checks[key]["mark_detected"], key)
+
+
+class VisaMarkPosition(unittest.TestCase):
+    """Visa places the mark in an upper corner only."""
+
+    def test_upper_right_mark_passes(self):
+        position = specs.check_virtual_mark(card())["mark_position"]
+        self.assertTrue(position["passed"], position["note"])
+        self.assertEqual(position["mark_corner"], "upper-right")
+
+    def test_lower_right_mark_fails_even_at_56px(self):
+        checks = specs.check_virtual_mark(lower_right_card())
+        self.assertEqual(checks["mark_position"]["mark_corner"], "lower-right")
+        self.assertIs(checks["mark_position"]["passed"], False)
+        self.assertEqual(checks["mark_position"]["reason_code"], "position_lower_edge")
+        # The margin itself is right; only the corner is wrong.
+        self.assertTrue(checks["bleed_zone"]["passed"], checks["bleed_zone"]["note"])
+
+    def test_undetected_mark_is_unverified(self):
+        position = specs.check_virtual_mark(Image.new("RGB", (W, H), (20, 24, 40)))["mark_position"]
+        self.assertIsNone(position["passed"])
 
 
 class VisaMarkLockup(unittest.TestCase):
@@ -468,7 +498,7 @@ class CheckImage(unittest.TestCase):
             official_card(logo=("ACME PAY", 56, 56)).save(path)
             result = specs.check_image(path, "Platinum")
         self.assertEqual(result["errors"], [])
-        for key in ("dimensions", "file_format", "dpi", "bleed_zone", "mark_size",
+        for key in ("dimensions", "file_format", "dpi", "bleed_zone", "mark_position", "mark_size",
                     "identifier_alignment", "mark_color", "lockup_match", "identifier_clearance",
                     "issuer_logo_border", "square_corners", "border_frame"):
             self.assertIn(key, result["checks"])

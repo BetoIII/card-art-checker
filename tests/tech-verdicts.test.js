@@ -16,6 +16,7 @@ function techJson(overrides = {}) {
     checks: {
       dimensions: passing(), file_format: passing(), dpi: passing(),
       bleed_zone: passing({ actual: 'Top: 56px, Right: 56px' }),
+      mark_position: passing({ actual: 'upper-right corner' }),
       mark_size: passing(), identifier_alignment: passing(), mark_color: passing(),
       lockup_match: passing(), identifier_clearance: passing(), issuer_logo_border: passing(),
       square_corners: passing(), border_frame: passing(),
@@ -26,7 +27,7 @@ function techJson(overrides = {}) {
 
 function agentResults(status = 'APPROVED', overrides = {}) {
   const ids = [
-    'visa_brand_mark_margin', 'visa_brand_mark_size', 'visa_brand_mark_color',
+    'visa_brand_mark_margin', 'visa_brand_mark_position', 'visa_brand_mark_size', 'visa_brand_mark_color',
     'product_identifier', 'issuer_logo_within_border', 'no_physical_card_photography',
     'design_elements_clear_of_identifier', 'full_color',
   ];
@@ -83,6 +84,17 @@ test('a border frame fails the photography check with its own reason code', () =
   const photo = results.visual_checks.find((c) => c.id === 'no_physical_card_photography');
   assert.equal(photo.result, 'fail');
   assert.equal(photo.reason_code, 'border_frame_present');
+});
+
+test('a mark in a lower corner fails the position check', () => {
+  const results = agentResults('APPROVED');
+  applyTechVerdicts(results, techJson({
+    mark_position: { passed: false, reason_code: 'position_lower_edge', actual: 'lower-right corner', mark_corner: 'lower-right' },
+  }), 'virtual');
+  const position = results.visual_checks.find((c) => c.id === 'visa_brand_mark_position');
+  assert.equal(position.result, 'fail');
+  assert.equal(position.reason_code, 'position_lower_edge');
+  assert.equal(results.status, 'REQUIRES CHANGES');
 });
 
 test('artwork touching the identifier fails the clearance check', () => {
@@ -180,7 +192,7 @@ test('new tech checks reach the wire with a status and their measurements', () =
     square_corners: { passed: false, actual: 'Rounded corners', radius_px: 57, rounded_corners: ['top-left'] },
   });
   const byId = Object.fromEntries(normalizeTechChecks('virtual', tech).map((c) => [c.id, c]));
-  for (const id of ['mark_size', 'identifier_alignment', 'mark_color', 'lockup_match',
+  for (const id of ['mark_position', 'mark_size', 'identifier_alignment', 'mark_color', 'lockup_match',
     'identifier_clearance', 'issuer_logo_border', 'square_corners', 'border_frame']) {
     assert.ok(byId[id], `${id} missing from tech_checks`);
   }

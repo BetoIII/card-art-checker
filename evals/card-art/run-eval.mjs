@@ -93,6 +93,7 @@ const SUSPECT_FILE_TAGS = ['tech_conflict_dimensions', 'approved_file_mismatch_s
 const REASON_ACCEPT = {
   ...Object.fromEntries(Object.entries(REASON_CHECKS).map(([k, v]) => [k, [...v]])),
   mark_margin_not_56: ['visa_brand_mark_margin', 'tech:bleed_zone'],
+  mark_position_bottom: ['visa_brand_mark_position', 'tech:mark_position'],
   mark_size_wrong: ['visa_brand_mark_size', 'tech:mark_size'],
   mark_color_invalid: ['visa_brand_mark_color', 'tech:mark_color'],
   identifier_misaligned: ['product_identifier', 'tech:identifier_alignment'],
