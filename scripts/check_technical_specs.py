@@ -102,6 +102,11 @@ VISA_BLUE_RGB = (20, 52, 203)
 # (with the mark's 3px tolerance). Visa: "Please adjust the partner logo to
 # ensure it complies with the border guidelines."
 ISSUER_LOGO_MIN_MARGIN_PX = VISA_MARK_EDGE_MARGIN - VISA_MARK_MARGIN_TOLERANCE
+# A shape that runs to within this distance of a card edge is background art
+# bleeding off the card, not a logo: logos are placed, not cropped by the edge.
+# Measured on the eval: false detections sat 0-11px from an edge, real partner
+# logos Visa returned sat 40px and more.
+LOGO_EDGE_BLEED_PX = 16
 
 # --- Official Visa lockups (assets/lockups/*.png) ---
 # Rendered from Visa's official lockup artwork (1536x969 canvases with the
@@ -1564,7 +1569,9 @@ def _issuer_logo_border_check(img, mark):
     Partner and issuer logos stay out of the 56px bleed zone, like the Visa
     Brand Mark: no logo within 53px of its nearest edges. Checked in the upper
     corners and the lower right (the lower left is the PAN zone and has its
-    own check). Background artwork may still bleed to the edge.
+    own check). Background artwork may still bleed to the edge: a shape that
+    runs to within LOGO_EDGE_BLEED_PX of an edge is reported as background
+    bleed and never fails.
     """
     native_w = img.size[0]
     scale = native_w / REQUIRED_WIDTH
@@ -1581,7 +1588,7 @@ def _issuer_logo_border_check(img, mark):
     corners = [c for c in ("upper-left", "upper-right", "lower-right")
                if mark is None or c != mark["corner"]]
     minimum = ISSUER_LOGO_MIN_MARGIN_PX
-    logos, inside = [], []
+    logos, inside, background = [], [], []
     for corner in corners:
         logo = _logo_runs(rgb, corner, exclude)
         if not logo:
@@ -1589,25 +1596,34 @@ def _issuer_logo_border_check(img, mark):
         edges = {k: int(round(v * scale)) for k, v in logo["edges"].items()}
         entry = {"corner": corner, "edges_px": edges,
                  "box": [int(round(logo[k] * scale)) for k in ("left", "top", "right", "bottom")]}
+        if min(edges.values()) < round(LOGO_EDGE_BLEED_PX * scale):
+            background.append(entry)
+            continue
         logos.append(entry)
         close = {k: v for k, v in edges.items() if v < round(minimum * scale)}
         if close:
             inside.append((corner, close))
     required = f"logos at least {minimum}px from the card edges (outside the {VISA_MARK_EDGE_MARGIN}px bleed zone)"
+    bleed_note = ("" if not background else
+                  " Ignored as background art bleeding off the card: "
+                  + "; ".join(f"{b['corner']} shape " + ", ".join(f"{k} {v}px" for k, v in b["edges_px"].items())
+                              for b in background) + ".")
     if not logos:
         return {"passed": None, "actual": "No partner or issuer logo located", "required": required,
-                "note": "Could not locate a partner/issuer logo programmatically. Verify visually.",
-                "logos": []}
+                "note": "Could not locate a partner/issuer logo programmatically. Verify visually." + bleed_note,
+                "logos": [], "background_bleed": background}
     measured = "; ".join(f"{l['corner']}: " + ", ".join(f"{k} {v}px" for k, v in l["edges_px"].items())
                          for l in logos)
     if inside:
         where = "; ".join(f"{c} logo " + ", ".join(f"{k} {v}px" for k, v in e.items()) for c, e in inside)
         return {"passed": False, "actual": measured, "required": required, "logos": logos,
-                "reason_code": "issuer_logo_in_bleed_zone",
+                "background_bleed": background, "reason_code": "issuer_logo_in_bleed_zone",
                 "note": (f"FAIL — a partner/issuer logo enters the {VISA_MARK_EDGE_MARGIN}px bleed zone "
-                         f"({where}). Keep logos at least {minimum}px from the edges, like the Visa Brand Mark.")}
+                         f"({where}). Keep logos at least {minimum}px from the edges, like the Visa Brand Mark."
+                         + bleed_note)}
     return {"passed": True, "actual": measured, "required": required, "logos": logos,
-            "note": f"Partner/issuer logos keep out of the {VISA_MARK_EDGE_MARGIN}px bleed zone."}
+            "background_bleed": background,
+            "note": f"Partner/issuer logos keep out of the {VISA_MARK_EDGE_MARGIN}px bleed zone." + bleed_note}
 
 
 def _corner_runs(rgba, corner, max_run):

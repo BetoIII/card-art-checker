@@ -347,7 +347,7 @@ The rest are deterministic compliance measurements, not structural ones:
 | `mark_color` | sampled ink: white, black, Visa Blue, silver — flat. Gold is a warning (premium products only); brown fails | `visa_brand_mark_color` |
 | `lockup_match` | shape match against Visa's official lockup artwork: wordmark overlap, identifier size relative to the mark (0.87–1.15× passes), and the identifier tier it reads as — a confident tier that differs from `declaredProduct` fails | `product_identifier` |
 | `identifier_clearance` | artwork pixels within 4px of the identifier's letters, other than the letters' own anti-aliasing and the background's texture (50+ fails, 40–49 warns) | `design_elements_clear_of_identifier` |
-| `issuer_logo_border` | partner/issuer logos in the other corners stay at least 53px from the edges (outside the 56px bleed zone) | `issuer_logo_within_border` |
+| `issuer_logo_border` | partner/issuer logos in the other corners stay at least 53px from the edges (outside the 56px bleed zone); a shape running to within 16px of an edge is reported as `background_bleed` and never fails | `issuer_logo_within_border` |
 | `square_corners` | transparent or matte arcs in the corners | — (tech only) |
 | `border_frame` | transparent padding on any side, uniform border lines (≥2px) on two or more sides, or a 1px line on all four sides | `art_fills_canvas` |
 

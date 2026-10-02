@@ -446,6 +446,23 @@ class PartnerLogoBorder(unittest.TestCase):
     def test_no_logo_is_unverified(self):
         self.assertIsNone(specs.check_virtual_mark(official_card())["issuer_logo_border"]["passed"])
 
+    def test_art_running_off_the_edge_is_background_not_a_logo(self):
+        # Background art bled off the lower right and was read as a logo 0-11px from the edge.
+        im = official_card(logo=("ACME PAY", 80, 80))
+        font, box = _fit(ImageDraw.Draw(im), "ART", BOLD, 60)
+        ImageDraw.Draw(im).text((W - 270 - box[2], H - 5 - box[3]), "ART", font=font, fill=(255, 255, 255))
+        border = specs.check_virtual_mark(im)["issuer_logo_border"]
+        self.assertTrue(border["passed"], border["note"])
+        self.assertEqual([b["corner"] for b in border["background_bleed"]], ["lower-right"])
+
+    def test_logo_inside_the_zone_but_off_the_edge_still_fails(self):
+        im = official_card()
+        font, box = _fit(ImageDraw.Draw(im), "ACME", BOLD, 60)
+        ImageDraw.Draw(im).text((W - 40 - box[2], H - 64 - box[3]), "ACME", font=font, fill=(255, 255, 255))
+        border = specs.check_virtual_mark(im)["issuer_logo_border"]
+        self.assertIs(border["passed"], False, border.get("note"))
+        self.assertEqual(border["logos"][0]["corner"], "lower-right")
+
 
 class ZoomCrops(unittest.TestCase):
     def test_issuer_crop_takes_the_free_corner_and_the_side_band(self):
