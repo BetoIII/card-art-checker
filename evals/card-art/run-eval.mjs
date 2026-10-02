@@ -82,7 +82,9 @@ const REASON_CHECKS = {
 const NEEDS_DECLARED_PRODUCT = new Set(['identifier_tier_mismatch']);
 // Approved files that are probably NOT the bytes Visa approved (resized on
 // submission, or contradicting a rule Visa enforces elsewhere): scored apart.
-const SUSPECT_FILE_TAGS = ['tech_conflict_dimensions', 'approved_file_mismatch_suspect'];
+// approved_older_practice: Visa approved it under a rule it has since stopped
+// applying (it now returns the same design), so it no longer measures a false alarm.
+const SUSPECT_FILE_TAGS = ['tech_conflict_dimensions', 'approved_file_mismatch_suspect', 'approved_older_practice'];
 
 // REASON_CHECKS is frozen at the baseline catalog: it decides which headline
 // column a case lands in, so a later variant that adds a check is scored on the
