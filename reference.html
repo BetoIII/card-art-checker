@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Card Art Checker — API Reference</title>
-<meta name="description" content="Submit card art, get a compliance verdict. Endpoints, payloads, result schema, and the full check catalog.">
+<title>Card Art Checker API Reference</title>
+<meta name="description" content="Submit card art and get a Visa compliance verdict. Endpoints, payloads, result schema, and check catalog.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -664,18 +664,17 @@ tbody tr:hover td { background: var(--paper-2); }
     <div class="page-eyebrow">Rain · Card art compliance</div>
     <h1>Card Art Checker API</h1>
     <p class="lede">
-      Submit a card design, get back a structured compliance verdict against the Visa
-      brand rules — which checks failed, where on the art, and whether the design can ship.
+      Submit card art. Get a Visa compliance verdict: what failed, where on the art, and
+      whether it can ship.
     </p>
 
     <!-- Overview -->
     <section id="overview">
       <h2>Overview <a class="anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
       <p>
-        A check is a visual review: a Claude agent inspects the art against Visa's 22
-        virtual-card rules, alongside 13 deterministic measurements, and returns a decision.
-        That takes <strong>about two minutes</strong>, so no endpoint returns a verdict
-        synchronously. Every integration has the same four beats.
+        A Claude agent reviews the art against Visa's 22 virtual-card rules, backed by 13
+        automated measurements. Runs take <strong>about two minutes</strong>, so results are
+        always asynchronous. Every integration follows four steps.
       </p>
 
       <div class="flow">
@@ -687,17 +686,17 @@ tbody tr:hover td { background: var(--paper-2); }
         <div class="flow-step">
           <div class="flow-num">02</div>
           <div class="flow-label">Store the runId</div>
-          <div class="flow-desc">Returned immediately. Your handle on the run.</div>
+          <div class="flow-desc">Returned immediately.</div>
         </div>
         <div class="flow-step">
           <div class="flow-num">03</div>
           <div class="flow-label">Wait</div>
-          <div class="flow-desc">The analysis runs in the background.</div>
+          <div class="flow-desc">Analysis runs in the background.</div>
         </div>
         <div class="flow-step">
           <div class="flow-num">04</div>
           <div class="flow-label">Read the result</div>
-          <div class="flow-desc">Poll, or have it pushed to your <a href="#webhooks">webhook</a>.</div>
+          <div class="flow-desc">Poll, or receive it by <a href="#webhooks">webhook</a>.</div>
         </div>
       </div>
 
@@ -705,7 +704,7 @@ tbody tr:hover td { background: var(--paper-2); }
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.3v4M8 4.9v.1"/></svg></span>
         <div>
           <p><span class="note-title">Base URL.</span> <code>https://card-art-checker.vercel.app</code></p>
-          <p>Use the stable alias, not the per-deploy <code>…-&lt;hash&gt;.vercel.app</code> URLs — those change on every push.</p>
+          <p>Use this URL, not per-deploy <code>…-&lt;hash&gt;.vercel.app</code> URLs, which change on every push.</p>
         </div>
       </div>
     </section>
@@ -713,7 +712,7 @@ tbody tr:hover td { background: var(--paper-2); }
     <!-- Quickstart -->
     <section id="quickstart">
       <h2>Quickstart <a class="anchor" href="#quickstart" aria-label="Link to Quickstart">#</a></h2>
-      <p>Submit a virtual card design and read the verdict.</p>
+      <p>Submit a virtual card and read the result.</p>
 
       <div class="code" data-group="lang">
         <div class="code-head">
@@ -745,12 +744,12 @@ const res = await fetch(`${CARD_ART_CHECKER_URL}/api/card-check?async=1`, {
 })
 
 const { runId } = await res.json()
-// Store runId on the row — it is how you find the verdict later.</pre></div>
+// Store runId. You need it to fetch the result.</pre></div>
       </div>
 
       <div class="code" data-group="lang">
         <div class="code-head">
-          <span class="code-title">Read the verdict</span>
+          <span class="code-title">Read the result</span>
           <button class="tab active" data-tab="curl">cURL</button>
           <button class="tab" data-tab="ts">TypeScript</button>
           <button class="copy-btn" aria-label="Copy code"></button>
@@ -758,7 +757,7 @@ const { runId } = await res.json()
         <div class="panel active" data-tab="curl"><pre data-hl="bash">curl -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET" \
   "https://card-art-checker.vercel.app/api/result/msqz4i4j-6fa7c9"
 
-# 404 while the run is still in flight — that is the normal answer.
+# 404 while the run is in progress. This is expected.
 # 200 → { "runId": "…", "count": 1, "results": [ … ] }</pre></div>
         <div class="panel" data-tab="ts"><pre data-hl="ts">const res = await fetch(`${CARD_ART_CHECKER_URL}/api/result/${runId}`, {
   headers: { Authorization: `Bearer ${CARD_ART_CHECKER_SECRET}` },
@@ -769,7 +768,7 @@ if (res.status === 404) return // still running, try again later
 const { results } = await res.json()
 const [result] = results
 
-if (result.status === "error") return           // the checker broke — retry
+if (result.status === "error") return           // the run failed; retry
 if (result.outcome === "requires_changes") {
   reject(result.summary, result.blocking_failures)
 }</pre></div>
@@ -777,14 +776,14 @@ if (result.outcome === "requires_changes") {
 
       <div class="note">
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.7v4M8 11v.1"/></svg></span>
-        <div><p>Polling works, but <a href="#webhooks">webhooks</a> are the recommended path — they cost you nothing while a two-minute run is in flight.</p></div>
+        <div><p>We recommend <a href="#webhooks">webhooks</a> over polling: no requests while a run is in progress.</p></div>
       </div>
     </section>
 
     <!-- Authentication -->
     <section id="authentication">
       <h2>Authentication <a class="anchor" href="#authentication" aria-label="Link to Authentication">#</a></h2>
-      <p>One shared secret guards every server-to-server endpoint. Send it either way:</p>
+      <p>One shared secret authenticates every server-to-server endpoint. Send it in either header:</p>
 
       <div class="code">
         <div class="code-head">
@@ -795,19 +794,14 @@ if (result.outcome === "requires_changes") {
 x-webhook-secret: &lt;secret&gt;</pre>
       </div>
 
-      <p>
-        Ask your Rain contact for the value — it is not published here. The same secret reads
-        results, so a caller that may start a check may read its verdict.
-      </p>
+      <p>Request the secret from your Rain contact. The same secret submits checks and reads results.</p>
 
       <div class="note warn">
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
         <div>
-          <p><span class="note-title">Authentication does more than gate access.</span> It is what separates a
-          server-to-server caller from the browser upload page. Authenticated callers may use
-          <code>?async=1</code>; anonymous ones may not.</p>
-          <p>If your calls behave like the browser path — streaming back an event stream instead of
-          JSON — the secret is not arriving.</p>
+          <p><span class="note-title">Async requires the secret.</span> Only authenticated callers
+          can use <code>?async=1</code>. If you receive an event stream instead of JSON, the secret
+          is not reaching us.</p>
         </div>
       </div>
     </section>
@@ -826,10 +820,9 @@ x-webhook-secret: &lt;secret&gt;</pre>
       </div>
 
       <p>
-        Send the art as <code>multipart/form-data</code>. With <code>?async=1</code> the response
-        returns as soon as the file is parsed and the analysis continues in the background.
-        Without it you get a Server-Sent Events progress stream instead — that path exists for the
-        browser playground; don't use it from a server.
+        Send the art as <code>multipart/form-data</code> with <code>?async=1</code>. The response
+        returns once the file is parsed; analysis continues in the background. Without
+        <code>?async=1</code> you get a browser progress stream, which servers should not use.
       </p>
 
       <h3 id="submit-fields">Body fields <a class="anchor" href="#submit-fields" aria-label="Link to Body fields">#</a></h3>
@@ -841,49 +834,49 @@ x-webhook-secret: &lt;secret&gt;</pre>
               <td><code>file</code></td>
               <td class="type">file</td>
               <td><span class="req">Required</span></td>
-              <td>The card art: a flattened 1536×969 PNG at 72 DPI for virtual cards. Other sizes and formats are analyzed, but fail the <a href="#tech-checks">structural checks</a>.</td>
+              <td>Card art. Virtual: a flattened 1536×969 PNG at 72 DPI. Other sizes and formats are analyzed but fail the <a href="#tech-checks">structural checks</a>.</td>
             </tr>
             <tr>
               <td><code>cardType</code></td>
               <td class="type">"virtual" | "physical"</td>
               <td><span class="opt">Optional</span></td>
-              <td>Inferred from the filename when omitted. Send <code>virtual</code> explicitly.</td>
+              <td>Inferred from the filename if omitted. Send it explicitly.</td>
             </tr>
             <tr>
               <td><code>reference</code></td>
               <td class="type">string</td>
               <td><span class="opt">Optional</span></td>
-              <td>Your own correlation id, e.g. a <code>cardArtForm.id</code>. Comes back on <code>trigger.reference</code>. Sanitized to <code>[A-Za-z0-9._-]</code>, 64 chars max.</td>
+              <td>Your correlation id, e.g. <code>cardArtForm.id</code>. Returned as <code>trigger.reference</code>. Sanitized to <code>[A-Za-z0-9._-]</code>, max 64 characters.</td>
             </tr>
             <tr>
               <td><code>tenantId</code></td>
               <td class="type">string (UUID)</td>
               <td><span class="req">One of</span></td>
-              <td>Your Rain tenant id, e.g. <code>9eef553e-4dd3-4e70-b86a-0edc969f447c</code>. Send this, or <code>projectId</code>, or both — a request with neither is refused. Checked for shape only.</td>
+              <td>Your Rain tenant id. Send this, <code>projectId</code>, or both; requests with neither are rejected. Validated for format only.</td>
             </tr>
             <tr>
               <td><code>projectId</code></td>
               <td class="type">string (digits)</td>
               <td><span class="req">One of</span></td>
-              <td>Your Rocketlane project id, if you have one; the result carries the project name we look up. When present it must resolve in Rocketlane or the run fails (<code>missing_project_id</code>).</td>
+              <td>Your Rocketlane project id, if you have one. Must exist in Rocketlane or the run fails (<code>missing_project_id</code>). The result includes the project name.</td>
             </tr>
             <tr>
               <td><code>callbackUrl</code></td>
               <td class="type">string</td>
               <td><span class="opt">Optional</span></td>
-              <td>Push the result here. Allowlist-gated — see <a href="#webhooks">Webhooks</a>.</td>
+              <td>Webhook URL for this run. Must be allowlisted; see <a href="#webhooks">Webhooks</a>.</td>
             </tr>
             <tr>
               <td><code>declaredProduct</code></td>
               <td class="type">string</td>
               <td><span class="opt">Optional</span></td>
-              <td>The Visa product the program is provisioned as, e.g. <code>Signature Corporate</code>. Lets the check fail an identifier for the wrong tier (<code>identifier_tier_mismatch</code>); the identifier must read exactly this product, word order included. Must name a canonical product (<code>Debit</code> … <code>Infinite Corporate</code>), <code>Business</code> or <code>Classic</code>; anything else is ignored. Echoed on <code>submission.declared_product</code>.</td>
+              <td>The Visa product the program is provisioned as, e.g. <code>Signature Corporate</code>. The art's identifier must match it exactly, word order included (<code>identifier_tier_mismatch</code>). Accepts a canonical product (<code>Debit</code> … <code>Infinite Corporate</code>), <code>Business</code>, or <code>Classic</code>; other values are ignored. Returned as <code>submission.declared_product</code>.</td>
             </tr>
             <tr>
               <td><code>backFile</code></td>
               <td class="type">file</td>
               <td><span class="opt">Optional</span></td>
-              <td>Physical submissions only. Rejected on a virtual submission.</td>
+              <td>Physical cards only. Rejected for virtual.</td>
             </tr>
           </tbody>
         </table>
@@ -892,7 +885,7 @@ x-webhook-secret: &lt;secret&gt;</pre>
       <h3 id="submit-responses">Responses <a class="anchor" href="#submit-responses" aria-label="Link to Responses">#</a></h3>
 
       <h4><span class="status-code ok">200</span> &nbsp;Queued</h4>
-      <p>The file was accepted. Store <code>runId</code> — it is the only handle on the run.</p>
+      <p>File accepted. Store <code>runId</code>; it is the only way to retrieve the result.</p>
       <div class="code">
         <div class="code-head">
           <span class="code-title">200 application/json</span>
@@ -909,8 +902,8 @@ x-webhook-secret: &lt;secret&gt;</pre>
 }</pre>
       </div>
 
-      <h4><span class="status-code bad">400</span> &nbsp;Never started</h4>
-      <p>A <code>runId</code> still comes back, so the attempt stays traceable.</p>
+      <h4><span class="status-code bad">400</span> &nbsp;Rejected</h4>
+      <p>Includes a <code>runId</code> for tracing.</p>
       <div class="code">
         <div class="code-head">
           <span class="code-title">400 application/json</span>
@@ -925,11 +918,11 @@ x-webhook-secret: &lt;secret&gt;</pre>
         <li><code>Invalid projectId "…" — expected a numeric Rocketlane project id</code></li>
         <li><code>Invalid cardType "foo" — must be "virtual" or "physical"</code></li>
         <li><code>Could not infer card type from "art.bin" — pass cardType=virtual|physical explicitly</code></li>
-        <li><code>Multipart parse timed out</code> — the body took longer than 30s.</li>
+        <li><code>Multipart parse timed out</code> (upload exceeded 30s)</li>
         <li><code>backFile is only valid for physical submissions</code></li>
       </ul>
       <p>
-        A wrong content type returns <span class="status-code bad">400</span> with a plain-text body:
+        A non-multipart request returns <span class="status-code bad">400</span> with plain text:
         <code>Bad request: expected multipart/form-data</code>.
       </p>
     </section>
@@ -948,8 +941,8 @@ x-webhook-secret: &lt;secret&gt;</pre>
       </div>
 
       <p>
-        Returns the run's result — the same object a webhook carries — wrapped in a list:
-        <code>results</code> holds one entry. Poll every 15–30 seconds.
+        Returns the <a href="#result-object">result object</a> in a one-item <code>results</code>
+        array, the same object a webhook delivers. Poll every 15–30 seconds.
       </p>
 
       <div class="table-wrap">
@@ -959,27 +952,27 @@ x-webhook-secret: &lt;secret&gt;</pre>
             <tr>
               <td><span class="status-code ok">200</span></td>
               <td><code>{ runId, count, results[] }</code></td>
-              <td>Done. See <a href="#result-object">the result object</a>.</td>
+              <td>Complete. See <a href="#result-object">the result object</a>.</td>
             </tr>
             <tr>
               <td><span class="status-code bad">404</span></td>
               <td><code>{ error, runId, hint }</code></td>
-              <td><strong>Still running, or unknown run.</strong> This is the normal answer while waiting — not an error.</td>
+              <td><strong>Still running, or unknown run.</strong> Expected while waiting.</td>
             </tr>
             <tr>
               <td><span class="status-code bad">400</span></td>
               <td><code>{ error }</code></td>
-              <td><code>Missing runId</code>, or <code>Malformed runId</code> — run ids look like <code>msqz4i4j-6fa7c9</code>.</td>
+              <td><code>Missing runId</code> or <code>Malformed runId</code>. Format: <code>msqz4i4j-6fa7c9</code>.</td>
             </tr>
             <tr>
               <td><span class="status-code err">401</span></td>
               <td class="type">Unauthorized (text)</td>
-              <td>Bad or missing secret.</td>
+              <td>Invalid or missing secret.</td>
             </tr>
             <tr>
               <td><span class="status-code err">502</span></td>
               <td><code>{ error: "Result lookup failed" }</code></td>
-              <td>The result store could not be read. Retry.</td>
+              <td>Storage read failed. Retry.</td>
             </tr>
           </tbody>
         </table>
@@ -996,10 +989,7 @@ x-webhook-secret: &lt;secret&gt;</pre>
         <span class="endpoint-auth">Public</span>
       </div>
 
-      <p>
-        Liveness plus a boolean map of which environment variables are configured — names and
-        presence only, never values. Useful when a deploy behaves as if a credential is missing.
-      </p>
+      <p>Liveness check. <code>env</code> reports which credentials are configured, never their values.</p>
 
       <div class="code">
         <div class="code-head">
@@ -1022,20 +1012,19 @@ x-webhook-secret: &lt;secret&gt;</pre>
     <section id="webhooks">
       <h2>Webhooks <a class="anchor" href="#webhooks" aria-label="Link to Webhooks">#</a></h2>
       <p>
-        The recommended way to receive a verdict — no polling, no idle connection. It needs a
-        receiving route on your side and one config change on ours: either
-        <code>RESULT_WEBHOOK_URL</code> pointed at your endpoint, or your host added to
-        <code>RESULT_WEBHOOK_ALLOWED_HOSTS</code> so a per-request <code>callbackUrl</code> is
-        honored. Ask your Rain contact for either, and for the webhook signing secret.
+        The recommended way to receive results. Setup needs one change on our side: we point
+        <code>RESULT_WEBHOOK_URL</code> at your endpoint, or add your host to
+        <code>RESULT_WEBHOOK_ALLOWED_HOSTS</code> so you can pass <code>callbackUrl</code> per
+        request. Ask your Rain contact for either, plus the signing secret.
       </p>
       <p>
-        A <code>callbackUrl</code> must be <code>https</code>, and its host or a parent domain of
-        it must be on the allowlist — <code>hooks.example.com</code> passes when
-        <code>example.com</code> is listed. It replaces the default webhook for that run; one that
-        fails these rules sends nothing, with no fallback to the default.
+        A <code>callbackUrl</code> must use <code>https</code>, and its host or a parent domain must
+        be allowlisted (<code>example.com</code> covers <code>hooks.example.com</code>). It overrides
+        the default webhook for that run. An invalid <code>callbackUrl</code> sends nothing and does
+        not fall back to the default.
       </p>
 
-      <h3 id="webhooks-payload">What arrives <a class="anchor" href="#webhooks-payload" aria-label="Link to What arrives">#</a></h3>
+      <h3 id="webhooks-payload">Payload <a class="anchor" href="#webhooks-payload" aria-label="Link to Payload">#</a></h3>
       <div class="code">
         <div class="code-head">
           <span class="code-title">POST your endpoint</span>
@@ -1062,17 +1051,15 @@ X-Card-Art-Timestamp: &lt;unix seconds&gt;</pre>
       </div>
       <p>
         <code>event</code> is <code>card_art_check.completed</code> or
-        <code>card_art_check.failed</code>. <code>data</code> holds
-        <a href="#result-object">the result object</a> — or, for <code>failed</code>, a
-        <a href="#errors">failure result</a>.
+        <code>card_art_check.failed</code>. <code>data</code> holds the
+        <a href="#result-object">result object</a>, or a <a href="#errors">failure result</a> for
+        <code>failed</code>.
       </p>
 
-      <h3 id="webhooks-verify">Verifying the signature <a class="anchor" href="#webhooks-verify" aria-label="Link to Verifying the signature">#</a></h3>
+      <h3 id="webhooks-verify">Verify the signature <a class="anchor" href="#webhooks-verify" aria-label="Link to Verify the signature">#</a></h3>
       <p>
-        HMAC-SHA256 over <code>{timestamp}.{rawBody}</code>, keyed with the webhook signing secret
-        Rain gives you. The timestamp is inside the signed
-        material, so it can't be swapped; reject anything older than a few minutes and a captured
-        request can't be replayed either.
+        HMAC-SHA256 of <code>{timestamp}.{rawBody}</code>, keyed with your webhook signing secret.
+        The timestamp is signed; reject requests older than five minutes to block replays.
       </p>
       <div class="code">
         <div class="code-head">
@@ -1099,35 +1086,34 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
 
       <div class="note danger">
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
-        <div><p>Verify against the <strong>raw</strong> body, before JSON parsing. Re-serializing changes the bytes and the signature will never match.</p></div>
+        <div><p>Verify the <strong>raw</strong> body before parsing JSON. Re-serialized JSON will not match.</p></div>
       </div>
 
-      <h3 id="webhooks-delivery">Delivery semantics <a class="anchor" href="#webhooks-delivery" aria-label="Link to Delivery semantics">#</a></h3>
+      <h3 id="webhooks-delivery">Delivery <a class="anchor" href="#webhooks-delivery" aria-label="Link to Delivery">#</a></h3>
       <div class="table-wrap">
         <table>
           <tbody>
             <tr><td style="width:34%"><strong>Retries</strong></td><td>3 attempts, 500ms then 1s apart</td></tr>
-            <tr><td><strong>Retried on</strong></td><td><code>5xx</code>, <code>408</code>, <code>429</code>, timeouts and network errors</td></tr>
-            <tr><td><strong>Not retried</strong></td><td>any other <code>4xx</code></td></tr>
+            <tr><td><strong>Retried on</strong></td><td><code>5xx</code>, <code>408</code>, <code>429</code>, timeouts, and network errors</td></tr>
+            <tr><td><strong>Not retried</strong></td><td>Any other <code>4xx</code></td></tr>
             <tr><td><strong>Timeout</strong></td><td>10s per attempt</td></tr>
-            <tr><td><strong>Near the deadline</strong></td><td>an attempt that can't finish before the run's 280s budget is skipped</td></tr>
-            <tr><td><strong>Physical results</strong></td><td>never sent — <code>schema_version: "0-internal"</code></td></tr>
-            <tr><td><strong>Delivery failure</strong></td><td>recorded on the run; never fails the analysis</td></tr>
+            <tr><td><strong>Near the deadline</strong></td><td>Skipped if it cannot finish within the run's 280s budget</td></tr>
+            <tr><td><strong>Physical results</strong></td><td>Never sent (<code>schema_version: "0-internal"</code>)</td></tr>
+            <tr><td><strong>Delivery failure</strong></td><td>Logged on the run. Never fails the analysis.</td></tr>
           </tbody>
         </table>
       </div>
       <p>
-        Respond <code>2xx</code> quickly and do your work afterward. A retry after a slow response
-        can deliver the same result twice, so deduplicate on <code>run_id</code> +
-        <code>attachment_id</code>. A missed delivery is never lost:
-        <a href="#result"><code>GET /api/result/{runId}</code></a> still has the result.
+        Return <code>2xx</code> fast and process afterward. Retries can deliver a result twice;
+        deduplicate on <code>run_id</code> + <code>attachment_id</code>. Missed deliveries stay
+        available at <a href="#result"><code>GET /api/result/{runId}</code></a>.
       </p>
     </section>
 
     <!-- Result object -->
     <section id="result-object">
       <h2>The result object <a class="anchor" href="#result-object" aria-label="Link to The result object">#</a></h2>
-      <p>The same shape from <a href="#result"><code>GET /api/result</code></a> and in a webhook's <code>data</code>. Two outcomes, side by side:</p>
+      <p>Returned by <a href="#result"><code>GET /api/result</code></a> and in webhook <code>data</code>. Two examples:</p>
 
       <div class="code" data-group="outcome">
         <div class="code-head">
@@ -1214,7 +1200,7 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
 }</pre></div>
       </div>
 
-      <h3 id="result-fields">Field notes <a class="anchor" href="#result-fields" aria-label="Link to Field notes">#</a></h3>
+      <h3 id="result-fields">Fields <a class="anchor" href="#result-fields" aria-label="Link to Fields">#</a></h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Field</th><th>Notes</th></tr></thead>
@@ -1225,72 +1211,72 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
             </tr>
             <tr>
               <td><code>status</code></td>
-              <td>Legacy top-level state: <code>pass</code> · <code>fail</code> · <code>error</code>. <code>approved_with_notes</code> collapses to <code>pass</code>, so it erases the distinction you care about — don't decide on it. <code>error</code> means the run broke; see <a href="#errors">failures</a>.</td>
+              <td>Legacy: <code>pass</code>, <code>fail</code>, or <code>error</code>. Do not branch on it; <code>approved_with_notes</code> reads as <code>pass</code>. <code>error</code> means the run failed; see <a href="#errors">failures</a>.</td>
             </tr>
             <tr>
               <td><code>summary</code></td>
-              <td>1–2 sentences explaining the decision, written for the designer. Fits a <code>VARCHAR(1024)</code>.</td>
+              <td>One or two sentences for the designer. Fits <code>VARCHAR(1024)</code>.</td>
             </tr>
             <tr>
               <td><code>blocking_failures</code></td>
-              <td>Ids of failing <code>blocker</code> checks and failing <a href="#tech-checks">technical checks</a>. Empty means nothing blocking. A failing <code>required</code> check also makes the outcome <code>requires_changes</code> but isn't listed here — to list everything that failed, filter <code>checks</code> and <code>tech_checks</code> on <code>status: "fail"</code>.</td>
+              <td>Ids of failing <code>blocker</code> checks and <a href="#tech-checks">technical checks</a>. Failing <code>required</code> checks are not listed but still yield <code>requires_changes</code>. For every failure, filter <code>checks</code> and <code>tech_checks</code> on <code>status: "fail"</code>.</td>
             </tr>
             <tr>
               <td><code>checks</code></td>
-              <td>Always every catalog check — 22 for virtual. One the analysis didn't report is <code>unverified</code> with a note, so a missing verdict never reads as a pass.</td>
+              <td>Every catalog check (22 for virtual), always. An unreported check is <code>unverified</code>, never a silent pass.</td>
             </tr>
             <tr>
               <td><code>checks[].id</code></td>
-              <td><strong>The contract.</strong> Bind to this. Each links to its entry in the <a href="#checks">check catalog</a>.</td>
+              <td><strong>Stable. Bind to this.</strong> See the <a href="#checks">check catalog</a>.</td>
             </tr>
             <tr>
               <td><code>checks[].name</code></td>
-              <td>Display text. Never match on it.</td>
+              <td>Display text. Do not match on it.</td>
             </tr>
             <tr>
               <td><code>checks[].reason_code</code></td>
-              <td>Set on <code>fail</code> and <code>warning</code>, <code>null</code> otherwise. One of the check's codes in the catalog, or a <a href="#checks-universal">universal code</a>.</td>
+              <td>Set on <code>fail</code> and <code>warning</code>; otherwise <code>null</code>. A code from the catalog or a <a href="#checks-universal">universal code</a>.</td>
             </tr>
             <tr>
               <td><code>checks[].marker</code></td>
-              <td>Normalized 0–1 coordinates on the art — <code>{x: 0.84, y: 0.82}</code> is lower-right. Absent when the issue isn't locatable. Enough to pin the problem on a preview tile.</td>
+              <td>Issue location as 0–1 coordinates; <code>{x: 0.84, y: 0.82}</code> is lower-right. Omitted when the issue has no single location.</td>
             </tr>
             <tr>
               <td><code>checks[].merged_from</code></td>
-              <td>Present when the analysis judged several checks on one line (e.g. "No EMV chip / hologram / magstripe"); each gets the same verdict. Treat those as not independently assessed.</td>
+              <td>Present when several checks were judged together (e.g. "No EMV chip / hologram / magstripe"). They share one verdict; treat them as not independently assessed.</td>
             </tr>
             <tr>
               <td><code>tech_checks</code></td>
-              <td><code>id</code>, <code>status</code>, <code>actual</code>, <code>required</code>, <code>note</code> (<code>null</code> when empty), <code>borderline: true</code> on a near miss, and a <code>measurements</code> object when there is one.</td>
+              <td><code>id</code>, <code>status</code>, <code>actual</code>, <code>required</code>, <code>note</code> (or <code>null</code>), <code>borderline: true</code> on a near miss, and <code>measurements</code> when available.</td>
             </tr>
             <tr>
               <td><code>counts</code></td>
-              <td>Checks per status. Only non-zero statuses appear as keys.</td>
+              <td>Checks per status. Zero counts are omitted.</td>
             </tr>
             <tr>
               <td><code>project</code> · <code>tenant</code></td>
-              <td>The partner ids you sent: <code>project.id</code> with the Rocketlane <code>name</code> we looked up, and <code>tenant.id</code>. An id you didn't send is <code>null</code>.</td>
+              <td>The ids you sent, plus the Rocketlane project <code>name</code>. Unsent ids are <code>null</code>.</td>
             </tr>
             <tr>
               <td><code>submission</code></td>
-              <td><code>file_name</code>, plus <code>declared_product</code> when you sent one we recognized.</td>
+              <td><code>file_name</code>, plus <code>declared_product</code> if recognized.</td>
             </tr>
             <tr>
               <td><code>trigger</code></td>
-              <td><code>reference</code> echoes the one you sent.</td>
+              <td><code>reference</code> echoes your value.</td>
             </tr>
             <tr>
               <td><code>colors</code></td>
-              <td>Extracted from the art. Compare against the colors the tenant declared.</td>
+              <td>Extracted from the art, for comparison with the tenant's declared colors.</td>
             </tr>
             <tr>
               <td><code>unmapped_checks</code></td>
-              <td>Should always be <code>[]</code>. Non-empty means our prompt and catalog have drifted — nothing is dropped, but tell us.</td>
+              <td>Should be <code>[]</code>. If not, nothing is lost, but tell us.</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p>New fields may appear within <code>schema_version: "1.0"</code>; ignore the ones you don't know.</p>
+      <p><code>schema_version: "1.0"</code> may add fields. Ignore unknown fields.</p>
     </section>
 
     <!-- Enums -->
@@ -1311,24 +1297,24 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
           <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
           <tbody>
             <tr><td><code>pass</code></td><td>Meets the rule.</td></tr>
-            <tr><td><code>fail</code></td><td>Breaks the rule. Any failing check makes the outcome <code>requires_changes</code>.</td></tr>
-            <tr><td><code>warning</code></td><td>A borderline call that didn't fail — real and common. Worth a human glance.</td></tr>
-            <tr><td><code>unverified</code></td><td>Couldn't be assessed — e.g. the Brand Mark wasn't located, or the analysis didn't report the check.</td></tr>
-            <tr><td><code>estimated</code></td><td>A measurement taken approximately rather than exactly.</td></tr>
-            <tr><td><code>not_submitted</code></td><td>The input it needs wasn't sent (physical back side).</td></tr>
+            <tr><td><code>fail</code></td><td>Breaks the rule. Any failure yields <code>requires_changes</code>.</td></tr>
+            <tr><td><code>warning</code></td><td>Borderline but not failing. Common; worth a human look.</td></tr>
+            <tr><td><code>unverified</code></td><td>Could not be assessed, e.g. the Brand Mark was not found.</td></tr>
+            <tr><td><code>estimated</code></td><td>Approximate measurement.</td></tr>
+            <tr><td><code>not_submitted</code></td><td>Required input not sent (physical back side).</td></tr>
           </tbody>
         </table>
       </div>
 
-      <h3 id="enums-mapping">Mapping onto a card art form <a class="anchor" href="#enums-mapping" aria-label="Link to Mapping onto a card art form">#</a></h3>
+      <h3 id="enums-mapping">Recommended handling <a class="anchor" href="#enums-mapping" aria-label="Link to Recommended handling">#</a></h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Result</th><th>Row transition</th></tr></thead>
+          <thead><tr><th>Result</th><th>Action</th></tr></thead>
           <tbody>
             <tr><td><code>outcome: "approved"</code></td><td>Approve</td></tr>
-            <tr><td><code>outcome: "approved_with_notes"</code></td><td>Hold for review — it passes, but at least one warning is worth a human glance</td></tr>
-            <tr><td><code>outcome: "requires_changes"</code></td><td>Reject, citing <code>summary</code> and the failing checks</td></tr>
-            <tr><td><code>status: "error"</code></td><td><strong>No transition.</strong> Retry — see <a href="#errors">failures</a>.</td></tr>
+            <tr><td><code>outcome: "approved_with_notes"</code></td><td>Hold for human review (passes with warnings)</td></tr>
+            <tr><td><code>outcome: "requires_changes"</code></td><td>Reject with <code>summary</code> and the failing checks</td></tr>
+            <tr><td><code>status: "error"</code></td><td><strong>No action.</strong> Retry; see <a href="#errors">failures</a>.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1337,17 +1323,12 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     <!-- Check catalog -->
     <section id="checks">
       <h2>Check catalog <a class="anchor" href="#checks" aria-label="Link to Check catalog">#</a></h2>
+      <p>The 22 rules for virtual card art. Select a zone to see its rules, or filter by severity or id.</p>
       <p>
-        The 22 rules applied to virtual card art. Most of them are questions about
-        <em>where</em> something sits, which is why a result can point at coordinates. Pick a zone
-        to see what it governs, or narrow the list by severity or id.
-      </p>
-      <p>
-        <code>severity</code> is fixed per check. Any failing check makes the outcome
-        <code>requires_changes</code>; a <code>blocker</code> failure is also listed in
-        <code>blocking_failures</code>, a <code>required</code> one is not, and the
-        <code>advisory</code> check only ever warns. Each check lists the reason codes it can
-        return.
+        Each check has a fixed <code>severity</code>. Any failure yields
+        <code>requires_changes</code>. <code>blocker</code> failures also appear in
+        <code>blocking_failures</code>; <code>required</code> failures do not.
+        <code>advisory</code> checks only warn. Each check lists its possible reason codes.
       </p>
 
       <figure class="zone-figure">
@@ -1368,7 +1349,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 
           <!-- Lower-left PAN zone -->
           <rect class="zone-region" data-zone="pan" x="12" y="102" width="112" height="38" rx="4"/>
-          <text class="zone-label" data-zone="pan" x="18" y="125">PAN ZONE — KEEP CLEAR</text>
+          <text class="zone-label" data-zone="pan" x="18" y="125">PAN ZONE: KEEP CLEAR</text>
 
           <!-- Whole-card region, drawn last so it sits above -->
           <rect class="zone-region" data-zone="card" x="6" y="6" width="228" height="140" rx="7"/>
@@ -1378,19 +1359,19 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
           <div class="zone-key-title">Zones</div>
           <button class="zone-item" data-zone="mark">
             <strong>Visa Brand Mark</strong>
-            Upper-left or upper-right only — never a lower corner.
+            Upper-left or upper-right only.
           </button>
           <button class="zone-item" data-zone="identifier">
             <strong>Product identifier</strong>
-            Same corner as the mark, directly beneath it, never separated.
+            Directly below the mark, same corner.
           </button>
           <button class="zone-item" data-zone="pan">
             <strong>PAN zone</strong>
-            Lower-left area stays clear so the card number stays legible.
+            Keep clear so the card number stays legible.
           </button>
           <button class="zone-item" data-zone="card">
             <strong>Whole card</strong>
-            Orientation, color, and everything prohibited anywhere on the art.
+            Orientation, color, and prohibited elements.
           </button>
         </div>
       </figure>
@@ -1430,7 +1411,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">Visa Brand Mark position (upper-left/upper-right only)</p>
             <dl class="reasons">
               <dt><code>position_lower_edge</code></dt>
-              <dd>The Brand Mark sits in a lower corner. Only the upper-left and upper-right are allowed.</dd>
+              <dd>The Brand Mark is in a lower corner. Only upper corners are allowed.</dd>
               <dt><code>position_wrong_corner</code></dt>
               <dd>The Brand Mark isn't anchored to an upper corner.</dd>
               <dt><code>mark_absent</code></dt>
@@ -1448,7 +1429,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
               <dt><code>size_undersized</code></dt>
               <dd>The mark is noticeably smaller than Visa's 109px lockup.</dd>
               <dt><code>size_oversized</code></dt>
-              <dd>The mark is noticeably larger than 109px — including the retired 142px &quot;Option Two&quot;.</dd>
+              <dd>The mark is noticeably larger than 109px, including the retired 142px &quot;Option Two&quot;.</dd>
               <dt><code>size_unverifiable</code></dt>
               <dd>The mark's size couldn't be measured.</dd>
             </dl>
@@ -1464,7 +1445,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
               <dt><code>margin_below_minimum</code></dt>
               <dd>The mark is closer than 53px to its nearest top/bottom or side edge. Visa places it at 56px.</dd>
               <dt><code>margin_above_target</code></dt>
-              <dd>The mark is farther than 59px from an edge. Visa places it at 56px, not &quot;at least&quot; 56px.</dd>
+              <dd>The mark is farther than 59px from an edge. Visa requires 56px, not &quot;at least&quot; 56px.</dd>
               <dt><code>margin_unverifiable</code></dt>
               <dd>The mark's distance from the edges couldn't be measured.</dd>
             </dl>
@@ -1480,7 +1461,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
               <dt><code>contrast_insufficient_wordmark</code></dt>
               <dd>The VISA wordmark merges into a busy or same-tone background.</dd>
               <dt><code>contrast_insufficient_identifier</code></dt>
-              <dd>The product identifier is hard to read — e.g. a weaker color than the wordmark.</dd>
+              <dd>The product identifier is hard to read, e.g. a weaker color than the wordmark.</dd>
             </dl>
           </article>
           <article class="check" id="check-visa_brand_mark_color" data-zone="mark" data-severity="blocker">
@@ -1517,13 +1498,13 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
               <dt><code>identifier_in_pan_zone</code></dt>
               <dd>The identifier sits in the lower-left personalization zone.</dd>
               <dt><code>identifier_casing</code></dt>
-              <dd>The identifier's casing differs from Visa's lockup — e.g. &quot;PLATINUM&quot; for &quot;Platinum&quot;.</dd>
+              <dd>The identifier's casing differs from Visa's lockup, e.g. &quot;PLATINUM&quot; for &quot;Platinum&quot;.</dd>
               <dt><code>identifier_tier_mismatch</code></dt>
               <dd>The identifier doesn't read exactly the declared product, every word in order.</dd>
               <dt><code>identifier_misaligned</code></dt>
               <dd>The identifier's edge doesn't line up with the mark's outer edge on the mark's side.</dd>
               <dt><code>identifier_font_mismatch</code></dt>
-              <dd>The identifier isn't in Visa's identifier type — italicized, another family, or modified letters. A slight difference warns.</dd>
+              <dd>The identifier is not in Visa's identifier typeface (italicized, another family, or modified letters). A slight difference warns.</dd>
               <dt><code>identifier_size_mismatch</code></dt>
               <dd>The identifier is visibly too large or too small for the lockup.</dd>
               <dt><code>lockup_not_official_artwork</code></dt>
@@ -1542,7 +1523,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">Issuer logo present</p>
             <dl class="reasons">
               <dt><code>issuer_logo_absent</code></dt>
-              <dd>No issuer logo. Visa accepts this on virtual cards, so it is only ever a warning.</dd>
+              <dd>No issuer logo. Allowed on virtual cards, so it only warns.</dd>
             </dl>
           </article>
           <article class="check" id="check-issuer_logo_within_border" data-zone="card" data-severity="blocker">
@@ -1583,7 +1564,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No EMV chip graphic</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
             </dl>
           </article>
           <article class="check" id="check-no_hologram" data-zone="card" data-severity="blocker">
@@ -1595,7 +1576,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No hologram imagery</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
             </dl>
           </article>
           <article class="check" id="check-no_magnetic_stripe" data-zone="card" data-severity="blocker">
@@ -1607,7 +1588,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No magnetic stripe graphic</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
             </dl>
           </article>
           <article class="check" id="check-no_cardholder_name" data-zone="card" data-severity="blocker">
@@ -1619,7 +1600,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No cardholder name</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
             </dl>
           </article>
           <article class="check" id="check-no_pan" data-zone="card" data-severity="blocker">
@@ -1631,7 +1612,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No PAN / card number</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
             </dl>
           </article>
           <article class="check" id="check-no_expiry_date" data-zone="card" data-severity="blocker">
@@ -1643,7 +1624,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No expiry date</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
             </dl>
           </article>
           <article class="check" id="check-no_physical_card_photography" data-zone="card" data-severity="required">
@@ -1655,7 +1636,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <p class="check-name">No physical card photography</p>
             <dl class="reasons">
               <dt><code>prohibited_element_present</code></dt>
-              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dd>A prohibited element is on the art. The check name says which.</dd>
               <dt><code>border_frame_present</code></dt>
               <dd>A border line, transparent padding or frame surrounds the art instead of the design running to every edge.</dd>
             </dl>
@@ -1686,7 +1667,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
               <dt><code>pan_zone_obstructed</code></dt>
               <dd>A logo, icon, text or high-contrast graphic sits in the lower-left zone, where the wallet overlays the last 4 digits.</dd>
               <dt><code>pan_zone_legibility_risk</code></dt>
-              <dd>An illustration detail in the lower-left zone that still leaves overlaid digits legible. Only ever a warning.</dd>
+              <dd>Illustration detail in the lower-left zone that leaves overlaid digits legible. Warning only.</dd>
             </dl>
           </article>
           <article class="check" id="check-design_elements_clear_of_identifier" data-zone="identifier" data-severity="blocker">
@@ -1728,13 +1709,12 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         </div>
       </div>
       <!-- /generated:catalog -->
-      <p class="catalog-empty" id="catalogEmpty" hidden>No check matches. <button class="link-btn" id="catalogReset">Clear filters</button></p>
+      <p class="catalog-empty" id="catalogEmpty" hidden>No matching checks. <button class="link-btn" id="catalogReset">Clear filters</button></p>
 
       <p id="checks-universal">
-        Three more reason codes are valid on any check: <code>source_is_screenshot</code> (the
-        upload is a screenshot rather than an exported design file),
-        <code>source_not_production_file</code> (a mockup or preview rather than the art itself),
-        and <code>other</code> — which is also what an unrecognized code becomes.
+        Three reason codes apply to any check: <code>source_is_screenshot</code> (a screenshot,
+        not an exported file), <code>source_not_production_file</code> (a mockup or preview, not
+        the artwork), and <code>other</code> (no specific code fits, or the code is unrecognized).
       </p>
     </section>
 
@@ -1742,20 +1722,19 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     <section id="tech-checks">
       <h2>Technical checks <a class="anchor" href="#tech-checks" aria-label="Link to Technical checks">#</a></h2>
       <p>
-        Thirteen deterministic measurements ride along in <code>tech_checks</code>. A failing one
-        always makes the outcome <code>requires_changes</code> and is listed in
-        <code>blocking_failures</code> — the structural three included. Most also fail the visual
-        check they mirror, so the problem shows up in <code>checks</code> too.
+        Thirteen automated measurements, returned in <code>tech_checks</code>. Any failure yields
+        <code>requires_changes</code> and appears in <code>blocking_failures</code>. Most also fail
+        the visual check they mirror, so the issue shows in <code>checks</code> too.
       </p>
 
       <div class="table-wrap wide">
         <table id="tech-check-table">
           <thead><tr><th>Id</th><th>Measures</th><th>Requirement</th><th>Mirrors</th></tr></thead>
           <tbody>
-            <tr data-tech="dimensions"><td><code>dimensions</code></td><td>Canvas size</td><td>Exactly 1536×969 px</td><td>—</td></tr>
-            <tr data-tech="file_format"><td><code>file_format</code></td><td>File type</td><td>PNG</td><td>—</td></tr>
-            <tr data-tech="dpi"><td><code>dpi</code></td><td>Declared density</td><td>72. No density metadata reads as 72.</td><td>—</td></tr>
-            <tr data-tech="bleed_zone"><td><code>bleed_zone</code> <sup>†</sup></td><td>Brand Mark distance from the edges</td><td>At 56px ±3 — too far fails as well as too close</td><td><a href="#check-visa_brand_mark_margin"><code>visa_brand_mark_margin</code></a></td></tr>
+            <tr data-tech="dimensions"><td><code>dimensions</code></td><td>Canvas size</td><td>Exactly 1536×969 px</td><td>None</td></tr>
+            <tr data-tech="file_format"><td><code>file_format</code></td><td>File type</td><td>PNG</td><td>None</td></tr>
+            <tr data-tech="dpi"><td><code>dpi</code></td><td>Declared density</td><td>72 (missing metadata counts as 72)</td><td>None</td></tr>
+            <tr data-tech="bleed_zone"><td><code>bleed_zone</code> <sup>†</sup></td><td>Brand Mark distance from the edges</td><td>56px ±3. Too far also fails.</td><td><a href="#check-visa_brand_mark_margin"><code>visa_brand_mark_margin</code></a></td></tr>
             <tr data-tech="mark_position"><td><code>mark_position</code> <sup>†</sup></td><td>Brand Mark corner</td><td>Upper-left or upper-right</td><td><a href="#check-visa_brand_mark_position"><code>visa_brand_mark_position</code></a></td></tr>
             <tr data-tech="mark_size"><td><code>mark_size</code> <sup>†</sup></td><td>Brand Mark height</td><td>109px (102–116)</td><td><a href="#check-visa_brand_mark_size"><code>visa_brand_mark_size</code></a></td></tr>
             <tr data-tech="identifier_alignment"><td><code>identifier_alignment</code> <sup>†</sup></td><td>Identifier placement</td><td>Aligned with the Brand Mark</td><td><a href="#check-product_identifier"><code>product_identifier</code></a></td></tr>
@@ -1763,25 +1742,23 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <tr data-tech="lockup_match"><td><code>lockup_match</code> <sup>†</sup></td><td>Mark + identifier artwork</td><td>Matches Visa's official lockup</td><td><a href="#check-product_identifier"><code>product_identifier</code></a></td></tr>
             <tr data-tech="identifier_clearance"><td><code>identifier_clearance</code> <sup>†</sup></td><td>Pixels touching the identifier</td><td>No artwork touching it</td><td><a href="#check-design_elements_clear_of_identifier"><code>design_elements_clear_of_identifier</code></a></td></tr>
             <tr data-tech="issuer_logo_border"><td><code>issuer_logo_border</code></td><td>Partner logo distance from the edges</td><td>At least 53px</td><td><a href="#check-issuer_logo_within_border"><code>issuer_logo_within_border</code></a></td></tr>
-            <tr data-tech="square_corners"><td><code>square_corners</code></td><td>Canvas corners</td><td>Square, not rounded</td><td>—</td></tr>
+            <tr data-tech="square_corners"><td><code>square_corners</code></td><td>Canvas corners</td><td>Square, not rounded</td><td>None</td></tr>
             <tr data-tech="border_frame"><td><code>border_frame</code></td><td>Lines along the edges</td><td>No frame or border</td><td><a href="#check-art_fills_canvas"><code>art_fills_canvas</code></a></td></tr>
           </tbody>
         </table>
       </div>
       <p>
-        <sup>†</sup> Needs the Brand Mark located. When it can't be, these report
-        <code>unverified</code> and the visual review decides. A borderline measurement lifts a
-        passing visual check to <code>warning</code>. Measurements only escalate: a passing one
-        never clears a visual failure, because the review can see what a measurement can't — a
-        redrawn lockup that happens to measure right.
+        <sup>†</sup> Requires a located Brand Mark; otherwise <code>unverified</code>, and the
+        visual review decides. A borderline measurement raises a passing visual check to
+        <code>warning</code>. Measurements only escalate: a passing measurement never overrides a
+        visual failure.
       </p>
 
       <div class="note">
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.3v4M8 4.9v.1"/></svg></span>
         <div>
-          <p>If you validate size and format before submitting, the structural checks should
-          always pass. A structural failure means your validation and ours disagree about the same
-          file — worth an alert as well as the rejection.</p>
+          <p>If you validate size and format before submitting, structural checks should always
+          pass. A structural failure means our validations disagree; alert on it.</p>
         </div>
       </div>
     </section>
@@ -1790,11 +1767,10 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     <section id="errors">
       <h2>Errors &amp; failures <a class="anchor" href="#errors" aria-label="Link to Errors and failures">#</a></h2>
       <p>
-        A check that couldn't finish still ends with a result, so <em>"this card has problems"</em>
-        stays distinguishable from <em>"the checker fell over"</em>. It arrives the same way as
-        any result — from <code>GET /api/result</code> or as a <code>card_art_check.failed</code>
-        webhook — and looks like this. A run about to hit the platform's 300-second ceiling
-        publishes a <code>function_timeout</code> failure, so polling always ends.
+        A run that cannot finish still returns a result, so a broken run is never mistaken for a
+        rejected design. It arrives like any result, through <code>GET /api/result</code> or a
+        <code>card_art_check.failed</code> webhook. Runs nearing the 300-second limit publish
+        <code>function_timeout</code>, so polling always ends.
       </p>
 
       <div class="note danger">
@@ -1828,31 +1804,30 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
       </div>
 
       <p>
-        The cheapest discriminator is <code>status === "error"</code>. A failure result carries no
-        <code>checks</code>, <code>counts</code>, <code>summary</code>, or
-        <code>blocking_failures</code> at all, and <code>outcome</code> is <code>null</code>.
-        <code>card_type</code> is <code>null</code> when the run failed before the type was resolved.
-        <code>error.step</code> names the stage that broke: <code>pipeline</code>, <code>rocketlane</code>,
-        <code>tech_specs</code>, <code>agent_init</code>, <code>agent_run</code>, or
-        <code>pdf_generate</code>.
+        Detect failures with <code>status === "error"</code>. Failure results have
+        <code>outcome: null</code> and no <code>checks</code>, <code>counts</code>,
+        <code>summary</code>, or <code>blocking_failures</code>. <code>card_type</code> is
+        <code>null</code> if the run failed before resolving it. <code>error.step</code> names the
+        failed stage: <code>pipeline</code>, <code>rocketlane</code>, <code>tech_specs</code>,
+        <code>agent_init</code>, <code>agent_run</code>, or <code>pdf_generate</code>.
       </p>
 
       <h3 id="error-codes">Error codes <a class="anchor" href="#error-codes" aria-label="Link to Error codes">#</a></h3>
-      <p>A closed set. Anything unrecognized becomes <code>internal_error</code> rather than being misattributed.</p>
+      <p>A closed set. Anything unclassified is <code>internal_error</code>.</p>
       <div class="table-wrap">
         <table id="error-code-table">
-          <thead><tr><th>Code</th><th>What happened</th><th>What to do</th></tr></thead>
+          <thead><tr><th>Code</th><th>Cause</th><th>Action</th></tr></thead>
           <tbody>
-            <tr data-error="visual_budget_exhausted"><td><code>visual_budget_exhausted</code></td><td>Preparing the file left too little time for the visual review — usually an oversized or layered file.</td><td>Resubmit a flattened PNG</td></tr>
-            <tr data-error="function_timeout"><td><code>function_timeout</code></td><td>The run hit the platform's 300-second ceiling, or a step ran out of time.</td><td>Retry</td></tr>
-            <tr data-error="agent_output_unparseable"><td><code>agent_output_unparseable</code></td><td>The analysis came back in a shape we could not read.</td><td>Retry</td></tr>
-            <tr data-error="spec_check_failed"><td><code>spec_check_failed</code></td><td>The technical measurement pass failed.</td><td>Retry</td></tr>
-            <tr data-error="card_type_indeterminate"><td><code>card_type_indeterminate</code></td><td>Card type could not be inferred and none was sent.</td><td>Send <code>cardType</code></td></tr>
-            <tr data-error="attachment_download_failed"><td><code>attachment_download_failed</code></td><td>The art could not be downloaded from its source. Not emitted by <code>/api/card-check</code>.</td><td>Retry</td></tr>
-            <tr data-error="missing_project_id"><td><code>missing_project_id</code></td><td>Neither a <code>projectId</code> nor a <code>tenantId</code> was usable — missing or malformed — or Rocketlane doesn't know the <code>projectId</code>.</td><td>Send a valid <code>tenantId</code> or <code>projectId</code></td></tr>
+            <tr data-error="visual_budget_exhausted"><td><code>visual_budget_exhausted</code></td><td>File prep left too little time for visual review. Usually an oversized or layered file.</td><td>Resubmit a flattened PNG</td></tr>
+            <tr data-error="function_timeout"><td><code>function_timeout</code></td><td>The run or a step hit its time limit (300s max).</td><td>Retry</td></tr>
+            <tr data-error="agent_output_unparseable"><td><code>agent_output_unparseable</code></td><td>The analysis returned unreadable output.</td><td>Retry</td></tr>
+            <tr data-error="spec_check_failed"><td><code>spec_check_failed</code></td><td>Technical measurements failed to run.</td><td>Retry</td></tr>
+            <tr data-error="card_type_indeterminate"><td><code>card_type_indeterminate</code></td><td>No <code>cardType</code> sent, and none could be inferred.</td><td>Send <code>cardType</code></td></tr>
+            <tr data-error="attachment_download_failed"><td><code>attachment_download_failed</code></td><td>Art download failed. Not emitted by <code>/api/card-check</code>.</td><td>Retry</td></tr>
+            <tr data-error="missing_project_id"><td><code>missing_project_id</code></td><td>No usable <code>tenantId</code> or <code>projectId</code>, or Rocketlane does not know the <code>projectId</code>.</td><td>Send a valid <code>tenantId</code> or <code>projectId</code></td></tr>
             <tr data-error="card_art_missing"><td><code>card_art_missing</code></td><td>No file in the request.</td><td>Send the file</td></tr>
-            <tr data-error="internal_error"><td><code>internal_error</code></td><td>Anything else.</td><td>Retry once; tell us if it recurs</td></tr>
-            <tr data-error="abandoned"><td><code>abandoned</code></td><td rowspan="3">Reserved — not emitted by <code>/api/card-check</code>. Handle like <code>internal_error</code>.</td><td rowspan="3">Retry</td></tr>
+            <tr data-error="internal_error"><td><code>internal_error</code></td><td>Anything else.</td><td>Retry once. Report if it recurs.</td></tr>
+            <tr data-error="abandoned"><td><code>abandoned</code></td><td rowspan="3">Reserved. Not emitted by <code>/api/card-check</code>. Handle as <code>internal_error</code>.</td><td rowspan="3">Retry</td></tr>
             <tr data-error="unsupported_card_type"><td><code>unsupported_card_type</code></td></tr>
             <tr data-error="no_attachment_resolved"><td><code>no_attachment_resolved</code></td></tr>
           </tbody>
@@ -1866,18 +1841,18 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
       <div class="table-wrap">
         <table>
           <tbody>
-            <tr><td style="width:34%"><strong>Run duration</strong></td><td>Usually about two minutes. The function ceiling is 300s; the pipeline self-limits at 280s so it degrades rather than dying mid-step, and won't start the visual review with less than 150s left (<code>visual_budget_exhausted</code>).</td></tr>
+            <tr><td style="width:34%"><strong>Run duration</strong></td><td>About two minutes; 300s maximum. The visual review needs 150s remaining to start, otherwise <code>visual_budget_exhausted</code>.</td></tr>
             <tr><td><strong>Results per run</strong></td><td>One. <code>attachment_id</code> is always <code>null</code>.</td></tr>
-            <tr><td><strong>Virtual only</strong></td><td>Physical results carry <code>schema_version: "0-internal"</code>, are never pushed to webhooks, and their enums may change without notice.</td></tr>
-            <tr><td><strong>Multipart parse</strong></td><td>30s. A slower upload fails with <code>Multipart parse timed out</code>.</td></tr>
-            <tr><td><strong>Report URLs</strong></td><td>Public and permanent. Unguessable, but unauthenticated — don't put one anywhere you wouldn't put the report itself.</td></tr>
+            <tr><td><strong>Virtual only</strong></td><td>Physical results use <code>schema_version: "0-internal"</code>, are never sent by webhook, and may change without notice.</td></tr>
+            <tr><td><strong>Multipart parse</strong></td><td>30s. Slower uploads fail with <code>Multipart parse timed out</code>.</td></tr>
+            <tr><td><strong>Report URLs</strong></td><td>Public, permanent, and unguessable, but unauthenticated. Share them only where you would share the report.</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="foot">
-        <span>Questions → your Rain contact.</span>
-        <span><a href="/">Send a real request in the playground →</a></span>
+        <span>Questions? Ask your Rain contact.</span>
+        <span><a href="/">Try it in the playground →</a></span>
       </div>
     </section>
 

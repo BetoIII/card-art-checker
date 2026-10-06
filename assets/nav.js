@@ -67,11 +67,11 @@
 
   /* ── Destinations ────────────────────────────────────── */
 
-  // Every href here is a route that exists: '/' and rewrites declared in
-  // vercel.json. Keep them in step. /upload is deliberately absent: it is the
-  // customer form reached through Rocketlane, not a page to browse to.
+  // Every href here is a rewrite declared in vercel.json. Keep them in step.
+  // '/' has no link of its own: the brand is the way home. /upload is
+  // deliberately absent: it is the customer form reached through Rocketlane,
+  // not a page to browse to.
   const LINKS = [
-    { href: '/',          label: 'Playground' },
     { href: '/reference', label: 'Reference' },
     { href: '/admin',     label: 'Admin' },
   ];
@@ -104,7 +104,7 @@
       (cfg.menu
         ? `<button class="rn-btn" id="rn-menu" aria-label="Open navigation" aria-expanded="false">${menuIcon}</button>`
         : '') +
-      `<a class="rn-brand" href="/">
+      `<a class="rn-brand" href="/"${here === '/' ? ' aria-current="page"' : ''}>
          <img class="rn-brand-mark" src="/assets/brand/rain-wordmark.svg" alt="Rain" width="53" height="16">
          <span class="rn-brand-sep" aria-hidden="true"></span>
          <span class="rn-brand-name">Card Art Checker</span>
