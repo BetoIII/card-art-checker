@@ -121,20 +121,6 @@ a:hover { text-decoration: underline; }
   .sidebar.open { transform: translateX(0); }
 }
 
-.nav-search {
-  width: 100%;
-  padding: 7px 11px;
-  margin-bottom: 20px;
-  font-family: var(--font); font-size: 13px;
-  color: var(--ink);
-  background: var(--paper-2);
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-  outline: none;
-}
-.nav-search::placeholder { color: var(--faint); }
-.nav-search:focus { border-color: var(--accent); }
-
 .nav-group { margin-bottom: 22px; }
 .nav-group-title {
   font-size: 11px; font-weight: 600; text-transform: uppercase;
@@ -156,8 +142,6 @@ a:hover { text-decoration: underline; }
   background: var(--accent-soft);
   border-left-color: var(--accent);
 }
-.nav-link.hidden { display: none; }
-.nav-group.hidden { display: none; }
 
 .nav-method {
   font-family: var(--mono); font-size: 9.5px; font-weight: 600;
@@ -356,9 +340,9 @@ a code { color: inherit; border-color: currentColor; }
   margin-bottom: 20px;
 }
 table { border-collapse: collapse; min-width: 100%; font-size: 13.5px; }
-/* The check catalog packs 30-character identifiers into four columns. Setting
-   them a step down fits the whole table in the reading column at desktop
-   widths; narrower than that, the wrapper scrolls. */
+/* The technical-check table packs long identifiers into four columns. Setting
+   them a step down fits it in the reading column at desktop widths; narrower
+   than that, the wrapper scrolls. */
 .table-wrap.wide td code { font-size: 11px; padding: 1px 5px; }
 .table-wrap.wide td, .table-wrap.wide th { padding-left: 10px; padding-right: 10px; }
 th {
@@ -379,7 +363,6 @@ tbody tr:last-child td { border-bottom: none; }
 /* Inside a table the wrapper scrolls, so identifiers stay on one line. */
 td code, th code { white-space: nowrap; overflow-wrap: normal; }
 tbody tr:hover td { background: var(--paper-2); }
-tbody tr { transition: opacity 0.18s; }
 
 .req {
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.4px;
@@ -546,6 +529,79 @@ tbody tr { transition: opacity 0.18s; }
   cursor: default;
 }
 
+/* ── Check catalog ─────────────────────────────────────── */
+
+.catalog-filter {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 0 8px;
+}
+.catalog-filter input {
+  flex: 1 1 240px; min-width: 0;
+  padding: 7px 11px;
+  font-family: var(--font); font-size: 13px;
+  color: var(--ink); background: var(--paper-2);
+  border: 1px solid var(--line-2); border-radius: 8px;
+  outline: none;
+}
+.catalog-filter input::placeholder { color: var(--faint); }
+.catalog-filter input:focus { border-color: var(--accent); }
+.chips { display: flex; gap: 6px; }
+.chip {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--paper);
+  color: var(--muted); cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chip:hover { color: var(--ink); }
+.chip[aria-pressed="true"] { border-color: transparent; }
+.chip.blocker[aria-pressed="true"]  { background: var(--cc-error-bg);   color: var(--cc-error-text); }
+.chip.required[aria-pressed="true"] { background: var(--cc-warning-bg); color: var(--cc-warning-text); }
+.chip.advisory[aria-pressed="true"] { background: var(--paper-3);       color: var(--ink); }
+.catalog-count { margin-left: auto; font-size: 12px; color: var(--faint); }
+
+.catalog-group[hidden], .check[hidden] { display: none; }
+.catalog-group h3 { margin: 26px 0 10px; }
+
+.check {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  transition: opacity 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.check.dim { opacity: 0.35; }
+/* A deep link from a result or a report lands on one rule; mark which. */
+.check:target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.check-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.check-id { font-size: 12.5px; font-weight: 600; }
+.check-head .anchor { margin-left: 0; }
+.check:hover .anchor { opacity: 1; }
+.content .check-name { margin: 4px 0 10px; font-size: 14px; color: var(--muted); }
+.reasons {
+  display: grid;
+  /* One code column for every card, wide enough for the longest code, so
+     the meanings line up down the page. */
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13.5px; line-height: 1.5;
+}
+.reasons dt code { font-size: 11.5px; white-space: nowrap; }
+.reasons dd { margin: 0; }
+@media (max-width: 640px) {
+  .reasons { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .reasons dd { margin-bottom: 8px; }
+}
+
+.catalog-empty { color: var(--muted); font-size: 14px; }
+.link-btn {
+  padding: 0; border: none; background: none;
+  font: inherit; color: var(--accent); cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+
 /* ── Footer ────────────────────────────────────────────── */
 
 .foot {
@@ -576,8 +632,6 @@ tbody tr { transition: opacity 0.18s; }
 
   <!-- ── Sidebar ─────────────────────────────────────── -->
   <nav class="sidebar" id="sidebar" aria-label="Documentation">
-    <input class="nav-search" id="navSearch" type="search" placeholder="Filter…" aria-label="Filter navigation">
-
     <div class="nav-group">
       <div class="nav-group-title">Get started</div>
       <a class="nav-link" href="#overview">Overview</a>
@@ -1253,7 +1307,14 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
       <p>
         The 22 rules applied to virtual card art. Most of them are questions about
         <em>where</em> something sits, which is why a result can point at coordinates. Pick a zone
-        to see what it governs.
+        to see what it governs, or narrow the list by severity or id.
+      </p>
+      <p>
+        <code>severity</code> is fixed per check. Any failing check makes the outcome
+        <code>requires_changes</code>; a <code>blocker</code> failure is also listed in
+        <code>blocking_failures</code>, a <code>required</code> one is not, and the
+        <code>advisory</code> check only ever warns. Each check lists the reason codes it can
+        return.
       </p>
 
       <figure class="zone-figure">
@@ -1301,35 +1362,340 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         </div>
       </figure>
 
-      <div class="table-wrap wide">
-        <table>
-          <thead><tr><th>Check id</th><th>Category</th><th>Severity</th><th>Reason codes</th></tr></thead>
-          <tbody>
-            <tr id="check-visa_brand_mark_present" data-zone="mark"><td><code>visa_brand_mark_present</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>mark_absent</code></td></tr>
-            <tr id="check-visa_brand_mark_position" data-zone="mark"><td><code>visa_brand_mark_position</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>position_lower_edge</code> <code>position_wrong_corner</code> <code>mark_absent</code></td></tr>
-            <tr id="check-visa_brand_mark_size" data-zone="mark"><td><code>visa_brand_mark_size</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>size_undersized</code> <code>size_oversized</code> <code>size_unverifiable</code></td></tr>
-            <tr id="check-visa_brand_mark_margin" data-zone="mark"><td><code>visa_brand_mark_margin</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>margin_below_minimum</code> <code>margin_above_target</code> <code>margin_unverifiable</code></td></tr>
-            <tr id="check-visa_brand_mark_contrast" data-zone="mark"><td><code>visa_brand_mark_contrast</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>contrast_insufficient_wordmark</code> <code>contrast_insufficient_identifier</code></td></tr>
-            <tr id="check-visa_brand_mark_color" data-zone="mark"><td><code>visa_brand_mark_color</code></td><td>brand_mark</td><td><span class="sev blocker">blocker</span></td><td><code>mark_color_not_permitted</code> <code>mark_gradient_applied</code></td></tr>
-            <tr id="check-product_identifier" data-zone="identifier"><td><code>product_identifier</code></td><td>product_identifier</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_absent</code> <code>identifier_wrong_corner</code> <code>identifier_separated_from_mark</code> <code>identifier_in_pan_zone</code> <code>identifier_casing</code> <code>identifier_tier_mismatch</code> <code>identifier_misaligned</code> <code>identifier_font_mismatch</code> <code>identifier_size_mismatch</code> <code>lockup_not_official_artwork</code></td></tr>
-            <tr id="check-issuer_logo_present" data-zone="card"><td><code>issuer_logo_present</code></td><td>required_elements</td><td><span class="sev advisory">advisory</span></td><td><code>issuer_logo_absent</code></td></tr>
-            <tr id="check-issuer_logo_within_border" data-zone="card"><td><code>issuer_logo_within_border</code></td><td>required_elements</td><td><span class="sev blocker">blocker</span></td><td><code>issuer_logo_in_bleed_zone</code></td></tr>
-            <tr id="check-contactless_indicator" data-zone="card"><td><code>contactless_indicator</code></td><td>required_elements</td><td><span class="sev required">required</span></td><td><code>contactless_indicator_incorrect</code> <code>contactless_indicator_rotated</code></td></tr>
-            <tr id="check-no_emv_chip" data-zone="card"><td><code>no_emv_chip</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr id="check-no_hologram" data-zone="card"><td><code>no_hologram</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr id="check-no_magnetic_stripe" data-zone="card"><td><code>no_magnetic_stripe</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr id="check-no_cardholder_name" data-zone="card"><td><code>no_cardholder_name</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr id="check-no_pan" data-zone="card"><td><code>no_pan</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr id="check-no_expiry_date" data-zone="card"><td><code>no_expiry_date</code></td><td>prohibited</td><td><span class="sev blocker">blocker</span></td><td><code>prohibited_element_present</code></td></tr>
-            <tr id="check-no_physical_card_photography" data-zone="card"><td><code>no_physical_card_photography</code></td><td>prohibited</td><td><span class="sev required">required</span></td><td><code>prohibited_element_present</code> <code>border_frame_present</code></td></tr>
-            <tr id="check-lower_left_area_clear" data-zone="pan"><td><code>lower_left_area_clear</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>pan_zone_obstructed</code> <code>pan_zone_legibility_risk</code></td></tr>
-            <tr id="check-design_elements_clear_of_identifier" data-zone="identifier"><td><code>design_elements_clear_of_identifier</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>identifier_obstructed</code></td></tr>
-            <tr id="check-art_fills_canvas" data-zone="card"><td><code>art_fills_canvas</code></td><td>layout</td><td><span class="sev required">required</span></td><td><code>border_frame_present</code></td></tr>
-            <tr id="check-landscape_orientation" data-zone="card"><td><code>landscape_orientation</code></td><td>layout</td><td><span class="sev blocker">blocker</span></td><td><code>orientation_not_landscape</code></td></tr>
-            <tr id="check-full_color" data-zone="card"><td><code>full_color</code></td><td>layout</td><td><span class="sev required">required</span></td><td><code>grayscale_or_monochrome</code></td></tr>
-          </tbody>
-        </table>
+      <div class="catalog-filter">
+        <input type="search" id="catalogSearch" placeholder="Filter by check id or reason code…" aria-label="Filter checks by id or reason code" autocomplete="off">
+        <div class="chips" role="group" aria-label="Filter by severity">
+          <button class="chip blocker" data-sev="blocker" aria-pressed="false">blocker</button>
+          <button class="chip required" data-sev="required" aria-pressed="false">required</button>
+          <button class="chip advisory" data-sev="advisory" aria-pressed="false">advisory</button>
+        </div>
+        <span class="catalog-count" id="catalogCount" aria-live="polite"></span>
       </div>
+
+      <!-- generated:catalog -->
+      <div class="catalog" id="catalog">
+        <div class="catalog-group" data-category="brand_mark">
+          <h3 id="checks-brand_mark">Brand mark <a class="anchor" href="#checks-brand_mark" aria-label="Link to Brand mark">#</a></h3>
+          <article class="check" id="check-visa_brand_mark_present" data-zone="mark" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">visa_brand_mark_present</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-visa_brand_mark_present" aria-label="Link to visa_brand_mark_present">#</a>
+            </div>
+            <p class="check-name">Visa Brand Mark present</p>
+            <dl class="reasons">
+              <dt><code>mark_absent</code></dt>
+              <dd>No Visa Brand Mark on the art.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-visa_brand_mark_position" data-zone="mark" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">visa_brand_mark_position</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-visa_brand_mark_position" aria-label="Link to visa_brand_mark_position">#</a>
+            </div>
+            <p class="check-name">Visa Brand Mark position (upper-left/upper-right only)</p>
+            <dl class="reasons">
+              <dt><code>position_lower_edge</code></dt>
+              <dd>The Brand Mark sits in a lower corner. Only the upper-left and upper-right are allowed.</dd>
+              <dt><code>position_wrong_corner</code></dt>
+              <dd>The Brand Mark isn't anchored to an upper corner.</dd>
+              <dt><code>mark_absent</code></dt>
+              <dd>No Visa Brand Mark on the art.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-visa_brand_mark_size" data-zone="mark" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">visa_brand_mark_size</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-visa_brand_mark_size" aria-label="Link to visa_brand_mark_size">#</a>
+            </div>
+            <p class="check-name">Visa Brand Mark size</p>
+            <dl class="reasons">
+              <dt><code>size_undersized</code></dt>
+              <dd>The mark is noticeably smaller than Visa's 109px lockup.</dd>
+              <dt><code>size_oversized</code></dt>
+              <dd>The mark is noticeably larger than 109px — including the retired 142px &quot;Option Two&quot;.</dd>
+              <dt><code>size_unverifiable</code></dt>
+              <dd>The mark's size couldn't be measured.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-visa_brand_mark_margin" data-zone="mark" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">visa_brand_mark_margin</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-visa_brand_mark_margin" aria-label="Link to visa_brand_mark_margin">#</a>
+            </div>
+            <p class="check-name">Visa Brand Mark margin (56px from edges)</p>
+            <dl class="reasons">
+              <dt><code>margin_below_minimum</code></dt>
+              <dd>The mark is closer than 53px to its nearest top/bottom or side edge. Visa places it at 56px.</dd>
+              <dt><code>margin_above_target</code></dt>
+              <dd>The mark is farther than 59px from an edge. Visa places it at 56px, not &quot;at least&quot; 56px.</dd>
+              <dt><code>margin_unverifiable</code></dt>
+              <dd>The mark's distance from the edges couldn't be measured.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-visa_brand_mark_contrast" data-zone="mark" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">visa_brand_mark_contrast</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-visa_brand_mark_contrast" aria-label="Link to visa_brand_mark_contrast">#</a>
+            </div>
+            <p class="check-name">Visa Brand Mark contrast against background</p>
+            <dl class="reasons">
+              <dt><code>contrast_insufficient_wordmark</code></dt>
+              <dd>The VISA wordmark merges into a busy or same-tone background.</dd>
+              <dt><code>contrast_insufficient_identifier</code></dt>
+              <dd>The product identifier is hard to read — e.g. a weaker color than the wordmark.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-visa_brand_mark_color" data-zone="mark" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">visa_brand_mark_color</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-visa_brand_mark_color" aria-label="Link to visa_brand_mark_color">#</a>
+            </div>
+            <p class="check-name">Visa Brand Mark color (permitted version, no gradient)</p>
+            <dl class="reasons">
+              <dt><code>mark_color_not_permitted</code></dt>
+              <dd>The mark isn't white, black, Visa Blue, or the gold/silver premium ink. Gold or a flat off-white warns instead of failing.</dd>
+              <dt><code>mark_gradient_applied</code></dt>
+              <dd>A gradient, metallic shading or sheen is applied to the mark. Every permitted version is flat.</dd>
+            </dl>
+          </article>
+        </div>
+        <div class="catalog-group" data-category="product_identifier">
+          <h3 id="checks-product_identifier">Product identifier <a class="anchor" href="#checks-product_identifier" aria-label="Link to Product identifier">#</a></h3>
+          <article class="check" id="check-product_identifier" data-zone="identifier" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">product_identifier</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-product_identifier" aria-label="Link to product_identifier">#</a>
+            </div>
+            <p class="check-name">Product identifier present and placed</p>
+            <dl class="reasons">
+              <dt><code>identifier_absent</code></dt>
+              <dd>No Visa product identifier (e.g. Platinum, Signature, Business). Every card needs one.</dd>
+              <dt><code>identifier_wrong_corner</code></dt>
+              <dd>The identifier is in the opposite corner from the Brand Mark.</dd>
+              <dt><code>identifier_separated_from_mark</code></dt>
+              <dd>Unrelated graphics or large empty space separate the identifier from the mark.</dd>
+              <dt><code>identifier_in_pan_zone</code></dt>
+              <dd>The identifier sits in the lower-left personalization zone.</dd>
+              <dt><code>identifier_casing</code></dt>
+              <dd>The identifier's casing differs from Visa's lockup — e.g. &quot;PLATINUM&quot; for &quot;Platinum&quot;.</dd>
+              <dt><code>identifier_tier_mismatch</code></dt>
+              <dd>The identifier doesn't read exactly the declared product, every word in order.</dd>
+              <dt><code>identifier_misaligned</code></dt>
+              <dd>The identifier's edge doesn't line up with the mark's outer edge on the mark's side.</dd>
+              <dt><code>identifier_font_mismatch</code></dt>
+              <dd>The identifier isn't in Visa's identifier type — italicized, another family, or modified letters. A slight difference warns.</dd>
+              <dt><code>identifier_size_mismatch</code></dt>
+              <dd>The identifier is visibly too large or too small for the lockup.</dd>
+              <dt><code>lockup_not_official_artwork</code></dt>
+              <dd>The lockup is legible but redrawn, re-typeset, distorted, or the wrong variant of Visa's artwork.</dd>
+            </dl>
+          </article>
+        </div>
+        <div class="catalog-group" data-category="required_elements">
+          <h3 id="checks-required_elements">Required elements <a class="anchor" href="#checks-required_elements" aria-label="Link to Required elements">#</a></h3>
+          <article class="check" id="check-issuer_logo_present" data-zone="card" data-severity="advisory">
+            <div class="check-head">
+              <code class="check-id">issuer_logo_present</code>
+              <span class="sev advisory">advisory</span>
+              <a class="anchor" href="#check-issuer_logo_present" aria-label="Link to issuer_logo_present">#</a>
+            </div>
+            <p class="check-name">Issuer logo present</p>
+            <dl class="reasons">
+              <dt><code>issuer_logo_absent</code></dt>
+              <dd>No issuer logo. Visa accepts this on virtual cards, so it is only ever a warning.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-issuer_logo_within_border" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">issuer_logo_within_border</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-issuer_logo_within_border" aria-label="Link to issuer_logo_within_border">#</a>
+            </div>
+            <p class="check-name">Partner/issuer logo outside the 56px bleed zone</p>
+            <dl class="reasons">
+              <dt><code>issuer_logo_in_bleed_zone</code></dt>
+              <dd>The issuer logo's main letter line, or its first or last letter, is within 53px of an edge. An outlying stroke or icon alone warns.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-contactless_indicator" data-zone="card" data-severity="required">
+            <div class="check-head">
+              <code class="check-id">contactless_indicator</code>
+              <span class="sev required">required</span>
+              <a class="anchor" href="#check-contactless_indicator" aria-label="Link to contactless_indicator">#</a>
+            </div>
+            <p class="check-name">Contactless indicator correct (if present)</p>
+            <dl class="reasons">
+              <dt><code>contactless_indicator_incorrect</code></dt>
+              <dd>The contactless symbol isn't the official EMVCo glyph: four arcs growing from left to right.</dd>
+              <dt><code>contactless_indicator_rotated</code></dt>
+              <dd>The contactless symbol is mirrored, rotated or upside down. Its arcs must bulge to the right, like &quot;)))&quot;.</dd>
+            </dl>
+          </article>
+        </div>
+        <div class="catalog-group" data-category="prohibited">
+          <h3 id="checks-prohibited">Prohibited elements <a class="anchor" href="#checks-prohibited" aria-label="Link to Prohibited elements">#</a></h3>
+          <article class="check" id="check-no_emv_chip" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">no_emv_chip</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-no_emv_chip" aria-label="Link to no_emv_chip">#</a>
+            </div>
+            <p class="check-name">No EMV chip graphic</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-no_hologram" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">no_hologram</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-no_hologram" aria-label="Link to no_hologram">#</a>
+            </div>
+            <p class="check-name">No hologram imagery</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-no_magnetic_stripe" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">no_magnetic_stripe</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-no_magnetic_stripe" aria-label="Link to no_magnetic_stripe">#</a>
+            </div>
+            <p class="check-name">No magnetic stripe graphic</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-no_cardholder_name" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">no_cardholder_name</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-no_cardholder_name" aria-label="Link to no_cardholder_name">#</a>
+            </div>
+            <p class="check-name">No cardholder name</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-no_pan" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">no_pan</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-no_pan" aria-label="Link to no_pan">#</a>
+            </div>
+            <p class="check-name">No PAN / card number</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-no_expiry_date" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">no_expiry_date</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-no_expiry_date" aria-label="Link to no_expiry_date">#</a>
+            </div>
+            <p class="check-name">No expiry date</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-no_physical_card_photography" data-zone="card" data-severity="required">
+            <div class="check-head">
+              <code class="check-id">no_physical_card_photography</code>
+              <span class="sev required">required</span>
+              <a class="anchor" href="#check-no_physical_card_photography" aria-label="Link to no_physical_card_photography">#</a>
+            </div>
+            <p class="check-name">No physical card photography</p>
+            <dl class="reasons">
+              <dt><code>prohibited_element_present</code></dt>
+              <dd>Something that must not appear on virtual art is present — the check names which.</dd>
+              <dt><code>border_frame_present</code></dt>
+              <dd>A border line, transparent padding or frame surrounds the art instead of the design running to every edge.</dd>
+            </dl>
+          </article>
+        </div>
+        <div class="catalog-group" data-category="layout">
+          <h3 id="checks-layout">Layout <a class="anchor" href="#checks-layout" aria-label="Link to Layout">#</a></h3>
+          <article class="check" id="check-art_fills_canvas" data-zone="card" data-severity="required">
+            <div class="check-head">
+              <code class="check-id">art_fills_canvas</code>
+              <span class="sev required">required</span>
+              <a class="anchor" href="#check-art_fills_canvas" aria-label="Link to art_fills_canvas">#</a>
+            </div>
+            <p class="check-name">Art fills the canvas (no border lines or frame)</p>
+            <dl class="reasons">
+              <dt><code>border_frame_present</code></dt>
+              <dd>A border line, transparent padding or frame surrounds the art instead of the design running to every edge.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-lower_left_area_clear" data-zone="pan" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">lower_left_area_clear</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-lower_left_area_clear" aria-label="Link to lower_left_area_clear">#</a>
+            </div>
+            <p class="check-name">Lower-left area clear</p>
+            <dl class="reasons">
+              <dt><code>pan_zone_obstructed</code></dt>
+              <dd>A logo, icon, text or high-contrast graphic sits in the lower-left zone, where the wallet overlays the last 4 digits.</dd>
+              <dt><code>pan_zone_legibility_risk</code></dt>
+              <dd>An illustration detail in the lower-left zone that still leaves overlaid digits legible. Only ever a warning.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-design_elements_clear_of_identifier" data-zone="identifier" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">design_elements_clear_of_identifier</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-design_elements_clear_of_identifier" aria-label="Link to design_elements_clear_of_identifier">#</a>
+            </div>
+            <p class="check-name">Design elements clear of product identifier</p>
+            <dl class="reasons">
+              <dt><code>identifier_obstructed</code></dt>
+              <dd>Artwork, a logo or a design element touches or crowds the identifier's letters.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-landscape_orientation" data-zone="card" data-severity="blocker">
+            <div class="check-head">
+              <code class="check-id">landscape_orientation</code>
+              <span class="sev blocker">blocker</span>
+              <a class="anchor" href="#check-landscape_orientation" aria-label="Link to landscape_orientation">#</a>
+            </div>
+            <p class="check-name">Landscape orientation</p>
+            <dl class="reasons">
+              <dt><code>orientation_not_landscape</code></dt>
+              <dd>The art isn't horizontal.</dd>
+            </dl>
+          </article>
+          <article class="check" id="check-full_color" data-zone="card" data-severity="required">
+            <div class="check-head">
+              <code class="check-id">full_color</code>
+              <span class="sev required">required</span>
+              <a class="anchor" href="#check-full_color" aria-label="Link to full_color">#</a>
+            </div>
+            <p class="check-name">Full color (not grayscale)</p>
+            <dl class="reasons">
+              <dt><code>grayscale_or_monochrome</code></dt>
+              <dd>The design looks like it lost its color in export. An intentionally monochrome design passes.</dd>
+            </dl>
+          </article>
+        </div>
+      </div>
+      <!-- /generated:catalog -->
+      <p class="catalog-empty" id="catalogEmpty" hidden>No check matches. <button class="link-btn" id="catalogReset">Clear filters</button></p>
 
       <p id="checks-universal">
         Three more reason codes are valid on any check: <code>source_is_screenshot</code> (the
@@ -1810,44 +2176,97 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
   addEventListener('hashchange', spy);
   spy();
 
-  /* ── Sidebar filter ────────────────────────────────── */
-  document.getElementById('navSearch').addEventListener('input', (e) => {
-    const q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll('.nav-group').forEach((group) => {
-      let shown = 0;
-      group.querySelectorAll('.nav-link').forEach((link) => {
-        const hit = !q || link.textContent.toLowerCase().includes(q);
-        link.classList.toggle('hidden', !hit);
-        if (hit) shown++;
-      });
-      group.classList.toggle('hidden', shown === 0);
-    });
-  });
+  /* ── Catalog filters ───────────────────────────────── */
+  // Three ways to narrow the catalog — a zone on the diagram, severity chips,
+  // and text over ids and reason codes — and a check shows only when it passes
+  // all three. Hovering a zone previews it by dimming the rest.
+  const checks = [...document.querySelectorAll('.check')];
+  const groups = [...document.querySelectorAll('.catalog-group')];
+  const search = document.getElementById('catalogSearch');
+  const chips = [...document.querySelectorAll('.chip')];
+  const count = document.getElementById('catalogCount');
+  const empty = document.getElementById('catalogEmpty');
+  const haystack = new Map(checks.map((c) => [c, c.textContent.toLowerCase()]));
 
-  /* ── Zone diagram ──────────────────────────────────── */
-  // The catalog rows and the diagram are two views of the same fact: which
-  // part of the card a rule governs. Lighting one lights the other.
+  const filters = { zone: null, severities: new Set(), text: '' };
+
+  const applyFilters = () => {
+    let shown = 0;
+    checks.forEach((c) => {
+      const hit = (!filters.zone || c.dataset.zone === filters.zone)
+        && (!filters.severities.size || filters.severities.has(c.dataset.severity))
+        && (!filters.text || haystack.get(c).includes(filters.text));
+      c.hidden = !hit;
+      if (hit) shown++;
+    });
+    groups.forEach((g) => { g.hidden = !g.querySelector('.check:not([hidden])'); });
+    count.textContent = shown === checks.length ? `${checks.length} checks` : `${shown} of ${checks.length} checks`;
+    empty.hidden = shown > 0;
+  };
+
   const litZone = (zone) => {
     document.querySelectorAll('.zone-svg [data-zone]').forEach((el) => {
       el.classList.toggle('lit', el.dataset.zone === zone);
     });
+  };
+  const previewZone = (zone) => {
+    litZone(zone);
+    checks.forEach((c) => c.classList.toggle('dim', !!zone && c.dataset.zone !== zone));
+  };
+  const setZone = (zone) => {
+    filters.zone = zone;
     document.querySelectorAll('.zone-item').forEach((el) => {
-      el.classList.toggle('on', el.dataset.zone === zone);
+      const on = el.dataset.zone === zone;
+      el.classList.toggle('on', on);
+      el.setAttribute('aria-pressed', String(on));
     });
-    document.querySelectorAll('#checks tbody tr').forEach((row) => {
-      row.style.opacity = !zone || row.dataset.zone === zone ? '' : '0.35';
-    });
+    previewZone(null);
+    litZone(zone);
+    applyFilters();
   };
 
-  let activeZone = null;
   document.querySelectorAll('.zone-item').forEach((item) => {
-    item.addEventListener('click', () => {
-      activeZone = activeZone === item.dataset.zone ? null : item.dataset.zone;
-      litZone(activeZone);
-    });
-    item.addEventListener('mouseenter', () => { if (!activeZone) litZone(item.dataset.zone); });
-    item.addEventListener('mouseleave', () => { if (!activeZone) litZone(null); });
+    item.setAttribute('aria-pressed', 'false');
+    item.addEventListener('click', () => setZone(filters.zone === item.dataset.zone ? null : item.dataset.zone));
+    item.addEventListener('mouseenter', () => { if (!filters.zone) previewZone(item.dataset.zone); });
+    item.addEventListener('mouseleave', () => { if (!filters.zone) previewZone(null); });
   });
+
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const on = chip.getAttribute('aria-pressed') !== 'true';
+      chip.setAttribute('aria-pressed', String(on));
+      if (on) filters.severities.add(chip.dataset.sev);
+      else filters.severities.delete(chip.dataset.sev);
+      applyFilters();
+    });
+  });
+
+  search.addEventListener('input', () => {
+    filters.text = search.value.trim().toLowerCase();
+    applyFilters();
+  });
+
+  const resetFilters = () => {
+    search.value = '';
+    filters.text = '';
+    filters.severities.clear();
+    chips.forEach((c) => c.setAttribute('aria-pressed', 'false'));
+    setZone(null);
+  };
+  document.getElementById('catalogReset').addEventListener('click', resetFilters);
+
+  // A link to a check the filters are hiding should still land on it.
+  const revealTarget = () => {
+    const target = location.hash && document.getElementById(location.hash.slice(1));
+    if (target && target.classList.contains('check') && target.hidden) {
+      resetFilters();
+      target.scrollIntoView();
+    }
+  };
+  addEventListener('hashchange', revealTarget);
+
+  applyFilters();
 })();
 </script>
 </body>

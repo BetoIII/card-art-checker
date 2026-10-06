@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   getCatalog, getCheck, resolveChecks, normalizeCheckName,
   buildCheckListForPrompt, allReasonCodes,
-  CHECK_STATUS, SEVERITY, OUTCOME,
+  CHECK_STATUS, SEVERITY, OUTCOME, REASON_DESCRIPTIONS, UNIVERSAL_REASON_CODES,
 } from '../lib/check-catalog.js';
 
 // ── Catalog integrity ───────────────────────────────────────────────
@@ -35,6 +35,20 @@ test('every check declares a valid severity and at least one reason code', () =>
       assert.ok(SEVERITY.includes(check.severity), `${check.id}: ${check.severity}`);
       assert.ok(check.reason_codes?.length, `${check.id} has no reason codes`);
     }
+  }
+});
+
+// /reference prints a meaning beside every code a virtual result can carry.
+test('every virtual reason code has a description, and no description is stale', () => {
+  const codes = new Set(UNIVERSAL_REASON_CODES);
+  for (const check of getCatalog('virtual')) {
+    for (const code of check.reason_codes) codes.add(code);
+  }
+  for (const code of codes) {
+    assert.ok(REASON_DESCRIPTIONS[code]?.trim(), `${code} has no description`);
+  }
+  for (const code of Object.keys(REASON_DESCRIPTIONS)) {
+    assert.ok(codes.has(code), `${code} is described but no virtual check uses it`);
   }
 });
 
