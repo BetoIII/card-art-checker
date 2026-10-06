@@ -424,14 +424,6 @@ tbody tr:hover td { background: var(--paper-2); }
 .note.tip .note-icon { color: var(--accent); }
 .note-title { font-weight: 600; }
 
-.internal-tag {
-  display: inline-block; vertical-align: middle;
-  margin-left: 6px; padding: 2px 7px;
-  font-size: var(--cc-fs-xs); font-weight: 600;
-  letter-spacing: var(--cc-track-sm); text-transform: uppercase;
-  color: var(--muted); background: var(--paper-3);
-  border: 1px solid var(--line-2); border-radius: 5px;
-}
 .content sup { color: var(--accent); font-weight: 600; }
 
 /* ── Flow diagram (overview) ───────────────────────────── */
@@ -640,12 +632,14 @@ tbody tr:hover td { background: var(--paper-2); }
       <div class="nav-group-title">Get started</div>
       <a class="nav-link" href="#overview">Overview</a>
       <a class="nav-link" href="#quickstart">Quickstart</a>
-      <a class="nav-link" href="#access">Access</a>
+      <a class="nav-link" href="#authentication">Authentication</a>
     </div>
 
     <div class="nav-group">
-      <div class="nav-group-title">Endpoint</div>
+      <div class="nav-group-title">Endpoints</div>
       <a class="nav-link" href="#submit"><span class="nav-method post">POST</span> Submit a check</a>
+      <a class="nav-link" href="#result"><span class="nav-method get">GET</span> Fetch a result</a>
+      <a class="nav-link" href="#health"><span class="nav-method get">GET</span> Health</a>
     </div>
 
     <div class="nav-group">
@@ -661,15 +655,6 @@ tbody tr:hover td { background: var(--paper-2); }
       <div class="nav-group-title">Reference</div>
       <a class="nav-link" href="#errors">Errors &amp; failures</a>
       <a class="nav-link" href="#limits">Limits</a>
-    </div>
-
-    <div class="nav-group">
-      <div class="nav-group-title">Internal · Rain operators</div>
-      <a class="nav-link" href="#token-mode">Token mode</a>
-      <a class="nav-link" href="#result"><span class="nav-method get">GET</span> Fetch a result</a>
-      <a class="nav-link" href="#rocketlane"><span class="nav-method post">POST</span> Rocketlane trigger</a>
-      <a class="nav-link" href="#health"><span class="nav-method get">GET</span> Health</a>
-      <a class="nav-link" href="#server-config">Server configuration</a>
     </div>
   </nav>
 
@@ -689,26 +674,30 @@ tbody tr:hover td { background: var(--paper-2); }
       <p>
         A check is a visual review: a Claude agent inspects the art against Visa's 22
         virtual-card rules, alongside 13 deterministic measurements, and returns a decision.
-        It's one request: post the art with your Rocketlane project id, keep the connection open
-        while progress streams back — <strong>usually about two minutes</strong> — and the
-        verdict arrives as the last event.
+        That takes <strong>about two minutes</strong>, so no endpoint returns a verdict
+        synchronously. Every integration has the same four beats.
       </p>
 
       <div class="flow">
         <div class="flow-step">
           <div class="flow-num">01</div>
           <div class="flow-label">Submit</div>
-          <div class="flow-desc">POST the art and your Rocketlane <code>projectId</code> to <code>/api/card-check</code>.</div>
+          <div class="flow-desc">POST the art with <code>?async=1</code>.</div>
         </div>
         <div class="flow-step">
           <div class="flow-num">02</div>
-          <div class="flow-label">Wait</div>
-          <div class="flow-desc">Progress events stream back while the check runs, usually about two minutes.</div>
+          <div class="flow-label">Store the runId</div>
+          <div class="flow-desc">Returned immediately. Your handle on the run.</div>
         </div>
         <div class="flow-step">
           <div class="flow-num">03</div>
-          <div class="flow-label">Read the verdict</div>
-          <div class="flow-desc">The last event, <code>complete</code>, carries the full result.</div>
+          <div class="flow-label">Wait</div>
+          <div class="flow-desc">The analysis runs in the background.</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <div class="flow-label">Read the result</div>
+          <div class="flow-desc">Poll, or have it pushed to your <a href="#webhooks">webhook</a>.</div>
         </div>
       </div>
 
@@ -724,73 +713,101 @@ tbody tr:hover td { background: var(--paper-2); }
     <!-- Quickstart -->
     <section id="quickstart">
       <h2>Quickstart <a class="anchor" href="#quickstart" aria-label="Link to Quickstart">#</a></h2>
-      <p>Submit a virtual card design and read the verdict — one request.</p>
+      <p>Submit a virtual card design and read the verdict.</p>
 
       <div class="code" data-group="lang">
         <div class="code-head">
-          <span class="code-title">Check a design</span>
+          <span class="code-title">Submit</span>
           <button class="tab active" data-tab="curl">cURL</button>
           <button class="tab" data-tab="ts">TypeScript</button>
           <button class="copy-btn" aria-label="Copy code"></button>
         </div>
-        <div class="panel active" data-tab="curl"><pre data-hl="bash">curl -N -X POST "https://card-art-checker.vercel.app/api/card-check" \
+        <div class="panel active" data-tab="curl"><pre data-hl="bash">curl -X POST "https://card-art-checker.vercel.app/api/card-check?async=1" \
+  -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET" \
   -F "file=@card.png" \
-  -F "projectId=12345" \
   -F "cardType=virtual" \
   -F "reference=cardArtForm_01HX9"
 
-# event: progress
-# data: {"step":"upload","message":"File received","status":"done"}
-# … progress for about two minutes …
-# event: complete
-# data: {"runId":"msqz4i4j-6fa7c9","outcome":"requires_changes","result":{…},…}</pre></div>
-        <div class="panel" data-tab="ts"><pre data-hl="ts">async function checkCardArt(art: Buffer, projectId: string, reference: string) {
-  const form = new FormData()
-  form.append("file", new Blob([art], { type: "image/png" }), "card.png")
-  form.append("projectId", projectId)
-  form.append("cardType", "virtual")
-  form.append("reference", reference)
+# → { "ok": true, "queued": true, "runId": "msqz4i4j-6fa7c9",
+#     "projectId": null, "reference": "cardArtForm_01HX9",
+#     "cardType": "virtual" }</pre></div>
+        <div class="panel" data-tab="ts"><pre data-hl="ts">const form = new FormData()
+form.append("file", new Blob([artBuffer], { type: "image/png" }), "card.png")
+form.append("cardType", "virtual")
+form.append("reference", cardArtForm.id)
 
-  const res = await fetch("https://card-art-checker.vercel.app/api/card-check", {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(6 * 60_000), // runs take ~2 min; allow 5+
-  })
+const res = await fetch(`${CARD_ART_CHECKER_URL}/api/card-check?async=1`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${CARD_ART_CHECKER_SECRET}` },
+  body: form,
+})
 
-  // Read events until the run ends. Each is "event: &lt;type&gt;\ndata: &lt;json&gt;\n\n".
-  const decoder = new TextDecoder()
-  let buffer = ""
-  for await (const chunk of res.body!) {
-    buffer += decoder.decode(chunk, { stream: true })
-    let end
-    while ((end = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, end)
-      buffer = buffer.slice(end + 2)
-      const type = frame.match(/^event: (\w+)/)?.[1]
-      const data = JSON.parse(frame.slice(frame.indexOf("data: ") + 6))
-      if (type === "complete") return data.result   // the result object
-      if (type === "error") throw new Error(`${data.code}: ${data.message}`)
-    }
-  }
-  throw new Error("Stream closed before the check finished — resubmit")
+const { runId } = await res.json()
+// Store runId on the row — it is how you find the verdict later.</pre></div>
+      </div>
+
+      <div class="code" data-group="lang">
+        <div class="code-head">
+          <span class="code-title">Read the verdict</span>
+          <button class="tab active" data-tab="curl">cURL</button>
+          <button class="tab" data-tab="ts">TypeScript</button>
+          <button class="copy-btn" aria-label="Copy code"></button>
+        </div>
+        <div class="panel active" data-tab="curl"><pre data-hl="bash">curl -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET" \
+  "https://card-art-checker.vercel.app/api/result/msqz4i4j-6fa7c9"
+
+# 404 while the run is still in flight — that is the normal answer.
+# 200 → { "runId": "…", "count": 1, "results": [ … ] }</pre></div>
+        <div class="panel" data-tab="ts"><pre data-hl="ts">const res = await fetch(`${CARD_ART_CHECKER_URL}/api/result/${runId}`, {
+  headers: { Authorization: `Bearer ${CARD_ART_CHECKER_SECRET}` },
+})
+
+if (res.status === 404) return // still running, try again later
+
+const { results } = await res.json()
+const [result] = results
+
+if (result.status === "error") return           // the checker broke — retry
+if (result.outcome === "requires_changes") {
+  reject(result.summary, result.blocking_failures)
 }</pre></div>
       </div>
 
       <div class="note">
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.7v4M8 11v.1"/></svg></span>
-        <div><p>Give your HTTP client a timeout of at least 5 minutes and read the stream to the end. A check that finishes after your client gives up still runs, but its verdict only reaches you through a <a href="#webhooks">webhook</a>.</p></div>
+        <div><p>Polling works, but <a href="#webhooks">webhooks</a> are the recommended path — they cost you nothing while a two-minute run is in flight.</p></div>
       </div>
     </section>
 
-    <!-- Access -->
-    <section id="access">
-      <h2>Access <a class="anchor" href="#access" aria-label="Link to Access">#</a></h2>
+    <!-- Authentication -->
+    <section id="authentication">
+      <h2>Authentication <a class="anchor" href="#authentication" aria-label="Link to Authentication">#</a></h2>
+      <p>One shared secret guards every server-to-server endpoint. Send it either way:</p>
+
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">Headers</span>
+          <button class="copy-btn" aria-label="Copy code"></button>
+        </div>
+        <pre data-hl="http">Authorization: Bearer &lt;secret&gt;
+x-webhook-secret: &lt;secret&gt;</pre>
+      </div>
+
       <p>
-        No token. Every request carries your Rocketlane project id, and that is what gates the
-        service: the id is looked up in Rocketlane before any analysis starts, and a missing or
-        unknown id ends the request within seconds with <code>missing_project_id</code>.
+        Ask your Rain contact for the value — it is not published here. The same secret reads
+        results, so a caller that may start a check may read its verdict.
       </p>
-      <p>Your project id is the number of your Rain onboarding project in Rocketlane. Ask your Rain contact if you don't have it.</p>
+
+      <div class="note warn">
+        <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
+        <div>
+          <p><span class="note-title">Authentication does more than gate access.</span> It is what separates a
+          server-to-server caller from the browser upload page. Authenticated callers may omit
+          <code>projectId</code> and use <code>?async=1</code>; anonymous ones may not.</p>
+          <p>If your calls behave like the browser path — streaming back an event stream, demanding a
+          <code>projectId</code> — the secret is not arriving.</p>
+        </div>
+      </div>
     </section>
 
     <!-- Submit -->
@@ -799,14 +816,18 @@ tbody tr:hover td { background: var(--paper-2); }
 
       <div class="endpoint">
         <span class="method post">POST</span>
-        <span class="endpoint-path">/api/card-check</span>
-        <span class="endpoint-auth">Rocketlane project id</span>
+        <span class="endpoint-path">/api/card-check?async=1</span>
+        <span class="endpoint-auth">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
+          Bearer token
+        </span>
       </div>
 
       <p>
-        Send the art as <code>multipart/form-data</code>. The response is a Server-Sent Events
-        stream (<code>text/event-stream</code>): progress while the check runs, then one final
-        event with the verdict. Keep the connection open until that final event.
+        Send the art as <code>multipart/form-data</code>. With <code>?async=1</code> the response
+        returns as soon as the file is parsed and the analysis continues in the background.
+        Without it you get a Server-Sent Events progress stream instead — that path exists for the
+        browser playground; don't use it from a server.
       </p>
 
       <h3 id="submit-fields">Body fields <a class="anchor" href="#submit-fields" aria-label="Link to Body fields">#</a></h3>
@@ -821,12 +842,6 @@ tbody tr:hover td { background: var(--paper-2); }
               <td>The card art: a flattened 1536×969 PNG at 72 DPI for virtual cards. Other sizes and formats are analyzed, but fail the <a href="#tech-checks">structural checks</a>.</td>
             </tr>
             <tr>
-              <td><code>projectId</code></td>
-              <td class="type">string</td>
-              <td><span class="req">Required</span></td>
-              <td>Your Rocketlane project id. It gates the request — see <a href="#access">Access</a>.</td>
-            </tr>
-            <tr>
               <td><code>cardType</code></td>
               <td class="type">"virtual" | "physical"</td>
               <td><span class="opt">Optional</span></td>
@@ -839,81 +854,173 @@ tbody tr:hover td { background: var(--paper-2); }
               <td>Your own correlation id, e.g. a <code>cardArtForm.id</code>. Comes back on <code>trigger.reference</code>. Sanitized to <code>[A-Za-z0-9._-]</code>, 64 chars max.</td>
             </tr>
             <tr>
+              <td><code>projectId</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Rocketlane project id. Omit it unless you have one — when present it must resolve in Rocketlane or the run fails (<code>missing_project_id</code>).</td>
+            </tr>
+            <tr>
+              <td><code>callbackUrl</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">Optional</span></td>
+              <td>Push the result here. Allowlist-gated — see <a href="#webhooks">Webhooks</a>.</td>
+            </tr>
+            <tr>
               <td><code>declaredProduct</code></td>
               <td class="type">string</td>
               <td><span class="opt">Optional</span></td>
               <td>The Visa product the program is provisioned as, e.g. <code>Signature Corporate</code>. Lets the check fail an identifier for the wrong tier (<code>identifier_tier_mismatch</code>); the identifier must read exactly this product, word order included. Must name a canonical product (<code>Debit</code> … <code>Infinite Corporate</code>), <code>Business</code> or <code>Classic</code>; anything else is ignored. Echoed on <code>submission.declared_product</code>.</td>
             </tr>
             <tr>
-              <td><code>callbackUrl</code></td>
-              <td class="type">string</td>
+              <td><code>backFile</code></td>
+              <td class="type">file</td>
               <td><span class="opt">Optional</span></td>
-              <td>Also push the result to this HTTPS URL. Its host must be on our allowlist — see <a href="#webhooks">Webhooks</a>.</td>
+              <td>Physical submissions only. Rejected on a virtual submission.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <h3 id="submit-events">Events <a class="anchor" href="#submit-events" aria-label="Link to Events">#</a></h3>
-      <p>Each event is an <code>event:</code> line and a one-line JSON <code>data:</code> line, followed by a blank line. Exactly one of <code>complete</code> or <code>error</code> ends the stream.</p>
+      <h3 id="submit-responses">Responses <a class="anchor" href="#submit-responses" aria-label="Link to Responses">#</a></h3>
+
+      <h4><span class="status-code ok">200</span> &nbsp;Queued</h4>
+      <p>The file was accepted. Store <code>runId</code> — it is the only handle on the run.</p>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">200 application/json</span>
+          <button class="copy-btn" aria-label="Copy code"></button>
+        </div>
+        <pre data-hl="json">{
+  "ok": true,
+  "queued": true,
+  "runId": "msqz4i4j-6fa7c9",
+  "projectId": null,
+  "reference": "cardArtForm_01HX9",
+  "cardType": "virtual"
+}</pre>
+      </div>
+
+      <h4><span class="status-code bad">400</span> &nbsp;Never started</h4>
+      <p>A <code>runId</code> still comes back, so the attempt stays traceable.</p>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">400 application/json</span>
+          <button class="copy-btn" aria-label="Copy code"></button>
+        </div>
+        <pre data-hl="json">{ "error": "No file uploaded", "runId": "msr0w4np-1eoerz" }</pre>
+      </div>
+      <p>Other <code>error</code> values:</p>
+      <ul>
+        <li><code>Invalid cardType "foo" — must be "virtual" or "physical"</code></li>
+        <li><code>Could not infer card type from "art.bin" — pass cardType=virtual|physical explicitly</code></li>
+        <li><code>Multipart parse timed out</code> — the body took longer than 30s.</li>
+        <li><code>backFile is only valid for physical submissions</code></li>
+      </ul>
+      <p>
+        A wrong content type returns <span class="status-code bad">400</span> with a plain-text body:
+        <code>Bad request: expected multipart/form-data</code>.
+      </p>
+    </section>
+
+    <!-- Result -->
+    <section id="result">
+      <h2>Fetch a result <a class="anchor" href="#result" aria-label="Link to Fetch a result">#</a></h2>
+
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/api/result/<em>{runId}</em></span>
+        <span class="endpoint-auth">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
+          Bearer token
+        </span>
+      </div>
+
+      <p>
+        Returns the run's result — the same object a webhook carries — wrapped in a list:
+        <code>results</code> holds one entry. Poll every 15–30 seconds.
+      </p>
+
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Event</th><th>Data</th><th>Meaning</th></tr></thead>
+          <thead><tr><th>Status</th><th>Body</th><th>Meaning</th></tr></thead>
           <tbody>
-            <tr><td><code>progress</code></td><td><code>{ step, message, status }</code></td><td>A step started (<code>pending</code>) or finished (<code>done</code>). Informational.</td></tr>
-            <tr><td><code>agent_delta</code>, <code>agent_tool</code></td><td>narration</td><td>The reviewer's live notes, for the playground. Ignore them.</td></tr>
-            <tr><td><code>complete</code></td><td><code>{ runId, outcome, pdfUrl, result, … }</code></td><td>The check finished. <code>result</code> is <a href="#result-object">the result object</a>.</td></tr>
-            <tr><td><code>error</code></td><td><code>{ code, message, step }</code></td><td>The check couldn't finish. <code>code</code> is from the <a href="#error-codes">closed error set</a>.</td></tr>
+            <tr>
+              <td><span class="status-code ok">200</span></td>
+              <td><code>{ runId, count, results[] }</code></td>
+              <td>Done. See <a href="#result-object">the result object</a>.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code bad">404</span></td>
+              <td><code>{ error, runId, hint }</code></td>
+              <td><strong>Still running, or unknown run.</strong> This is the normal answer while waiting — not an error.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code bad">400</span></td>
+              <td><code>{ error }</code></td>
+              <td><code>Missing runId</code>, or <code>Malformed runId</code> — run ids look like <code>msqz4i4j-6fa7c9</code>.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code err">401</span></td>
+              <td class="type">Unauthorized (text)</td>
+              <td>Bad or missing secret.</td>
+            </tr>
+            <tr>
+              <td><span class="status-code err">502</span></td>
+              <td><code>{ error: "Result lookup failed" }</code></td>
+              <td>The result store could not be read. Retry.</td>
+            </tr>
           </tbody>
         </table>
       </div>
+    </section>
 
-      <div class="code">
-        <div class="code-head">
-          <span class="code-title">Final events</span>
-          <button class="copy-btn" aria-label="Copy code"></button>
-        </div>
-        <pre>event: complete
-data: {"runId":"msqz4i4j-6fa7c9","outcome":"requires_changes","pdfUrl":"https://….public.blob.vercel-storage.com/reports/….pdf","result":{…},…}
+    <!-- Health -->
+    <section id="health">
+      <h2>Health <a class="anchor" href="#health" aria-label="Link to Health">#</a></h2>
 
-event: error
-data: {"code":"missing_project_id","message":"Rocketlane project lookup failed: 404","step":"rocketlane"}</pre>
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <span class="endpoint-path">/api/health</span>
+        <span class="endpoint-auth">Public</span>
       </div>
 
       <p>
-        Read <code>result</code> from <code>complete</code>. <code>outcome</code> and
-        <code>pdfUrl</code> repeat at the top level; the other fields serve the browser playground.
-        In the rare case the result couldn't be built, <code>result</code> is <code>null</code> —
-        fall back to <code>status</code> (<code>pass</code> or <code>fail</code>) and
-        <code>summary</code>.
+        Liveness plus a boolean map of which environment variables are configured — names and
+        presence only, never values. Useful when a deploy behaves as if a credential is missing.
       </p>
 
-      <h3 id="submit-problems">Request problems <a class="anchor" href="#submit-problems" aria-label="Link to Request problems">#</a></h3>
-      <p>
-        Once the stream starts the HTTP status is <span class="status-code ok">200</span>, so a
-        problem with the request arrives as an <code>error</code> event:
-      </p>
-      <ul>
-        <li><code>missing_project_id</code> — no <code>projectId</code>, or one Rocketlane doesn't know.</li>
-        <li><code>card_art_missing</code> — no <code>file</code> in the request.</li>
-        <li><code>card_type_indeterminate</code> — an invalid <code>cardType</code>, or none sent and a filename it can't be inferred from.</li>
-        <li><code>function_timeout</code> — the upload took longer than 30s to arrive.</li>
-      </ul>
-      <p>
-        Only a body that isn't multipart gets a plain-text
-        <span class="status-code bad">400</span>: <code>Bad request: expected multipart/form-data</code>.
-      </p>
+      <div class="code">
+        <div class="code-head">
+          <span class="code-title">200 application/json</span>
+          <button class="copy-btn" aria-label="Copy code"></button>
+        </div>
+        <pre data-hl="json">{
+  "ok": true,
+  "time": 1759291234567,
+  "env": {
+    "ROCKETLANE_API_KEY": true,
+    "ANTHROPIC_API_KEY": true,
+    "BLOB_READ_WRITE_TOKEN": true
+  }
+}</pre>
+      </div>
     </section>
 
     <!-- Webhooks -->
     <section id="webhooks">
       <h2>Webhooks <a class="anchor" href="#webhooks" aria-label="Link to Webhooks">#</a></h2>
       <p>
-        Optional. Besides the stream, the result can be pushed to an HTTPS endpoint of yours — a
-        safety net if your connection drops. It needs one change on our side: Rain either points
-        the default webhook at your endpoint, or allowlists your host so a per-request
-        <code>callbackUrl</code> is honored. Ask your Rain contact for either, and for the webhook
-        signing secret.
+        The recommended way to receive a verdict — no polling, no idle connection. It needs a
+        receiving route on your side and one config change on ours: either
+        <code>RESULT_WEBHOOK_URL</code> pointed at your endpoint, or your host added to
+        <code>RESULT_WEBHOOK_ALLOWED_HOSTS</code> so a per-request <code>callbackUrl</code> is
+        honored. Ask your Rain contact for either, and for the webhook signing secret.
+      </p>
+      <p>
+        A <code>callbackUrl</code> must be <code>https</code>, and its host or a parent domain of
+        it must be on the allowlist — <code>hooks.example.com</code> passes when
+        <code>example.com</code> is listed. It replaces the default webhook for that run; one that
+        fails these rules sends nothing, with no fallback to the default.
       </p>
 
       <h3 id="webhooks-payload">What arrives <a class="anchor" href="#webhooks-payload" aria-label="Link to What arrives">#</a></h3>
@@ -983,13 +1090,6 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
         <div><p>Verify against the <strong>raw</strong> body, before JSON parsing. Re-serializing changes the bytes and the signature will never match.</p></div>
       </div>
 
-      <h3 id="webhooks-callback">Per-request callbackUrl <a class="anchor" href="#webhooks-callback" aria-label="Link to Per-request callbackUrl">#</a></h3>
-      <ul>
-        <li>It must be <code>https</code>.</li>
-        <li>Its host, or a parent domain of it, must be on the allowlist — <code>hooks.example.com</code> passes when <code>example.com</code> is listed.</li>
-        <li>It replaces the default webhook for that run. A <code>callbackUrl</code> that fails these rules sends nothing; there is no fallback to the default.</li>
-      </ul>
-
       <h3 id="webhooks-delivery">Delivery semantics <a class="anchor" href="#webhooks-delivery" aria-label="Link to Delivery semantics">#</a></h3>
       <div class="table-wrap">
         <table>
@@ -1007,15 +1107,15 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
       <p>
         Respond <code>2xx</code> quickly and do your work afterward. A retry after a slow response
         can deliver the same result twice, so deduplicate on <code>run_id</code> +
-        <code>attachment_id</code>. If you also read the stream to the end, a missed delivery
-        costs you nothing.
+        <code>attachment_id</code>. A missed delivery is never lost:
+        <a href="#result"><code>GET /api/result/{runId}</code></a> still has the result.
       </p>
     </section>
 
     <!-- Result object -->
     <section id="result-object">
       <h2>The result object <a class="anchor" href="#result-object" aria-label="Link to The result object">#</a></h2>
-      <p>The same shape in the stream's <code>complete</code> event (as <code>result</code>) and in a webhook. Two outcomes, side by side:</p>
+      <p>The same shape from <a href="#result"><code>GET /api/result</code></a> and in a webhook's <code>data</code>. Two outcomes, side by side:</p>
 
       <div class="code" data-group="outcome">
         <div class="code-head">
@@ -1674,9 +1774,10 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
       <h2>Errors &amp; failures <a class="anchor" href="#errors" aria-label="Link to Errors and failures">#</a></h2>
       <p>
         A check that couldn't finish still ends with a result, so <em>"this card has problems"</em>
-        stays distinguishable from <em>"the checker fell over"</em>. In the stream it is an
-        <code>error</code> event, <code>{ code, message, step }</code>; a webhook gets the full
-        failure result below.
+        stays distinguishable from <em>"the checker fell over"</em>. It arrives the same way as
+        any result — from <code>GET /api/result</code> or as a <code>card_art_check.failed</code>
+        webhook — and looks like this. A run about to hit the platform's 300-second ceiling
+        publishes a <code>function_timeout</code> failure, so polling always ends.
       </p>
 
       <div class="note danger">
@@ -1729,27 +1830,16 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <tr data-error="agent_output_unparseable"><td><code>agent_output_unparseable</code></td><td>The analysis came back in a shape we could not read.</td><td>Retry</td></tr>
             <tr data-error="spec_check_failed"><td><code>spec_check_failed</code></td><td>The technical measurement pass failed.</td><td>Retry</td></tr>
             <tr data-error="card_type_indeterminate"><td><code>card_type_indeterminate</code></td><td>Card type could not be inferred and none was sent.</td><td>Send <code>cardType</code></td></tr>
-            <tr data-error="attachment_download_failed"><td><code>attachment_download_failed</code></td><td>Rocketlane flow: no bytes came back for the attachment.</td><td>Retry</td></tr>
-            <tr data-error="missing_project_id"><td><code>missing_project_id</code></td><td>No <code>projectId</code>, or one Rocketlane doesn't know.</td><td>Send your project id</td></tr>
+            <tr data-error="attachment_download_failed"><td><code>attachment_download_failed</code></td><td>The art could not be downloaded from its source. Not emitted by <code>/api/card-check</code>.</td><td>Retry</td></tr>
+            <tr data-error="missing_project_id"><td><code>missing_project_id</code></td><td>A <code>projectId</code> was sent that Rocketlane doesn't know.</td><td>Fix the id, or omit it</td></tr>
             <tr data-error="card_art_missing"><td><code>card_art_missing</code></td><td>No file in the request.</td><td>Send the file</td></tr>
             <tr data-error="internal_error"><td><code>internal_error</code></td><td>Anything else.</td><td>Retry once; tell us if it recurs</td></tr>
-            <tr data-error="abandoned"><td><code>abandoned</code></td><td rowspan="3">Reserved — not currently emitted. Handle like <code>internal_error</code>.</td><td rowspan="3">Retry</td></tr>
+            <tr data-error="abandoned"><td><code>abandoned</code></td><td rowspan="3">Reserved — not emitted by <code>/api/card-check</code>. Handle like <code>internal_error</code>.</td><td rowspan="3">Retry</td></tr>
             <tr data-error="unsupported_card_type"><td><code>unsupported_card_type</code></td></tr>
             <tr data-error="no_attachment_resolved"><td><code>no_attachment_resolved</code></td></tr>
           </tbody>
         </table>
       </div>
-
-      <h3 id="errors-no-result">When no result arrives <a class="anchor" href="#errors-no-result" aria-label="Link to When no result arrives">#</a></h3>
-      <p>
-        If the stream closes without a <code>complete</code> or <code>error</code> event — your
-        client timed out, or the connection dropped — treat the check as failed and resubmit.
-      </p>
-      <p>
-        Every analyzed file gets exactly one result. A check about to hit the platform's
-        300-second ceiling publishes a <code>function_timeout</code> failure, pushed to your webhook
-        as <code>card_art_check.failed</code> like any other.
-      </p>
     </section>
 
     <!-- Limits -->
@@ -1758,248 +1848,11 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
       <div class="table-wrap">
         <table>
           <tbody>
-            <tr><td style="width:34%"><strong>Run duration</strong></td><td>Usually about two minutes; give your HTTP client a timeout of at least 5 minutes. The function ceiling is 300s; the pipeline self-limits at 280s so it degrades rather than dying mid-step, and won't start the visual review with less than 150s left (<code>visual_budget_exhausted</code>).</td></tr>
-            <tr><td><strong>Results per run</strong></td><td>One per analyzed file. A run covering several attachments returns several results, each with its own <code>attachment_id</code>.</td></tr>
+            <tr><td style="width:34%"><strong>Run duration</strong></td><td>Usually about two minutes. The function ceiling is 300s; the pipeline self-limits at 280s so it degrades rather than dying mid-step, and won't start the visual review with less than 150s left (<code>visual_budget_exhausted</code>).</td></tr>
+            <tr><td><strong>Results per run</strong></td><td>One. <code>attachment_id</code> is always <code>null</code>.</td></tr>
             <tr><td><strong>Virtual only</strong></td><td>Physical results carry <code>schema_version: "0-internal"</code>, are never pushed to webhooks, and their enums may change without notice.</td></tr>
             <tr><td><strong>Multipart parse</strong></td><td>30s. A slower upload fails with <code>Multipart parse timed out</code>.</td></tr>
             <tr><td><strong>Report URLs</strong></td><td>Public and permanent. Unguessable, but unauthenticated — don't put one anywhere you wouldn't put the report itself.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ── Internal ──────────────────────────────────── -->
-
-    <!-- Token mode -->
-    <section id="token-mode">
-      <h2>Token mode <span class="internal-tag">Internal</span> <a class="anchor" href="#token-mode" aria-label="Link to Token mode">#</a></h2>
-      <p>
-        Rain's own server-to-server integrations can skip the project id and the open connection.
-        The token is the raw value of <code>ROCKETLANE_WEBHOOK_SECRET</code>: one shared secret,
-        not a per-caller credential. It also triggers the Rocketlane flow and reads every run's
-        result, so it never leaves Rain.
-      </p>
-
-      <div class="code">
-        <div class="code-head">
-          <span class="code-title">Headers — either one</span>
-          <button class="copy-btn" aria-label="Copy code"></button>
-        </div>
-        <pre data-hl="http">Authorization: Bearer &lt;ROCKETLANE_WEBHOOK_SECRET&gt;
-x-webhook-secret: &lt;ROCKETLANE_WEBHOOK_SECRET&gt;</pre>
-      </div>
-
-      <p>
-        With the token, <code>POST /api/card-check?async=1</code> answers
-        <code>{ ok, queued, runId, projectId, reference, cardType }</code> as soon as the file is
-        parsed, and the check runs in the background; <code>projectId</code> becomes optional.
-        Read the verdict from a <a href="#webhooks">webhook</a> or
-        <a href="#result"><code>GET /api/result/{runId}</code></a>. A request problem is a
-        <span class="status-code bad">400</span> <code>{ error, runId }</code> instead of an
-        <code>error</code> event. Without a valid token, <code>?async=1</code> is ignored and the
-        caller gets the event stream.
-      </p>
-
-      <div class="code">
-        <div class="code-head">
-          <span class="code-title">Token mode</span>
-          <button class="copy-btn" aria-label="Copy code"></button>
-        </div>
-        <pre data-hl="bash">curl -X POST "https://card-art-checker.vercel.app/api/card-check?async=1" \
-  -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET" \
-  -F "file=@card.png" \
-  -F "cardType=virtual" \
-  -F "reference=cardArtForm_01HX9"
-
-# → { "ok": true, "queued": true, "runId": "msqz4i4j-6fa7c9", "projectId": null,
-#     "reference": "cardArtForm_01HX9", "cardType": "virtual" }</pre>
-      </div>
-    </section>
-
-    <!-- Result -->
-    <section id="result">
-      <h2>Fetch a result <span class="internal-tag">Internal</span> <a class="anchor" href="#result" aria-label="Link to Fetch a result">#</a></h2>
-
-      <div class="endpoint">
-        <span class="method get">GET</span>
-        <span class="endpoint-path">/api/result/<em>{runId}</em></span>
-        <span class="endpoint-auth">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
-          Token
-        </span>
-      </div>
-
-      <p>
-        One run can analyze several files, so this returns every stored result for the run — each
-        with its own <code>attachment_id</code>. Poll every 15–30 seconds; a run with no result 6
-        minutes after it was submitted has failed.
-      </p>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Status</th><th>Body</th><th>Meaning</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><span class="status-code ok">200</span></td>
-              <td><code>{ runId, count, results[] }</code></td>
-              <td>Done. See <a href="#result-object">the result object</a>.</td>
-            </tr>
-            <tr>
-              <td><span class="status-code bad">404</span></td>
-              <td><code>{ error, runId, hint }</code></td>
-              <td><strong>Still running, or unknown run.</strong> The normal answer while waiting.</td>
-            </tr>
-            <tr>
-              <td><span class="status-code bad">400</span></td>
-              <td><code>{ error }</code></td>
-              <td><code>Missing runId</code>, or <code>Malformed runId</code> — run ids look like <code>msqz4i4j-6fa7c9</code>.</td>
-            </tr>
-            <tr>
-              <td><span class="status-code err">401</span></td>
-              <td class="type">Unauthorized (text)</td>
-              <td>Bad or missing token.</td>
-            </tr>
-            <tr>
-              <td><span class="status-code err">500</span></td>
-              <td class="type">Server misconfigured (text)</td>
-              <td>The deployment has no <code>ROCKETLANE_WEBHOOK_SECRET</code>.</td>
-            </tr>
-            <tr>
-              <td><span class="status-code err">502</span></td>
-              <td><code>{ error: "Result lookup failed" }</code></td>
-              <td>The result store could not be read. Retry.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-
-    <!-- Rocketlane -->
-    <section id="rocketlane">
-      <h2>Rocketlane trigger <span class="internal-tag">Internal</span> <a class="anchor" href="#rocketlane" aria-label="Link to Rocketlane trigger">#</a></h2>
-
-      <div class="endpoint">
-        <span class="method post">POST</span>
-        <span class="endpoint-path">/api/card-art-check?projectId=<em>{id}</em></span>
-        <span class="endpoint-auth">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.8a2.5 2.5 0 015 0V7"/></svg>
-          Bearer token
-        </span>
-      </div>
-
-      <p>
-        The project-keyed entry point, driven by a Rocketlane <em>Form completed</em> automation.
-        Instead of a file upload it takes a project id and finds the art itself. Integrations
-        outside Rocketlane should <a href="#submit">post the file directly</a>.
-      </p>
-      <ul>
-        <li><strong>Explicit attachments.</strong> Ids in <code>data-attachment-id="…"</code> anchors anywhere in the payload, an <code>attachmentId</code> query or body field — each is analyzed as given, as a separate result.</li>
-        <li><strong>Otherwise, auto-resolved.</strong> The form webhook carries no file answers, so the files come from the project's latest card-art submission task. When that holds several files (art plus a logo), only the largest image by pixel area is analyzed.</li>
-      </ul>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Input</th><th></th><th>Description</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><code>projectId</code></td>
-              <td><span class="req">Required</span></td>
-              <td>Numeric Rocketlane project id. Query string wins over the JSON body. Routes Slack delivery and the report path. Also accepted as <code>/api/card-art-check/{projectId}</code>.</td>
-            </tr>
-            <tr>
-              <td><code>cardType</code></td>
-              <td><span class="opt">Optional</span></td>
-              <td>Applies to every attachment in the request. <code>.ai</code> and <code>.eps</code> always run physical regardless.</td>
-            </tr>
-            <tr>
-              <td><code>callbackUrl</code></td>
-              <td><span class="opt">Optional</span></td>
-              <td>Allowlist-gated, same as <a href="#submit">/api/card-check</a>.</td>
-            </tr>
-            <tr>
-              <td><code>declaredProduct</code></td>
-              <td><span class="opt">Optional</span></td>
-              <td>Query string or body. Same as <a href="#submit">/api/card-check</a>.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <p>Finding and downloading the art happens <em>before</em> the response, so the status code tells you whether it was retrieved:</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Status</th><th>Body</th><th>Meaning</th></tr></thead>
-          <tbody>
-            <tr><td><span class="status-code ok">200</span></td><td><code>{ ok, queued: true, projectId, runId, analyzing[], downloaded[], failed[] }</code></td><td>Analysis started for the ids in <code>analyzing</code>.</td></tr>
-            <tr><td><span class="status-code ok">200</span></td><td><code>{ ok, queued: false, projectId, runId, reason }</code></td><td>No card art found — nothing to analyze. 200 so Rocketlane doesn't retry.</td></tr>
-            <tr><td><span class="status-code bad">400</span></td><td><code>{ error, runId }</code></td><td><code>Missing or unresolved projectId</code>.</td></tr>
-            <tr><td><span class="status-code err">401</span></td><td class="type">Unauthorized (text)</td><td>Bad or missing secret.</td></tr>
-            <tr><td><span class="status-code err">502</span></td><td><code>{ error, projectId, runId, failed }</code></td><td>Every download failed; a <code>attachment_download_failed</code> result is emitted.</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="code">
-        <div class="code-head">
-          <span class="code-title">Manual trigger</span>
-          <button class="copy-btn" aria-label="Copy code"></button>
-        </div>
-        <pre data-hl="bash">curl -X POST "https://card-art-checker.vercel.app/api/card-art-check?projectId=12345&amp;attachmentId=67890" \
-  -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET"</pre>
-      </div>
-    </section>
-
-    <!-- Health -->
-    <section id="health">
-      <h2>Health <span class="internal-tag">Internal</span> <a class="anchor" href="#health" aria-label="Link to Health">#</a></h2>
-
-      <div class="endpoint">
-        <span class="method get">GET</span>
-        <span class="endpoint-path">/api/health</span>
-        <span class="endpoint-auth">Public</span>
-      </div>
-
-      <p>
-        Liveness plus a boolean map of which environment variables are configured — names and
-        presence only, never values. Useful when a deploy behaves as if a credential is missing.
-      </p>
-
-      <div class="code">
-        <div class="code-head">
-          <span class="code-title">200 application/json</span>
-          <button class="copy-btn" aria-label="Copy code"></button>
-        </div>
-        <pre data-hl="json">{
-  "ok": true,
-  "time": 1759291234567,
-  "env": {
-    "SLACK_BOT_TOKEN": true,
-    "ROCKETLANE_API_KEY": true,
-    "ROCKETLANE_WEBHOOK_SECRET": true,
-    "DOCK_WEBHOOK_SECRET": true,
-    "ANTHROPIC_API_KEY": true,
-    "AGENT_ID": true,
-    "ENV_ID": true,
-    "SPEC_SCRIPT_FILE_ID": true,
-    "BLOB_READ_WRITE_TOKEN": true
-  }
-}</pre>
-      </div>
-    </section>
-
-    <!-- Server configuration -->
-    <section id="server-config">
-      <h2>Server configuration <span class="internal-tag">Internal</span> <a class="anchor" href="#server-config" aria-label="Link to Server configuration">#</a></h2>
-      <p>The environment variables behind the partner-facing behavior above.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Variable</th><th>Controls</th></tr></thead>
-          <tbody>
-            <tr><td><code>ROCKETLANE_WEBHOOK_SECRET</code></td><td>The token for <a href="#token-mode">token mode</a>, <code>/api/result</code>, and the Rocketlane trigger. Also derives the token the pipeline's <code>/api/spec-check</code> self-call carries and the signature on browser deliveries to <code>/api/card-deliver</code>; unset, both refuse every call.</td></tr>
-            <tr><td><code>RESULT_WEBHOOK_URL</code></td><td>Default webhook target when a request carries no <code>callbackUrl</code>.</td></tr>
-            <tr><td><code>RESULT_WEBHOOK_ALLOWED_HOSTS</code></td><td>Comma-separated hosts a <code>callbackUrl</code> may point at (subdomains included). Empty means no <code>callbackUrl</code> is honored.</td></tr>
-            <tr><td><code>RESULT_WEBHOOK_SECRET</code></td><td>Signs outbound webhooks. Unset means no webhook is sent at all.</td></tr>
           </tbody>
         </table>
       </div>

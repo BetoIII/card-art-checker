@@ -28,9 +28,9 @@ SELF_BASE_URL=https://card-art-checker.vercel.app \
 
 `SELF_BASE_URL` is the deployment whose `/api/spec-check` measures the tech specs. Point it at a
 preview deploy to score unreleased spec-check changes as a new variant (`--variant v1`), and
-override `AGENT_ID` to score a staged agent. `/api/spec-check` only answers its own pipeline, so
-the env file needs that deployment's `ROCKETLANE_WEBHOOK_SECRET` — without it a paid run stops at
-the first spec check. The first paid run, and any run after the runner or
+override `AGENT_ID` to score a staged agent. `/api/spec-check` only answers callers holding the
+deployment's shared secret, so the env file needs that deployment's `ROCKETLANE_WEBHOOK_SECRET` —
+without it a paid run stops at the first spec check. The first paid run, and any run after the runner or
 `_state.json.harness_paths` change, needs `--approve-harness` from a person who has reviewed the diff.
 
 Metrics are defined in the data folder's `hillclimb/virtual/metrics.md`; the headline is

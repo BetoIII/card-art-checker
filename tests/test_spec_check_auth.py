@@ -1,12 +1,11 @@
 """
-The /api/spec-check gate: only this deployment's own pipeline may spend its
-compute.
+The /api/spec-check gate: only callers holding the deployment's shared secret
+may spend its compute.
 
 Run: npm run test:py   (or: python3 -m unittest discover -s tests -p 'test_*.py')
 
-The token is derived from ROCKETLANE_WEBHOOK_SECRET on both sides of the
-self-call. tests/internal-auth.test.js pins lib/internal-auth.js to the same
-vector as this file, so the Python and JavaScript derivations can't drift.
+The pipeline (lib/pipeline.js) sends ROCKETLANE_WEBHOOK_SECRET as a bearer
+token, the same credential every server-to-server call uses.
 """
 import importlib.util
 import os
@@ -21,8 +20,6 @@ _spec = importlib.util.spec_from_file_location("spec_check", os.path.join(ROOT, 
 spec_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(spec_check)
 
-VECTOR = "324d708b6aad55d0f0b423460d218eccb3671fbf34668b8db400601c0bbe8b1b"
-
 
 def headers(**values):
     """Request headers as the handler sees them: case-insensitive."""
@@ -33,26 +30,23 @@ def headers(**values):
 
 
 class SpecCheckAuth(unittest.TestCase):
-    def test_token_matches_the_javascript_vector(self):
+    def test_the_bearer_secret_is_let_through(self):
         with mock.patch.dict(os.environ, {"ROCKETLANE_WEBHOOK_SECRET": "test-secret"}):
-            self.assertEqual(spec_check._spec_check_token(), VECTOR)
+            self.assertIsNone(spec_check._auth_error(headers(Authorization="Bearer test-secret")))
+            self.assertIsNone(spec_check._auth_error(headers(authorization="bearer test-secret")))
 
-    def test_the_pipelines_token_is_let_through(self):
-        with mock.patch.dict(os.environ, {"ROCKETLANE_WEBHOOK_SECRET": "test-secret"}):
-            self.assertIsNone(spec_check._auth_error(headers(X_Spec_Check_Token=VECTOR)))
-
-    def test_a_missing_or_wrong_token_is_refused(self):
+    def test_a_missing_or_wrong_secret_is_refused(self):
         with mock.patch.dict(os.environ, {"ROCKETLANE_WEBHOOK_SECRET": "test-secret"}):
             self.assertEqual(spec_check._auth_error(headers())[0], 401)
-            self.assertEqual(spec_check._auth_error(headers(X_Spec_Check_Token="0" * 64))[0], 401)
-            # The raw secret is not the token.
-            self.assertEqual(spec_check._auth_error(headers(X_Spec_Check_Token="test-secret"))[0], 401)
+            self.assertEqual(spec_check._auth_error(headers(Authorization="Bearer nope"))[0], 401)
+            self.assertEqual(spec_check._auth_error(headers(Authorization="Bearer "))[0], 401)
+            # Not a bearer token.
+            self.assertEqual(spec_check._auth_error(headers(Authorization="test-secret"))[0], 401)
 
     def test_no_secret_refuses_everything(self):
         env = {k: v for k, v in os.environ.items() if k != "ROCKETLANE_WEBHOOK_SECRET"}
         with mock.patch.dict(os.environ, env, clear=True):
-            self.assertIsNone(spec_check._spec_check_token())
-            self.assertEqual(spec_check._auth_error(headers(X_Spec_Check_Token=VECTOR))[0], 503)
+            self.assertEqual(spec_check._auth_error(headers(Authorization="Bearer test-secret"))[0], 503)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-// Server-issued credentials: the spec-check self-call token and the signed
+// The shared secret: the bearer check, the self-call header, and the signed
 // browser delivery.
 //
 // Run: node --test 'tests/*.test.js'
@@ -6,30 +6,40 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { specCheckToken, signDelivery, verifyDelivery } from '../lib/internal-auth.js';
+import {
+  isAuthenticated, selfAuthHeader, signDelivery, verifyDelivery,
+} from '../lib/internal-auth.js';
 
 beforeEach(() => {
   process.env.ROCKETLANE_WEBHOOK_SECRET = 'test-secret';
 });
 
-// ── Spec-check token ────────────────────────────────────────────────
+// ── Bearer secret ───────────────────────────────────────────────────
 
-// api/spec-check.py derives the token on its own; tests/test_spec_checks.py
-// pins it to this same vector, so the two sides can't drift apart.
-test('the spec-check token is the shared vector', () => {
-  assert.equal(specCheckToken(), '324d708b6aad55d0f0b423460d218eccb3671fbf34668b8db400601c0bbe8b1b');
+const req = (headers) => new Request('https://example.test/api/result', { headers });
+
+test('the secret is accepted as a bearer token or x-webhook-secret', () => {
+  assert.equal(isAuthenticated(req({ authorization: 'Bearer test-secret' })), true);
+  assert.equal(isAuthenticated(req({ authorization: 'bearer  test-secret ' })), true);
+  assert.equal(isAuthenticated(req({ 'x-webhook-secret': 'test-secret' })), true);
 });
 
-test('the spec-check token is not the secret and changes with it', () => {
-  const token = specCheckToken();
-  assert.notEqual(token, 'test-secret');
-  process.env.ROCKETLANE_WEBHOOK_SECRET = 'other-secret';
-  assert.notEqual(specCheckToken(), token);
+test('a missing or wrong secret is refused', () => {
+  assert.equal(isAuthenticated(req({})), false);
+  assert.equal(isAuthenticated(req({ authorization: 'Bearer nope' })), false);
+  assert.equal(isAuthenticated(req({ authorization: 'test-secret' })), false);
+  assert.equal(isAuthenticated(req({ 'x-webhook-secret': 'test-secre' })), false);
 });
 
-test('no secret, no spec-check token', () => {
+test('with no secret configured nothing authenticates', () => {
   delete process.env.ROCKETLANE_WEBHOOK_SECRET;
-  assert.equal(specCheckToken(), null);
+  assert.equal(isAuthenticated(req({ authorization: 'Bearer ' })), false);
+  assert.equal(isAuthenticated(req({ 'x-webhook-secret': '' })), false);
+  assert.equal(selfAuthHeader(), null);
+});
+
+test('the self-call header is what isAuthenticated accepts', () => {
+  assert.equal(isAuthenticated(req({ authorization: selfAuthHeader() })), true);
 });
 
 // ── Signed delivery ─────────────────────────────────────────────────

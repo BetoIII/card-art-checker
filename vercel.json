@@ -13,10 +13,6 @@
       "maxDuration": 300,
       "includeFiles": "assets/templates/**"
     },
-    "api/card-art-check.js": {
-      "maxDuration": 300,
-      "includeFiles": "assets/templates/**"
-    },
     "api/dock-webhook.js": {
       "maxDuration": 300,
       "includeFiles": "assets/templates/**"
@@ -36,7 +32,6 @@
     { "source": "/upload", "destination": "/upload.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/reference", "destination": "/reference.html" },
-    { "source": "/api/card-art-check/:projectId", "destination": "/api/card-art-check?projectId=:projectId" },
     { "source": "/api/result/:runId", "destination": "/api/result?runId=:runId" }
   ]
 }

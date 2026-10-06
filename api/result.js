@@ -1,39 +1,20 @@
-import { timingSafeEqual } from 'node:crypto';
 import { loadResults } from '../lib/result-store.js';
+import { isAuthenticated } from '../lib/internal-auth.js';
 
 // GET /api/result/:runId — the pull half of the results contract.
 //
-// Always available, whether or not an outbound callback was configured. A run
-// can analyze several attachments, so this returns every stored result for the
-// run; each carries its own attachment_id.
+// Always available, whether or not an outbound callback was configured. The
+// response is a list — { runId, count, results[] } — for every result stored
+// under the run; a /api/card-check run stores one.
 //
-// Auth reuses the trigger endpoints' shared secret rather than introducing a
-// third credential: a caller that may start a check may read its result.
-
-function secretsMatch(a, b) {
-  if (!a || !b) return false;
-  const aBuf = Buffer.from(a);
-  const bBuf = Buffer.from(b);
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
-}
-
-function authorized(request) {
-  const expected = process.env.ROCKETLANE_WEBHOOK_SECRET;
-  if (!expected) return false;
-  const authHeader = request.headers.get('authorization') || '';
-  const bearer = authHeader.toLowerCase().startsWith('bearer ')
-    ? authHeader.slice(7).trim()
-    : '';
-  const xHeader = request.headers.get('x-webhook-secret') || '';
-  return secretsMatch(bearer, expected) || secretsMatch(xHeader, expected);
-}
+// Auth is the same shared secret that submits a check: a caller that may
+// start a check may read its result.
 
 export async function GET(request) {
   if (!process.env.ROCKETLANE_WEBHOOK_SECRET) {
     return new Response('Server misconfigured', { status: 500 });
   }
-  if (!authorized(request)) {
+  if (!isAuthenticated(request)) {
     return new Response('Unauthorized', { status: 401 });
   }
 

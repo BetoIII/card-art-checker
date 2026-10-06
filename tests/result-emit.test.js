@@ -54,7 +54,7 @@ test('attachments of one run settle independently', async () => {
 
 test('a run about to be killed publishes function_timeout for what it still owes', async () => {
   const runId = freshRun();
-  const context = { runId, source: 'rocketlane', trigger: { endpoint: '/api/card-art-check' }, projectId: '12345', cardType: 'virtual' };
+  const context = { runId, source: 'api', trigger: { endpoint: '/api/card-check' }, projectId: '12345', cardType: 'virtual' };
   oweResult({ ...context, attachmentId: 'done', fileName: 'done.png' });
   oweResult({ ...context, attachmentId: 'stuck', fileName: 'stuck.png' });
   await completed(runId, 'done');
@@ -66,7 +66,7 @@ test('a run about to be killed publishes function_timeout for what it still owes
   assert.equal(result.attachment_id, 'stuck');
   assert.deepEqual(result.error, { code: 'function_timeout', message: 'Timed out — function hit its 300s limit', step: 'agent_run' });
   assert.equal(result.submission.file_name, 'stuck.png');
-  assert.equal(result.trigger.source, 'rocketlane');
+  assert.equal(result.trigger.source, 'api');
   assert.equal(result.project.id, '12345');
 
   // Settled now: a second timeout, or the pipeline finishing late, adds nothing.

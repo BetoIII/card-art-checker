@@ -1,6 +1,5 @@
 import Busboy from 'busboy';
 import { waitUntil } from '@vercel/functions';
-import { timingSafeEqual } from 'node:crypto';
 import { runAnalysis } from '../lib/pipeline.js';
 import { storeReport } from '../lib/blob-report.js';
 import { inferCardType, extOf } from '../lib/card-type.js';
@@ -9,7 +8,7 @@ import { createRunLog } from '../lib/run-log.js';
 import {
   emitResult, emitFailure, classifyError, oweResult, publishOwedOnTimeout,
 } from '../lib/result-emit.js';
-import { signDelivery } from '../lib/internal-auth.js';
+import { isAuthenticated, signDelivery } from '../lib/internal-auth.js';
 
 // Two callers share this endpoint, and authentication is what separates them:
 //
@@ -23,27 +22,7 @@ import { signDelivery } from '../lib/internal-auth.js';
 //
 // Tying the relaxation to the secret is what keeps it safe: an anonymous caller
 // can never reach the projectId-less path, so the UI's guarantees are intact.
-
-// ── Auth ─────────────────────────────────────────────────────────────
-
-function secretsMatch(a, b) {
-  if (!a || !b) return false;
-  const aBuf = Buffer.from(a);
-  const bBuf = Buffer.from(b);
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
-}
-
-function isAuthenticated(request) {
-  const expected = process.env.ROCKETLANE_WEBHOOK_SECRET;
-  if (!expected) return false;
-  const authHeader = request.headers.get('authorization') || '';
-  const bearer = authHeader.toLowerCase().startsWith('bearer ')
-    ? authHeader.slice(7).trim()
-    : '';
-  const xHeader = request.headers.get('x-webhook-secret') || '';
-  return secretsMatch(bearer, expected) || secretsMatch(xHeader, expected);
-}
+// The secret check itself lives in lib/internal-auth.js.
 
 // A caller-supplied correlation id (e.g. a cardArtForm id) stands in for
 // projectId as the report's Blob path segment, so it must be a single, boring

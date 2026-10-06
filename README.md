@@ -51,7 +51,6 @@ Notes:
 | `/` | API playground for internal testing | — |
 | `/api/card-check` | Analysis + PDF generation. Streams SSE for the browser UI; JSON for authenticated server-to-server callers. See below. | 300s |
 | `/api/card-deliver` | Slack delivery for a run the browser watched. Posts only the delivery `/api/card-check` signed on completion, once per run. | 300s |
-| `/api/card-art-check` | External-trigger entrypoint: resolve attachment IDs, download, analyze, store, deliver. See below. | 300s |
 | `/api/result/:runId` | Structured check results for a run. See below. | 30s |
 
 ## Upload API: `/api/card-check`
@@ -74,7 +73,7 @@ reach the projectId-less path, so the UI's guarantees are unchanged.
 | Field | Purpose |
 |-------|---------|
 | `reference` | Caller's own correlation id (e.g. a `cardArtForm` id). Stands in for `projectId` as the report's Blob path segment, and is echoed back on `trigger.reference`. Sanitized to a single path segment. |
-| `callbackUrl` | Where to POST the result. Allowlist-gated exactly as on `/api/card-art-check`. |
+| `callbackUrl` | Where to POST the result. Honored only for hosts in `RESULT_WEBHOOK_ALLOWED_HOSTS`; see Structured results. |
 
 Without a `projectId` the Rocketlane lookup is skipped entirely and the report is stored
 under `reports/{reference or "external"}/`.
@@ -93,49 +92,13 @@ via `waitUntil` — poll `GET /api/result/:runId`, or configure a webhook to be 
 result. It is honored only for authenticated callers: an anonymous request must hold the
 stream it started.
 
-## External-trigger API: `/api/card-art-check`
-
-Project-keyed card-art check, driven by a Rocketlane "Form completed" HTTP automation. The request identifies a `projectId`; the attachment ID(s) are carried in the payload as the card-art field's HTML anchors (`<a data-attachment-id="12345">akasa.jpg</a>`). One field can hold several files → several anchors → several attachments, each analyzed and delivered.
-
-Two stages run, in order, before any analysis or delivery begins:
-
-1. **Resolve** — regex every `data-attachment-id` out of the raw payload.
-2. **Download** — fetch each attachment's bytes via the Rocketlane v1 attachments API (`GET /api/v1/attachments/{id}/download`).
-
-Both stages are awaited synchronously, so the HTTP response reflects whether the download succeeded. Analysis → store → deliver then runs per attachment in the background.
-
-**Auth:** `Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET` (or `x-webhook-secret: $ROCKETLANE_WEBHOOK_SECRET`).
-
-**Inputs** (query string takes precedence over JSON body — Rocketlane URL smart-fill is more reliable than body smart-fill):
-
-| Field | Required | Notes |
-|-------|----------|-------|
-| `projectId` | yes | Numeric Rocketlane project ID. From the URL query string or JSON body. Used for Slack channel routing and Blob report path. |
-| attachment IDs | yes | One or more, sourced from `data-attachment-id="…"` anchors anywhere in the payload. An explicit `attachmentId` query-string/body field is also accepted (manual/legacy callers). |
-| `cardType` | no | `"virtual"` or `"physical"`. Override for ambiguous filenames; `.ai`/`.eps` always run physical regardless. Applies to every attachment in the request. |
-| `callbackUrl` | no | Where to POST the structured result. Honored only for hosts in `RESULT_WEBHOOK_ALLOWED_HOSTS`; otherwise the run falls back to `RESULT_WEBHOOK_URL`. See Structured results. |
-
-**Responses:**
-- `200 { ok: true, queued: true, projectId, runId, downloaded: [...ids], failed: [...ids] }` — at least one attachment downloaded; analysis runs in the background via `waitUntil`. Use `runId` with `GET /api/result/:runId`.
-- `400 { error: "Missing or unresolved projectId" }` / `{ error: "No attachment IDs found in payload" }`.
-- `401` — bad/missing secret. `500` — server missing `ROCKETLANE_WEBHOOK_SECRET`.
-- `502 { error: "All attachment downloads failed", projectId, failed }` — every download failed; nothing was analyzed.
-
-**Example** (manual trigger with an explicit attachment ID; the Rocketlane automation instead posts the field-anchor payload):
-
-```bash
-curl -X POST "https://card-art-checker.vercel.app/api/card-art-check?projectId=12345&attachmentId=67890" \
-  -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET"
-```
-
 ## Structured results
 
 Every run publishes a machine-readable result alongside the PDF. Two ways to consume it:
 
 **Pull** — `GET /api/result/:runId`, authenticated with the same
-`ROCKETLANE_WEBHOOK_SECRET` bearer token as the trigger endpoints. The trigger's 200 response
-returns the `runId`. A run analyzing several attachments yields several results, each with its
-own `attachment_id`:
+`ROCKETLANE_WEBHOOK_SECRET` bearer token that submitted the check. The `?async=1` response
+returns the `runId`; a run stores one result:
 
 ```bash
 curl -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET" \
@@ -153,7 +116,7 @@ unvalidated callback would leak it.
 ```json
 { "schema_version": "1.0",
   "event": "card_art_check.completed",
-  "run_id": "mfk2q1x-a7b3c9", "attachment_id": "67890",
+  "run_id": "mfk2q1x-a7b3c9", "attachment_id": null,
   "occurred_at": "2026-08-12T18:04:11.000Z",
   "data": { "…the result object…" } }
 ```
@@ -164,7 +127,7 @@ material, so a captured request cannot be replayed with a fresh one. `verifyPayl
 `lib/webhook-out.js` is the reference implementation.
 
 Failures publish too, as `card_art_check.failed` with a closed `error.code` (e.g.
-`function_timeout`, `visual_budget_exhausted`, `agent_output_unparseable`). Each attachment
+`function_timeout`, `visual_budget_exhausted`, `agent_output_unparseable`). Each analyzed file
 gets exactly one result: a run the platform is about to kill at 300s publishes
 `function_timeout` for whatever it still owes (`lib/result-emit.js`, armed by the run-log
 watchdog), and a late emit after a published result is dropped.
