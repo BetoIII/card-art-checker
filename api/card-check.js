@@ -339,22 +339,26 @@ async function mockResponse(request) {
       send('progress', { step: 'analysis', message: 'Analysis complete', status: 'done' });
       send('progress', { step: 'blob_upload', message: 'Report stored', status: 'done' });
       await sleep(200);
+      // Real virtual catalog ids, so the result renders exactly as a live one
+      // would — severities, reason-code links to /reference, and markers.
+      const issuerLogoWarning = { id: 'issuer_logo_present', name: 'Issuer logo present', category: 'required_elements', severity: 'advisory', status: 'warning', reason_code: 'issuer_logo_absent', notes: 'No issuer logo found on the art.' };
       const mockChecks = failing
         ? [
-            { id: 'network_logo_quiet_zone', name: 'Network logo quiet zone', category: 'Network marks', severity: 'blocker', status: 'fail', reason_code: 'quiet_zone_intrusion', notes: 'The Visa logo sits 4px inside the required quiet zone.', marker: { x: 0.84, y: 0.82 } },
-            { id: 'cardholder_name_contrast', name: 'Cardholder name contrast', category: 'Personalization area', severity: 'blocker', status: 'fail', reason_code: 'contrast_below_minimum', notes: 'Contrast ratio 2.7:1 against the background; minimum is 4.5:1.', marker: { x: 0.18, y: 0.62 } },
-            { id: 'background_gradient_banding', name: 'Background gradient banding', category: 'Artwork quality', severity: 'advisory', status: 'warning', reason_code: 'other', notes: 'Slight banding visible in the upper-left gradient.', marker: { x: 0.22, y: 0.18 } },
-            { id: 'bin_area_clear', name: 'BIN area clear', category: 'Personalization area', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
-            { id: 'no_emv_chip', name: 'No EMV chip artwork', category: 'Physical features', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
-            { id: 'brand_mark_present', name: 'Brand mark present', category: 'Network marks', severity: 'blocker', status: 'unverified', reason_code: null, notes: 'Not reported by the analysis.' },
+            { id: 'visa_brand_mark_position', name: 'Visa Brand Mark position (upper-left/upper-right only)', category: 'brand_mark', severity: 'blocker', status: 'fail', reason_code: 'position_lower_edge', notes: 'The Visa Brand Mark is in the lower-right corner.', marker: { x: 0.84, y: 0.82 } },
+            { id: 'lower_left_area_clear', name: 'Lower-left area clear', category: 'layout', severity: 'blocker', status: 'fail', reason_code: 'pan_zone_obstructed', notes: 'A partner logo sits in the lower-left personalization zone.', marker: { x: 0.18, y: 0.78 } },
+            { id: 'contactless_indicator', name: 'Contactless indicator correct (if present)', category: 'required_elements', severity: 'required', status: 'warning', reason_code: 'contactless_indicator_incorrect', notes: 'The contactless symbol looks redrawn.', marker: { x: 0.9, y: 0.45 } },
+            issuerLogoWarning,
+            { id: 'visa_brand_mark_margin', name: 'Visa Brand Mark margin (56px from edges)', category: 'brand_mark', severity: 'blocker', status: 'pass', reason_code: null, notes: 'Measured 56px from the top and right edges.' },
+            { id: 'no_emv_chip', name: 'No EMV chip graphic', category: 'prohibited', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'product_identifier', name: 'Product identifier present and placed', category: 'product_identifier', severity: 'blocker', status: 'unverified', reason_code: null, notes: 'Not reported by the analysis.' },
           ]
         : [
-            ...(withNotes ? [{ id: 'background_gradient_banding', name: 'Background gradient banding', category: 'Artwork quality', severity: 'advisory', status: 'warning', reason_code: 'other', notes: 'Slight banding visible in the upper-left gradient.', marker: { x: 0.22, y: 0.18 } }] : []),
-            { id: 'network_logo_quiet_zone', name: 'Network logo quiet zone', category: 'Network marks', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
-            { id: 'cardholder_name_contrast', name: 'Cardholder name contrast', category: 'Personalization area', severity: 'blocker', status: 'pass', reason_code: null, notes: 'Measured 7.9:1.' },
-            { id: 'bin_area_clear', name: 'BIN area clear', category: 'Personalization area', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
-            { id: 'no_emv_chip', name: 'No EMV chip artwork', category: 'Physical features', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
-            { id: 'brand_mark_present', name: 'Brand mark present', category: 'Network marks', severity: 'blocker', status: 'unverified', reason_code: null, notes: 'Not reported by the analysis.' },
+            ...(withNotes ? [issuerLogoWarning] : []),
+            { id: 'visa_brand_mark_position', name: 'Visa Brand Mark position (upper-left/upper-right only)', category: 'brand_mark', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'visa_brand_mark_margin', name: 'Visa Brand Mark margin (56px from edges)', category: 'brand_mark', severity: 'blocker', status: 'pass', reason_code: null, notes: 'Measured 56px from the top and right edges.' },
+            { id: 'lower_left_area_clear', name: 'Lower-left area clear', category: 'layout', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'no_emv_chip', name: 'No EMV chip graphic', category: 'prohibited', severity: 'blocker', status: 'pass', reason_code: null, notes: null },
+            { id: 'product_identifier', name: 'Product identifier present and placed', category: 'product_identifier', severity: 'blocker', status: 'unverified', reason_code: null, notes: 'Not reported by the analysis.' },
           ];
       const mockResult = {
         schema_version: '1.0',
@@ -372,7 +376,7 @@ async function mockResponse(request) {
         checks: mockChecks,
         tech_checks: [
           { id: 'dimensions', status: 'pass', actual: '1536x969', required: '1536x969', note: null },
-          { id: 'color_mode', status: failing ? 'warning' : 'pass', actual: failing ? 'sRGB (embedded profile missing)' : 'sRGB', required: 'RGB', note: failing ? 'Profile assumed from pixel data.' : null, ...(failing ? { borderline: true } : {}) },
+          { id: 'mark_position', status: failing ? 'fail' : 'pass', actual: failing ? 'lower-right' : 'upper-right', required: 'upper-left or upper-right corner', note: null },
         ],
         colors: {
           background: { rgb: [40, 40, 60], hex: '#28283C' },

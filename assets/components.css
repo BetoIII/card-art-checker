@@ -443,6 +443,8 @@ legend { padding: 0; }
 }
 .rr-dot.warning { background: var(--cc-warning); }
 .rr-dot.pass { background: var(--cc-success); }
+/* Not assessed is not a failure — a red dot would say it was. */
+.rr-dot.unverified { background: var(--cc-text-3); }
 .rr-dot.active, .rr-dot:hover { transform: scale(1.25); }
 
 .rr-group { margin-top: 16px; }
@@ -497,8 +499,13 @@ legend { padding: 0; }
   margin-left: 4px;
   vertical-align: 1px;
 }
-.rr-sev { background: var(--cc-error-bg); color: var(--cc-error-text); }
+/* Severity chips use the same red / amber / neutral as /reference. */
+.rr-sev, .rr-sev.blocker { background: var(--cc-error-bg); color: var(--cc-error-text); }
+.rr-sev.required { background: var(--cc-warning-bg); color: var(--cc-warning-text); }
+.rr-sev.advisory { background: var(--cc-surface-2); color: var(--cc-text-2); border: 1px solid var(--cc-border); }
 .rr-reason { background: var(--cc-surface-2); color: var(--cc-text-3); border: 1px solid var(--cc-border); }
+a.rr-reason { text-decoration: none; transition: color var(--cc-transition), border-color var(--cc-transition); }
+a.rr-reason:hover, a.rr-reason:focus-visible { color: var(--cc-pink); border-color: var(--cc-pink); }
 .rr-rollup { margin-top: 10px; font-size: 12px; color: var(--cc-text-3); }
 .rr-swatches { display: flex; gap: 14px; flex-wrap: wrap; padding: 6px 0; }
 .rr-swatch {

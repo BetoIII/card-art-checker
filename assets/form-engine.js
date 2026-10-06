@@ -79,6 +79,9 @@
 
     let stepElements = {};
     let elapsedTimer = null;
+    // How the current stream ended: 'complete', 'error', or null while it is
+    // still open (or if it closed without saying).
+    let terminal = null;
 
     /* ── Form state ──────────────────────────────────────── */
 
@@ -282,6 +285,16 @@
       }
     };
 
+    // A run that stops early leaves its in-flight steps pending; mark them
+    // stopped so nothing keeps spinning over an error.
+    const settleSteps = () => {
+      for (const [stepId, el] of Object.entries(stepElements)) {
+        if (el.classList.contains('pending')) {
+          upsertStep(stepId, `${el.querySelector('.step-msg').textContent} — stopped`, 'error');
+        }
+      }
+    };
+
     const showError = (msg) => {
       errorBanner.textContent = opts.formatError ? opts.formatError(msg) : msg;
       errorBanner.classList.add('visible');
@@ -290,11 +303,11 @@
     const startElapsed = () => {
       if (!elapsedEl) return;
       const startedAt = Date.now();
-      elapsedEl.textContent = '0:00 elapsed · typically 2–3 min';
+      elapsedEl.textContent = '0:00 elapsed · usually about 2 min';
       elapsedTimer = setInterval(() => {
         const s = Math.floor((Date.now() - startedAt) / 1000);
         const mmss = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-        elapsedEl.textContent = `${mmss} elapsed · typically 2–3 min`;
+        elapsedEl.textContent = `${mmss} elapsed · usually about 2 min`;
       }, 1000);
     };
 
@@ -358,13 +371,21 @@
       return isPng ? URL.createObjectURL(file) : null;
     };
 
-    const checkRow = (check, markerNo) => {
+    const checkRow = (check, markerNo, linkReason = false) => {
       const [icon, cls, label] = STATUS_META[check.status] || STATUS_META.unverified;
       const badge = markerNo ? `<span class="rr-no">${markerNo}</span>` : '';
-      const severity = check.severity === 'blocker' && (check.status === 'fail' || check.status === 'warning')
-        ? '<span class="rr-sev">blocker</span>' : '';
-      const reason = check.reason_code && check.reason_code !== 'other'
-        ? `<span class="rr-reason">${escapeHtml(check.reason_code)}</span>` : '';
+      // Same severity vocabulary as /reference, shown where it matters: on a
+      // check that failed or warned.
+      const flagged = check.status === 'fail' || check.status === 'warning';
+      const severity = flagged && check.severity
+        ? `<span class="rr-sev ${escapeHtml(check.severity)}">${escapeHtml(check.severity)}</span>` : '';
+      // On a virtual result a reason code links to its meaning in the
+      // catalog on /reference, which documents the virtual checks only.
+      const code = check.reason_code && check.reason_code !== 'other' ? escapeHtml(check.reason_code) : '';
+      const reason = !code ? ''
+        : linkReason
+          ? `<a class="rr-reason" href="/reference#check-${encodeURIComponent(check.id)}" target="_blank" rel="noopener" title="What ${code} means">${code}</a>`
+          : `<span class="rr-reason">${code}</span>`;
       return `
         <div class="rr-check ${cls}" data-check="${escapeHtml(check.id)}">
           <span class="rr-icon" title="${label}">${icon}</span>
@@ -381,6 +402,7 @@
       if (!result || typeof result !== 'object' || !Array.isArray(result.checks)) return;
 
       const compact = opts.resultDetail === 'compact';
+      const linkReasons = result.card_type === 'virtual';
       const parts = [];
 
       // Top row: three-state outcome, counts, copyable run id.
@@ -420,7 +442,7 @@
       const actionable = result.checks.filter((c) => c.status === 'fail' || c.status === 'warning');
       if (compact) {
         if (actionable.length) {
-          parts.push(`<div class="rr-group">${actionable.map((c) => checkRow(c, markerNos.get(c.id))).join('')}</div>`);
+          parts.push(`<div class="rr-group">${actionable.map((c) => checkRow(c, markerNos.get(c.id), linkReasons)).join('')}</div>`);
         }
         const rest = result.checks.length - actionable.length;
         if (rest > 0) {
@@ -436,8 +458,8 @@
         for (const [category, checks] of groups) {
           parts.push(`
             <div class="rr-group">
-              <h4>${escapeHtml(category)}</h4>
-              ${checks.map((c) => checkRow(c, markerNos.get(c.id))).join('')}
+              <h4>${escapeHtml(category.replace(/_/g, ' '))}</h4>
+              ${checks.map((c) => checkRow(c, markerNos.get(c.id), linkReasons)).join('')}
             </div>`);
         }
       }
@@ -545,6 +567,7 @@
           break;
         }
         case 'complete':
+          terminal = 'complete';
           opts.renderResult(payload);
           renderResultDetail(payload.result, payload);
           // tabindex="-1" in the markup makes the card focusable, so the
@@ -557,6 +580,7 @@
           }
           break;
         case 'error':
+          terminal = 'error';
           showError(payload.message);
           break;
       }
@@ -581,6 +605,7 @@
       resultSection.classList.remove('visible');
       progressSteps.innerHTML = '';
       stepElements = {};
+      terminal = null;
       if (resultDetail) resultDetail.innerHTML = '';
       if (agentOutput) {
         agentOutput.innerHTML = '';
@@ -631,9 +656,16 @@
             } catch { /* skip malformed frame */ }
           }
         }
+        // The server always ends a run with 'complete' or 'error'. A stream
+        // that closes without either was cut off — a timeout or a dropped
+        // connection — and must say so rather than end in silence.
+        if (!terminal) {
+          showError('The connection closed before the check finished, so no result came back. Try again.');
+        }
       } catch (err) {
         showError(err.message);
       } finally {
+        if (terminal !== 'complete') settleSteps();
         // Always restore the button — a stream that dies without a terminal
         // frame (function timeout, dropped connection) must not strand the
         // form on its busy label.
