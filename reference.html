@@ -8,69 +8,44 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/tokens.css?v=1">
 <link rel="stylesheet" href="/assets/nav.css">
 <script src="/assets/nav.js" data-tag="API reference" data-auto-theme data-menu="#sidebar" data-menu-scrim="#scrim"></script>
 <style>
 :root {
-  --paper:    #FFFFFF;
-  --paper-2:  #FAFAFB;
-  --paper-3:  #F2F4F7;
-  --ink:      #0A0A0A;
-  --ink-2:    #121212;
-  --muted:    #5B6169;
-  --faint:    #868D96;
-  --line:     #E6E9ED;
-  --line-2:   #D8DCDF;
+  /* Page-local names for the shared tokens in /assets/tokens.css, which also
+     carries the dark palette. Only what tokens.css has no equivalent for is
+     defined here: the method pills and the syntax-highlighting hues. */
+  --paper:    var(--cc-surface);
+  --paper-2:  var(--cc-surface-2);
+  --paper-3:  color-mix(in srgb, var(--cc-text) 5%, var(--cc-surface));
+  --ink:      var(--cc-text);
+  --muted:    var(--cc-text-2);
+  --faint:    var(--cc-text-3);
+  --line:     var(--cc-border);
+  --line-2:   var(--cc-border-strong);
 
-  --accent:   #FF2FB6;
-  --accent-soft: rgba(255, 47, 182, 0.09);
-  --green:    #2FA34B;
-  --red:      #E84142;
-  --amber:    #C97C10;
+  --accent:      var(--cc-pink);
+  --accent-soft: var(--cc-pink-soft);
 
   --pill-post: #71FF7D;
   --pill-get:  #7BC4FF;
 
-  --code-bg:  #101322;
-  --code-fg:  #DDE1EC;
-  --code-line:#232739;
+  --code-line: color-mix(in srgb, var(--cc-code-text) 12%, var(--cc-code-bg));
   --code-key: #71FFFF;
   --code-str: #71FF7D;
   --code-num: #F49FFF;
-  --code-com: #6C7392;
   --code-kw:  #FF9FD2;
+  --code-fn:  #FFD479;
 
-  --font:  "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --mono:  "Reddit Mono", "SF Mono", SFMono-Regular, Menlo, ui-monospace, monospace;
+  --font: var(--cc-font);
+  --mono: var(--cc-mono);
 
   --sidebar-w: 264px;
   --content-w: 860px;
   /* The bar's height is owned by nav.css; track it so the sticky columns and
      the scroll offsets stay pinned to the real thing. */
   --topbar-h:  var(--rn-nav-h, 57px);
-
-  --grad: linear-gradient(45deg, #F73196 0%, #FF8CB2 100%);
-}
-
-[data-theme="dark"] {
-  --paper:    #0B0D16;
-  --paper-2:  #10131F;
-  --paper-3:  #171B2A;
-  --ink:      #F0F1F4;
-  --ink-2:    #E3E5EA;
-  --muted:    #9BA2B0;
-  --faint:    #767E8E;
-  --line:     #1F2333;
-  --line-2:   #2A2F42;
-
-  --accent:   #FF52C2;
-  --accent-soft: rgba(255, 82, 194, 0.14);
-  --green:    #4ADE7B;
-  --red:      #FF6B6C;
-  --amber:    #F7A838;
-
-  --code-bg:  #070911;
-  --code-line:#1C2030;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -188,7 +163,7 @@ a:hover { text-decoration: underline; }
   font-family: var(--mono); font-size: 9.5px; font-weight: 600;
   letter-spacing: 0.5px;
   padding: 2px 5px; border-radius: 4px;
-  color: var(--ink-2);
+  color: var(--ink);
   flex-shrink: 0;
 }
 .nav-method.post { background: var(--pill-post); }
@@ -266,7 +241,7 @@ code {
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 1.5px 5px;
-  color: var(--ink-2);
+  color: var(--ink);
   /* Wrap at spaces so a long error string can't widen the page, but break
      inside a token only when the token alone won't fit the line. */
   overflow-wrap: anywhere;
@@ -310,7 +285,7 @@ a code { color: inherit; border-color: currentColor; }
 .code {
   position: relative;
   margin: 0 0 20px;
-  background: var(--code-bg);
+  background: var(--cc-code-bg);
   border: 1px solid var(--code-line);
   border-radius: 10px;
   overflow: hidden;
@@ -324,17 +299,17 @@ a code { color: inherit; border-color: currentColor; }
 }
 .code-title {
   font-family: var(--mono); font-size: 11.5px; font-weight: 500;
-  color: #8A92AC; letter-spacing: 0.3px;
+  color: var(--cc-code-muted); letter-spacing: 0.3px;
   margin-right: auto;
 }
 .tab {
   font-family: var(--mono); font-size: 11.5px; font-weight: 500;
   padding: 5px 10px; border-radius: 6px;
   background: transparent; border: none;
-  color: #8A92AC; cursor: pointer;
+  color: var(--cc-code-muted); cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.tab:hover { color: #DDE1EC; }
+.tab:hover { color: var(--cc-code-text); }
 .tab.active { color: #0A0A0A; background: var(--pill-post); font-weight: 600; }
 
 .copy-btn {
@@ -342,10 +317,10 @@ a code { color: inherit; border-color: currentColor; }
   width: 28px; height: 28px; flex-shrink: 0;
   margin-left: 6px;
   background: transparent; border: 1px solid transparent; border-radius: 6px;
-  color: #8A92AC; cursor: pointer;
+  color: var(--cc-code-muted); cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.copy-btn:hover { color: #DDE1EC; background: rgba(255,255,255,0.07); }
+.copy-btn:hover { color: var(--cc-code-text); background: rgba(255,255,255,0.07); }
 .copy-btn svg { width: 14px; height: 14px; }
 .copy-btn.copied { color: var(--pill-post); }
 .copy-btn.copied .icon-copy { display: none; }
@@ -356,11 +331,11 @@ a code { color: inherit; border-color: currentColor; }
   margin: 0; padding: 14px 16px;
   overflow-x: auto;
   font-family: var(--mono); font-size: 12.5px; line-height: 1.72;
-  color: var(--code-fg);
+  color: var(--cc-code-text);
   tab-size: 2;
 }
 .code pre::-webkit-scrollbar { height: 8px; }
-.code pre::-webkit-scrollbar-thumb { background: #2C3247; border-radius: 4px; }
+.code pre::-webkit-scrollbar-thumb { background: var(--code-line); border-radius: 4px; }
 
 .panel { display: none; }
 .panel.active { display: block; }
@@ -368,9 +343,9 @@ a code { color: inherit; border-color: currentColor; }
 .tok-key { color: var(--code-key); }
 .tok-str { color: var(--code-str); }
 .tok-num { color: var(--code-num); }
-.tok-com { color: var(--code-com); font-style: italic; }
+.tok-com { color: var(--cc-code-muted); font-style: italic; }
 .tok-kw  { color: var(--code-kw); }
-.tok-fn  { color: #FFD479; }
+.tok-fn  { color: var(--code-fn); }
 
 /* ── Tables ────────────────────────────────────────────── */
 
@@ -426,17 +401,17 @@ tbody tr { transition: opacity 0.18s; }
   padding: 2px 6px; border-radius: 4px;
   white-space: nowrap;
 }
-.sev.blocker  { background: rgba(232,65,66,0.12);  color: var(--red); }
-.sev.required { background: rgba(201,124,16,0.14); color: var(--amber); }
+.sev.blocker  { background: var(--cc-error-bg);   color: var(--cc-error-text); }
+.sev.required { background: var(--cc-warning-bg); color: var(--cc-warning-text); }
 .sev.advisory { background: var(--paper-3);        color: var(--muted); }
 
 .status-code {
   font-family: var(--mono); font-size: 12px; font-weight: 600;
   white-space: nowrap;
 }
-.status-code.ok  { color: var(--green); }
-.status-code.bad { color: var(--amber); }
-.status-code.err { color: var(--red); }
+.status-code.ok  { color: var(--cc-success-text); }
+.status-code.bad { color: var(--cc-warning-text); }
+.status-code.err { color: var(--cc-error-text); }
 
 /* ── Callouts ──────────────────────────────────────────── */
 
@@ -454,10 +429,10 @@ tbody tr { transition: opacity 0.18s; }
 .note p + p { margin-top: 8px; }
 .note-icon { flex-shrink: 0; margin-top: 2px; }
 .note-icon svg { width: 15px; height: 15px; display: block; }
-.note.warn { border-left-color: var(--amber); background: rgba(247,168,56,0.06); }
-.note.warn .note-icon { color: var(--amber); }
-.note.danger { border-left-color: var(--red); background: rgba(232,65,66,0.05); }
-.note.danger .note-icon { color: var(--red); }
+.note.warn { border-left-color: var(--cc-warning); background: var(--cc-warning-bg); }
+.note.warn .note-icon { color: var(--cc-warning-text); }
+.note.danger { border-left-color: var(--cc-error); background: var(--cc-error-bg); }
+.note.danger .note-icon { color: var(--cc-error-text); }
 .note.tip { border-left-color: var(--accent); background: var(--accent-soft); }
 .note.tip .note-icon { color: var(--accent); }
 .note-title { font-weight: 650; }
