@@ -4,8 +4,6 @@ export function GET() {
     time: Date.now(),
     env: {
       SLACK_BOT_TOKEN: !!process.env.SLACK_BOT_TOKEN,
-      SLACK_BOT_TOKEN_len: (process.env.SLACK_BOT_TOKEN || '').length,
-      SLACK_BOT_TOKEN_prefix: (process.env.SLACK_BOT_TOKEN || '').slice(0, 4),
       ROCKETLANE_API_KEY: !!process.env.ROCKETLANE_API_KEY,
       ROCKETLANE_WEBHOOK_SECRET: !!process.env.ROCKETLANE_WEBHOOK_SECRET,
       DOCK_WEBHOOK_SECRET: !!process.env.DOCK_WEBHOOK_SECRET,
