@@ -414,7 +414,8 @@
 
     <div class="error-banner" id="error-banner" role="alert"></div>
 
-    <div class="raw-log-panel">
+    <!-- Debug only: shown when the page is opened with ?debug=1. -->
+    <div class="raw-log-panel" id="raw-log-panel" hidden>
       <button type="button" class="raw-log-header collapsed" id="raw-log-header" aria-expanded="false" aria-controls="raw-log-body">
         <span class="raw-log-title">
           <span class="dot" id="raw-log-dot"></span>
@@ -466,6 +467,11 @@
     const urlParams = new URLSearchParams(window.location.search);
     projectIdInput.value = urlParams.get('projectId') || urlParams.get('project_id') || '';
 
+    // The raw event log is a debugging aid, not part of the playground:
+    // ?debug=1 shows it and records the stream into it.
+    const debug = /^(1|true|yes)$/i.test(urlParams.get('debug') || '');
+    document.getElementById('raw-log-panel').hidden = !debug;
+
     const checker = CardCheckForm.create({
       labels: { idle: 'Send Request', busy: 'Streaming...' },
       dropText: {
@@ -480,7 +486,7 @@
       // arbiter, so an unchecked box still exercises /api/card-deliver.
       decorateDelivery: (delivery) => ({ ...delivery, slackDelivery: slackDeliveryInput.checked }),
       onStateChange: updateCurl,
-      onEvent: logRawEvent,
+      onEvent: debug ? logRawEvent : undefined,
       onStreamStart: () => {
         rawLogBody.innerHTML = '';
         eventCount = 0;

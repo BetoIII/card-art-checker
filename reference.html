@@ -657,7 +657,6 @@ tbody tr:hover td { background: var(--paper-2); }
       <div class="nav-group-title">Reference</div>
       <a class="nav-link" href="#errors">Errors &amp; failures</a>
       <a class="nav-link" href="#limits">Limits</a>
-      <a class="nav-link" href="#changelog">Changelog</a>
     </div>
 
     <div class="nav-group">
@@ -1763,53 +1762,6 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
           </tbody>
         </table>
       </div>
-    </section>
-
-    <!-- Changelog -->
-    <section id="changelog">
-      <h2>Changelog <a class="anchor" href="#changelog" aria-label="Link to Changelog">#</a></h2>
-      <p>Changes that can move a verdict or change what you receive. The response shape is unchanged throughout.</p>
-
-      <h3 id="changelog-2026-10-06">2026-10-06 <a class="anchor" href="#changelog-2026-10-06" aria-label="Link to 2026-10-06">#</a></h3>
-      <ul>
-        <li>Integrations need no token: send your Rocketlane <code>projectId</code> and read the verdict from the response stream.</li>
-        <li>The stream's <code>error</code> event carries <code>code</code>. An unknown <code>projectId</code> is <code>missing_project_id</code> and a request with no file is <code>card_art_missing</code>; both were <code>internal_error</code>.</li>
-        <li>A run killed at the 300-second ceiling publishes a <code>function_timeout</code> failure result and <code>card_art_check.failed</code> webhook instead of nothing.</li>
-        <li>Each analyzed file gets exactly one result: a late failure can no longer follow a published verdict.</li>
-      </ul>
-
-      <h3 id="changelog-2026-10-02">2026-10-02 <a class="anchor" href="#changelog-2026-10-02" aria-label="Link to 2026-10-02">#</a></h3>
-      <ul>
-        <li><code>mark_size</code>: a file that isn't 1536×969 is also measured at its own pixels against the 109px target, and fails outside 102–116px.</li>
-        <li><code>issuer_logo_border</code>: a logo fails only when its letters' main line, or its first or last letter, is within 53px of an edge. A lone stroke or a set-off icon in the zone warns instead.</li>
-        <li><code>identifier_clearance</code>: background texture near the identifier (grain, glows, dot screens) no longer counts as artwork touching it.</li>
-      </ul>
-
-      <h3 id="changelog-2026-10-01">2026-10-01 <a class="anchor" href="#changelog-2026-10-01" aria-label="Link to 2026-10-01">#</a></h3>
-      <ul>
-        <li>New check <a href="#check-art_fills_canvas"><code>art_fills_canvas</code></a> (<code>border_frame_present</code>), fed by the <code>border_frame</code> measurement. A frame used to be reported under <code>no_physical_card_photography</code>. The virtual catalog goes from 21 checks to 22.</li>
-        <li>New technical check <code>mark_position</code>: a Brand Mark in a lower corner fails on measurement, whatever its margin.</li>
-        <li>New technical check <code>identifier_clearance</code>: artwork touching the product identifier fails <code>design_elements_clear_of_identifier</code>.</li>
-        <li><code>dpi</code> reads the declared density and fails anything but 72. A file with no density metadata still passes.</li>
-        <li><code>border_frame</code> catches a 1px line running along all four edges.</li>
-        <li><code>issuer_logo_present</code> drops to <code>advisory</code>: a missing issuer logo is a warning, never a failure.</li>
-        <li><code>product_identifier</code>: a casing mismatch with the official lockup fails (<code>identifier_casing</code>); <code>Business</code> identifiers are accepted; the identifier must read the declared product exactly, word order included; a typeface difference fails only when it is clear.</li>
-        <li><code>visa_brand_mark_color</code>: a flat off-white mark warns rather than fails.</li>
-        <li><code>lower_left_area_clear</code>: a logo, icon, text or high-contrast graphic in the zone fails whatever its size.</li>
-      </ul>
-
-      <h3 id="changelog-2026-09-30">2026-09-30 <a class="anchor" href="#changelog-2026-09-30" aria-label="Link to 2026-09-30">#</a></h3>
-      <ul>
-        <li><code>full_color</code>: an intentionally monochrome design passes.</li>
-        <li><code>no_pan</code>: any card-number digits fail, masked or last-4 included — the wallet overlays the real last 4 itself.</li>
-        <li><code>design_elements_clear_of_identifier</code>: artwork that crowds or nearly touches the identifier fails, not only artwork that overlaps it.</li>
-      </ul>
-
-      <h3 id="changelog-2026-09-29">2026-09-29 <a class="anchor" href="#changelog-2026-09-29" aria-label="Link to 2026-09-29">#</a></h3>
-      <ul>
-        <li>Virtual checks rebuilt around the rules Visa enforces in its own reviews.</li>
-        <li>New technical check <code>lockup_match</code>: the mark and identifier are compared against Visa's official lockup artwork (<code>lockup_not_official_artwork</code>).</li>
-      </ul>
     </section>
 
     <!-- ── Internal ──────────────────────────────────── -->
