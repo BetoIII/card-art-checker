@@ -50,7 +50,7 @@ Notes:
 | `/upload` | Customer-facing upload form (embedded in Rocketlane) | — |
 | `/` | API playground for internal testing | — |
 | `/api/card-check` | Analysis + PDF generation. Streams SSE for the browser UI; JSON for authenticated server-to-server callers. See below. | 300s |
-| `/api/card-deliver` | Slack + Rocketlane delivery, non-fatal per service | 60s |
+| `/api/card-deliver` | Slack delivery for a run the browser watched. Posts only the delivery `/api/card-check` signed on completion, once per run. | 300s |
 | `/api/card-art-check` | External-trigger entrypoint: resolve attachment IDs, download, analyze, store, deliver. See below. | 300s |
 | `/api/result/:runId` | Structured check results for a run. See below. | 30s |
 
@@ -164,7 +164,10 @@ material, so a captured request cannot be replayed with a fresh one. `verifyPayl
 `lib/webhook-out.js` is the reference implementation.
 
 Failures publish too, as `card_art_check.failed` with a closed `error.code` (e.g.
-`function_timeout`, `visual_budget_exhausted`, `agent_output_unparseable`).
+`function_timeout`, `visual_budget_exhausted`, `agent_output_unparseable`). Each attachment
+gets exactly one result: a run the platform is about to kill at 300s publishes
+`function_timeout` for whatever it still owes (`lib/result-emit.js`, armed by the run-log
+watchdog), and a late emit after a published result is dropped.
 
 ### The result object
 

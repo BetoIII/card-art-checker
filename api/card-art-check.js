@@ -8,7 +8,9 @@ import { getProjectName, downloadAttachment, resolveLatestSubmission } from '../
 import { identifySlackChannel } from '../lib/slack-identify.js';
 import { getImageSize } from '../lib/image-size.js';
 import { createRunLog } from '../lib/run-log.js';
-import { emitResult, emitFailure, classifyError } from '../lib/result-emit.js';
+import {
+  emitResult, emitFailure, classifyError, oweResult, publishOwedOnTimeout,
+} from '../lib/result-emit.js';
 
 // Card-art check, keyed on a Rocketlane projectId. The caller is a Rocketlane
 // "Form completed" HTTP automation on the custom-card-request form. Its payload
@@ -183,6 +185,7 @@ async function analyzeAndDeliver({ projectId, projectName, attachmentId, buffer,
   };
 
   const cardType = inferCardType(filename, cardTypeOverride);
+  oweResult({ ...emitContext, cardType });
   if (!cardType) {
     console.error(`[card-art-check] could not infer card type for ${filename} (attachment ${attachmentId}) — aborting`);
     const error = `Could not infer card type for "${filename}"`;
@@ -276,7 +279,8 @@ export async function POST(request) {
       userAgent: request.headers.get('user-agent') || undefined,
     },
   });
-  runLog.armWatchdog(300_000); // keep in sync with config.maxDuration below
+  // Keep in sync with config.maxDuration below.
+  runLog.armWatchdog(300_000, { onTimeout: publishOwedOnTimeout(runLog.runId) });
 
   // Read the raw body once: Stage 1 regexes attachment IDs out of it, and we
   // also JSON-parse it for projectId when the query string didn't carry one.

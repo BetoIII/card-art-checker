@@ -26,12 +26,17 @@ spends its time budget on visual inspection only:
         "previews": {"front": b64, "back": b64?}, "visual_results": {...}}
     -> application/pdf              (annotated physical results report)
 
-The caller is lib/pipeline.js (same deployment, self-call). Source files
+The caller is lib/pipeline.js (same deployment, self-call). POSTs must carry
+X-Spec-Check-Token, derived from ROCKETLANE_WEBHOOK_SECRET exactly as
+lib/internal-auth.js derives it; anything else is refused before any work.
+Source files
 arrive as Vercel Blob URLs (`image_url`/`back_url`) because the platform
 rejects request bodies over ~4.5MB — inline `image_b64`/`back_b64` is
 still accepted for small payloads and local harness tests.
 """
 import base64
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -47,9 +52,35 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 
 import check_technical_specs as specs  # noqa: E402
 
-# The endpoint is publicly reachable in prod, so URL fetches are pinned to
-# the deployment's own Blob store family — not an open proxy.
+# The endpoint is publicly reachable in prod. Only this deployment may spend
+# its compute: see _spec_check_token(). And URL fetches are pinned to the
+# deployment's own Blob store family — not an open proxy.
 _BLOB_URL_RE = re.compile(r"^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/")
+
+
+_TOKEN_LABEL = b"card-art-checker/spec-check/v1"
+
+
+def _spec_check_token():
+    """The token lib/internal-auth.js sends: HMAC-SHA256(secret, label), hex.
+
+    None when ROCKETLANE_WEBHOOK_SECRET is unset, which refuses every call.
+    """
+    secret = os.environ.get("ROCKETLANE_WEBHOOK_SECRET")
+    if not secret:
+        return None
+    return hmac.new(secret.encode("utf-8"), _TOKEN_LABEL, hashlib.sha256).hexdigest()
+
+
+def _auth_error(headers):
+    """(status, message) when the caller isn't this deployment, else None."""
+    expected = _spec_check_token()
+    if expected is None:
+        return 503, "spec-check auth is not configured"
+    sent = headers.get("x-spec-check-token") or ""
+    if not hmac.compare_digest(sent.encode("utf-8"), expected.encode("utf-8")):
+        return 401, "Unauthorized"
+    return None
 
 
 _GS_VENDOR = os.path.join(_REPO_ROOT, "scripts", "bin", "gs-1000-linux-x86_64")
@@ -107,6 +138,9 @@ class handler(BaseHTTPRequestHandler):
         self._json(200, {"ok": True, "modes": ["check", "render", "preview", "render-physical"]})
 
     def do_POST(self):
+        denied = _auth_error(self.headers)
+        if denied:
+            return self._json(denied[0], {"error": denied[1]})
         try:
             length = int(self.headers.get("content-length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")

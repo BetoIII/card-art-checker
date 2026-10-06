@@ -1807,7 +1807,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
           <thead><tr><th>Code</th><th>What happened</th><th>What to do</th></tr></thead>
           <tbody>
             <tr data-error="visual_budget_exhausted"><td><code>visual_budget_exhausted</code></td><td>Preparing the file left too little time for the visual review — usually an oversized or layered file.</td><td>Resubmit a flattened PNG</td></tr>
-            <tr data-error="function_timeout"><td><code>function_timeout</code></td><td>A step ran out of time.</td><td>Retry</td></tr>
+            <tr data-error="function_timeout"><td><code>function_timeout</code></td><td>The run hit the platform's 300-second ceiling, or a step ran out of time.</td><td>Retry</td></tr>
             <tr data-error="agent_output_unparseable"><td><code>agent_output_unparseable</code></td><td>The analysis came back in a shape we could not read.</td><td>Retry</td></tr>
             <tr data-error="spec_check_failed"><td><code>spec_check_failed</code></td><td>The technical measurement pass failed.</td><td>Retry</td></tr>
             <tr data-error="card_type_indeterminate"><td><code>card_type_indeterminate</code></td><td>Card type could not be inferred and none was sent.</td><td>Send <code>cardType</code></td></tr>
@@ -1824,10 +1824,14 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
 
       <h3 id="errors-no-result">When no result arrives <a class="anchor" href="#errors-no-result" aria-label="Link to When no result arrives">#</a></h3>
       <p>
-        A run that hits the platform's 300-second ceiling can end without writing any result:
-        <code>/api/result</code> keeps answering <span class="status-code bad">404</span> and no
-        webhook fires. If nothing has arrived <strong>6 minutes</strong> after you submitted, treat
-        the run as failed and resubmit.
+        Every analyzed file gets exactly one result. A run about to hit the platform's 300-second
+        ceiling publishes a <code>function_timeout</code> failure — stored and pushed as
+        <code>card_art_check.failed</code> like any other — for each file still in flight.
+      </p>
+      <p>
+        If our result store itself is down, even that can't be written. So keep a backstop: if
+        nothing has arrived <strong>6 minutes</strong> after you submitted, treat the run as failed
+        and resubmit.
       </p>
     </section>
 
@@ -1850,7 +1854,13 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     <!-- Changelog -->
     <section id="changelog">
       <h2>Changelog <a class="anchor" href="#changelog" aria-label="Link to Changelog">#</a></h2>
-      <p>Rule changes that can move a verdict. The response shape is unchanged throughout.</p>
+      <p>Changes that can move a verdict or change what you receive. The response shape is unchanged throughout.</p>
+
+      <h3 id="changelog-2026-10-06">2026-10-06 <a class="anchor" href="#changelog-2026-10-06" aria-label="Link to 2026-10-06">#</a></h3>
+      <ul>
+        <li>A run killed at the 300-second ceiling publishes a <code>function_timeout</code> failure result and <code>card_art_check.failed</code> webhook instead of nothing.</li>
+        <li>Each analyzed file gets exactly one result: a late failure can no longer follow a published verdict.</li>
+      </ul>
 
       <h3 id="changelog-2026-10-02">2026-10-02 <a class="anchor" href="#changelog-2026-10-02" aria-label="Link to 2026-10-02">#</a></h3>
       <ul>
@@ -2009,7 +2019,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         <table>
           <thead><tr><th>Variable</th><th>Controls</th></tr></thead>
           <tbody>
-            <tr><td><code>ROCKETLANE_WEBHOOK_SECRET</code></td><td>The API secret: <code>/api/card-check</code> async mode, <code>/api/result</code>, and the Rocketlane trigger.</td></tr>
+            <tr><td><code>ROCKETLANE_WEBHOOK_SECRET</code></td><td>The API secret: <code>/api/card-check</code> async mode, <code>/api/result</code>, and the Rocketlane trigger. Also derives the token the pipeline's <code>/api/spec-check</code> self-call carries and the signature on browser deliveries to <code>/api/card-deliver</code>; unset, both refuse every call.</td></tr>
             <tr><td><code>RESULT_WEBHOOK_URL</code></td><td>Default webhook target when a request carries no <code>callbackUrl</code>.</td></tr>
             <tr><td><code>RESULT_WEBHOOK_ALLOWED_HOSTS</code></td><td>Comma-separated hosts a <code>callbackUrl</code> may point at (subdomains included). Empty means no <code>callbackUrl</code> is honored.</td></tr>
             <tr><td><code>RESULT_WEBHOOK_SECRET</code></td><td>Signs outbound webhooks. Unset means no webhook is sent at all.</td></tr>

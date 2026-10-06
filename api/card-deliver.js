@@ -1,8 +1,33 @@
+import { list, put } from '@vercel/blob';
 import { deliverReport } from '../lib/delivery.js';
+import { verifyDelivery } from '../lib/internal-auth.js';
+
+// Slack delivery for a run the browser watched (/upload and the playground).
+// The browser holds no secret, so it can only hand back the delivery that
+// /api/card-check signed when the run completed: this posts that report and
+// nothing else, once.
+
+// One delivery per run. A claim marker in Blob stops a signed delivery from
+// being replayed into the customer's channel for as long as it is valid.
+// (list-then-put leaves a narrow race; two near-simultaneous replays of the
+// same genuine report is the worst it allows.) No store means no claim.
+async function claimDelivery(runId) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return true;
+  const pathname = `deliveries/${runId}.json`;
+  const { blobs } = await list({ prefix: pathname, limit: 1 });
+  if (blobs.some((b) => b.pathname === pathname)) return false;
+  await put(pathname, JSON.stringify({ runId, deliveredAt: new Date().toISOString() }), {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+  });
+  return true;
+}
 
 export async function POST(request) {
   try {
-    const { projectId, projectName, pdfUrl, status, summary, cardType, slackDelivery } = await request.json();
+    const delivery = await request.json();
+    const { runId, projectId, projectName, pdfUrl, status, summary, cardType, slackDelivery } = delivery || {};
 
     if (!pdfUrl || !projectId) {
       return Response.json({ error: 'Missing required fields: pdfUrl, projectId' }, { status: 400 });
@@ -12,6 +37,16 @@ export async function POST(request) {
     // run the Slack identifier or post anywhere, whatever the client sends.
     if (/^(1|true|yes)$/i.test(process.env.CARD_CHECK_MOCK || '')) {
       return Response.json({ ok: true, pdfUrl, results: { slack: 'skipped: mock mode' } });
+    }
+
+    const problem = verifyDelivery(delivery);
+    if (problem) {
+      return Response.json({ error: `Delivery refused: ${problem}` }, { status: 401 });
+    }
+
+    // Opting out posts nothing, so it needn't spend the run's one delivery.
+    if (slackDelivery !== false && !(await claimDelivery(runId))) {
+      return Response.json({ error: 'This report was already delivered' }, { status: 409 });
     }
 
     const results = await deliverReport({ projectId, projectName, pdfUrl, status, summary, cardType, slackDelivery });

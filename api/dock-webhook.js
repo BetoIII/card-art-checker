@@ -5,7 +5,9 @@ import { storeReport } from '../lib/blob-report.js';
 import { inferCardType } from '../lib/card-type.js';
 import { extractCardArtFile, cardTypeFromForm } from '../lib/dock.js';
 import { createRunLog } from '../lib/run-log.js';
-import { emitResult, emitFailure, classifyError } from '../lib/result-emit.js';
+import {
+  emitResult, emitFailure, classifyError, oweResult, publishOwedOnTimeout,
+} from '../lib/result-emit.js';
 
 // Receives Dock (dock.us) webhook events — currently subscribed to
 // workspace.form.submitted. Verifies the X-Dock-Signature HMAC, then runs the
@@ -83,6 +85,15 @@ async function processDockSubmission({ assoc, eventId, runLog, deadlineAt }) {
     }
 
     runLog.set({ file: cardArt.fileName, cardType });
+    oweResult({
+      runId: runLog.runId,
+      cardType,
+      projectId: `dock-${assoc.account?.id || 'unknown'}`,
+      projectName: assoc.account?.name || null,
+      fileName: cardArt.fileName,
+      source: 'dock',
+      trigger: { endpoint: '/api/dock-webhook', eventId },
+    });
     console.log(`[dock-webhook] ${eventId}: downloading card art "${cardArt.fileName}" (${cardType})`);
     const res = await fetch(cardArt.url);
     if (!res.ok) {
@@ -245,7 +256,8 @@ export async function POST(request) {
         userAgent: request.headers.get('user-agent') || undefined,
       },
     });
-    runLog.armWatchdog(300_000); // keep in sync with config.maxDuration below
+    // Keep in sync with config.maxDuration below.
+    runLog.armWatchdog(300_000, { onTimeout: publishOwedOnTimeout(runLog.runId) });
     runLog.set({
       dock: {
         workspace: assoc.workspace?.name,

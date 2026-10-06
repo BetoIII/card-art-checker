@@ -6,7 +6,10 @@ import { storeReport } from '../lib/blob-report.js';
 import { inferCardType, extOf } from '../lib/card-type.js';
 import { getProjectName } from '../lib/rocketlane.js';
 import { createRunLog } from '../lib/run-log.js';
-import { emitResult, emitFailure, classifyError } from '../lib/result-emit.js';
+import {
+  emitResult, emitFailure, classifyError, oweResult, publishOwedOnTimeout,
+} from '../lib/result-emit.js';
+import { signDelivery } from '../lib/internal-auth.js';
 
 // Two callers share this endpoint, and authentication is what separates them:
 //
@@ -181,6 +184,8 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
     endpoint: '/api/card-check',
     ...(reference ? { reference } : {}),
   };
+  // From here the caller is waiting on a result, even if the run is killed.
+  oweResult({ runId: runLog.runId, cardType, projectId: projectId || null, fileName, source, trigger, callbackUrl });
 
   try {
     let projectName = null;
@@ -242,15 +247,13 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       // /api/result endpoint. Null when result emission failed — the client
       // falls back to the status/summary rendering.
       result: emitted.result,
-      delivery: {
-        projectId,
-        projectName,
-        pdfUrl,
-        status,
-        summary,
-        cardType,
-        slackDelivery,
-      },
+      // The browser hands this back to /api/card-deliver, which posts only a
+      // delivery signed here (lib/internal-auth.js). Unsigned when no secret
+      // is configured, and card-deliver refuses it.
+      delivery: (() => {
+        const delivery = { runId: runLog.runId, projectId, projectName, pdfUrl, status, summary, cardType, slackDelivery };
+        return signDelivery(delivery) ?? delivery;
+      })(),
     });
     runLog.addResult({
       filename: fileName,
@@ -450,7 +453,8 @@ export async function POST(request) {
       userAgent: request.headers.get('user-agent') || undefined,
     },
   });
-  runLog.armWatchdog(300_000); // keep in sync with config.maxDuration below
+  // Keep in sync with config.maxDuration below.
+  runLog.armWatchdog(300_000, { onTimeout: publishOwedOnTimeout(runLog.runId) });
 
   // ── Async mode: parse, acknowledge, analyze in the background ──────
   if (asyncMode) {
