@@ -512,7 +512,7 @@
       const filename = s.selectedFile ? s.selectedFile.name : defaultName;
       const origin = window.location.origin;
       let html =
-        `curl <span class="flag">-X</span> POST <span class="url">${origin}/api/card-check</span> \\\n` +
+        `curl <span class="flag">-N</span> <span class="flag">-X</span> POST <span class="url">${origin}/api/card-check</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"cardType=${s.cardType}"</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"file=@${esc(filename)}"</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"projectId=${esc(pid)}"</span>`;

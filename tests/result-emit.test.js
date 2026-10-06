@@ -11,7 +11,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  emitResult, emitFailure, oweResult, settleOwedResults, publishOwedOnTimeout,
+  emitResult, emitFailure, oweResult, settleOwedResults, publishOwedOnTimeout, classifyError,
 } from '../lib/result-emit.js';
 
 beforeEach(() => {
@@ -87,4 +87,18 @@ test('the watchdog hook passes the reason and step through', async () => {
   oweResult({ runId, source: 'api', fileName: 'card.png' });
   const [{ result }] = await publishOwedOnTimeout(runId)({ reason: 'Timed out', step: 'tech_specs', killAt: Date.now() + 15_000 });
   assert.deepEqual(result.error, { code: 'function_timeout', message: 'Timed out', step: 'tech_specs' });
+});
+
+// ── Error codes a caller acts on ────────────────────────────────────
+
+test('a project id Rocketlane does not know is the caller\'s to fix', () => {
+  assert.equal(classifyError(new Error('Rocketlane project lookup failed: 404')), 'missing_project_id');
+  assert.equal(classifyError(new Error('Rocketlane project lookup failed: 400')), 'missing_project_id');
+  assert.equal(classifyError(new Error('Missing projectId')), 'missing_project_id');
+  // Our own credential failing is not the caller's problem.
+  assert.equal(classifyError(new Error('Rocketlane project lookup failed: 401')), 'internal_error');
+});
+
+test('a request with no file is card_art_missing', () => {
+  assert.equal(classifyError(new Error('No file uploaded')), 'card_art_missing');
 });

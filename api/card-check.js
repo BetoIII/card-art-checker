@@ -269,10 +269,13 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
     });
     await runLog.finish();
   } catch (err) {
-    send('error', { message: err.message || 'An unexpected error occurred', step: err.step });
+    // `code` is the closed error vocabulary, so a caller can branch without
+    // parsing the message.
+    const errorCode = classifyError(err);
+    send('error', { code: errorCode, message: err.message || 'An unexpected error occurred', step: err.step });
     await emitFailure({
       runId: runLog.runId,
-      errorCode: classifyError(err),
+      errorCode,
       message: String(err?.message || err),
       step: err?.step || null,
       source,
@@ -530,10 +533,11 @@ export async function POST(request) {
         await processSubmission({ parsed, runLog, deadlineAt, send, source });
       } catch (err) {
         // Only a parse failure reaches here — processSubmission handles its own.
-        send('error', { message: err.message || 'An unexpected error occurred', step: err.step });
+        const errorCode = classifyError(err);
+        send('error', { code: errorCode, message: err.message || 'An unexpected error occurred', step: err.step });
         await emitFailure({
           runId: runLog.runId,
-          errorCode: classifyError(err),
+          errorCode,
           message: String(err?.message || err),
           step: err?.step || null,
           source,
