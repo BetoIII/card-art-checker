@@ -3,9 +3,9 @@
  * every color, font, radius, and ring used across the standalone pages — the
  * page <style> blocks hold layout only.
  *
- * Theming contract (same as nav.css): pages with a nav theme toggle carry an
- * explicit data-theme="light|dark" on <html>, set by nav.js before first
- * paint. A page that must never go dark (the Rocketlane-embedded /upload)
+ * Theming contract (same as nav.css): pages that opt into the automatic theme
+ * carry an explicit data-theme="light|dark" on <html>, set by nav.js from the
+ * viewer's local time before first paint. A page that must never go dark (the Rocketlane-embedded /upload)
  * hardcodes data-theme="light" in its markup. The prefers-color-scheme block
  * only covers surfaces with no explicit theme, e.g. the middleware login page.
  */

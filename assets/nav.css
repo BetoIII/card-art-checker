@@ -139,7 +139,7 @@ html.rn-nav-on body { padding-top: var(--rn-nav-h); }
   .rn-link { padding: 6px 8px; font-size: 13px; }
 }
 
-/* ── Buttons (menu, theme) ─────────────────────────────── */
+/* ── Buttons (menu) ────────────────────────────────────── */
 
 .rn-btn {
   display: inline-flex;
@@ -158,9 +158,6 @@ html.rn-nav-on body { padding-top: var(--rn-nav-h); }
 }
 .rn-btn:hover { background: var(--rn-nav-hover); color: var(--rn-nav-ink); }
 .rn-btn svg { width: 16px; height: 16px; display: block; }
-
-:root[data-theme="dark"] .rn-icon-sun { display: none; }
-:root:not([data-theme="dark"]) .rn-icon-moon { display: none; }
 
 .rn-nav :focus-visible {
   outline: 2px solid var(--rn-nav-accent);
