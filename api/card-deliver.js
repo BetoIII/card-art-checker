@@ -27,10 +27,10 @@ async function claimDelivery(runId) {
 export async function POST(request) {
   try {
     const delivery = await request.json();
-    const { runId, projectId, projectName, pdfUrl, status, summary, cardType, slackDelivery } = delivery || {};
+    const { runId, projectId, tenantId, projectName, pdfUrl, status, summary, cardType, slackDelivery } = delivery || {};
 
-    if (!pdfUrl || !projectId) {
-      return Response.json({ error: 'Missing required fields: pdfUrl, projectId' }, { status: 400 });
+    if (!pdfUrl || !(projectId || tenantId)) {
+      return Response.json({ error: 'Missing required fields: pdfUrl, and projectId or tenantId' }, { status: 400 });
     }
 
     // Mirrors the mock gate in api/card-check.js: local UI work must never
@@ -44,8 +44,9 @@ export async function POST(request) {
       return Response.json({ error: `Delivery refused: ${problem}` }, { status: 401 });
     }
 
-    // Opting out posts nothing, so it needn't spend the run's one delivery.
-    if (slackDelivery !== false && !(await claimDelivery(runId))) {
+    // Opting out posts nothing, so it needn't spend the run's one delivery —
+    // nor does a tenant-only run, which has no channel to post to.
+    if (slackDelivery !== false && projectId && !(await claimDelivery(runId))) {
       return Response.json({ error: 'This report was already delivered' }, { status: 409 });
     }
 

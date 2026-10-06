@@ -9,24 +9,28 @@ import {
   emitResult, emitFailure, classifyError, oweResult, publishOwedOnTimeout,
 } from '../lib/result-emit.js';
 import { isAuthenticated, signDelivery } from '../lib/internal-auth.js';
+import { parsePartnerIds } from '../lib/partner-id.js';
 
+// Every caller must name the partner: a Rocketlane projectId, a Rain tenantId
+// (for partners who never onboarded through Rocketlane), or both. Without one
+// the request is refused before a run starts — authenticated or not. The ids
+// are checked for shape only (lib/partner-id.js).
+//
 // Two callers share this endpoint, and authentication is what separates them:
 //
-//   • The browser upload UI (/upload) is unauthenticated. It must still send a
-//     projectId — the page refuses to submit without one — and it consumes the
-//     SSE progress stream. Nothing about that path changes.
-//   • A server-to-server caller presents the shared secret. It may omit
-//     projectId (Rain's back office has a tenantId, not a Rocketlane project)
-//     and can ask for `?async=1` to get JSON with a runId immediately instead
-//     of holding an event stream open for the whole run.
+//   • The browser upload UI (/upload and the playground) is unauthenticated
+//     and consumes the SSE progress stream.
+//   • A server-to-server caller presents the shared secret and can ask for
+//     `?async=1` to get JSON with a runId immediately instead of holding an
+//     event stream open for the whole run.
 //
-// Tying the relaxation to the secret is what keeps it safe: an anonymous caller
-// can never reach the projectId-less path, so the UI's guarantees are intact.
-// The secret check itself lives in lib/internal-auth.js.
+// Tying async mode to the secret means an anonymous caller can never spawn
+// background work it isn't holding a connection for. The secret check itself
+// lives in lib/internal-auth.js.
 
-// A caller-supplied correlation id (e.g. a cardArtForm id) stands in for
-// projectId as the report's Blob path segment, so it must be a single, boring
-// path segment — no separators, no traversal, bounded length.
+// A caller-supplied correlation id (e.g. a cardArtForm id), echoed back on
+// trigger.reference. Kept to a single, boring path segment — no separators,
+// no traversal, bounded length.
 export function sanitizeReference(value) {
   return String(value || '')
     .trim()
@@ -41,7 +45,7 @@ const VALID_CARD_TYPES = new Set(['virtual', 'physical']);
 // Physical submissions may be vector source files (.ai/.eps) or PNG.
 const PHYSICAL_EXTS = new Set(['.ai', '.eps', '.png']);
 
-function parseMultipart(request, { requireProjectId = true } = {}) {
+function parseMultipart(request) {
   return new Promise((resolve, reject) => {
     const contentType = request.headers.get('content-type') || '';
     const bb = Busboy({ headers: { 'content-type': contentType } });
@@ -49,6 +53,7 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
     const fileChunks = { file: [], backFile: [] };
     const fileNames = { file: '', backFile: '' };
     let projectId = '';
+    let tenantId = '';
     let cardType = '';
     let slackDelivery = true;
     let reference = '';
@@ -63,6 +68,7 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
 
     bb.on('field', (name, value) => {
       if (name === 'projectId') projectId = value;
+      else if (name === 'tenantId') tenantId = value;
       else if (name === 'cardType') cardType = (value || '').trim().toLowerCase();
       else if (name === 'slackDelivery') slackDelivery = !/^(false|0|no|off)$/i.test((value || '').trim());
       else if (name === 'reference') reference = value;
@@ -77,9 +83,12 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
       const backBuffer = fileChunks.backFile.length ? Buffer.concat(fileChunks.backFile) : null;
 
       if (!fileBuffer) return reject(new Error('No file uploaded'));
-      // Only the unauthenticated (browser) path insists on a projectId; an
-      // authenticated caller may identify the run however it likes.
-      if (requireProjectId && !projectId) return reject(new Error('Missing projectId'));
+      let partner;
+      try {
+        partner = parsePartnerIds({ projectId, tenantId });
+      } catch (err) {
+        return reject(err);
+      }
 
       // cardType is now OPTIONAL — we'll infer from the filename if absent.
       // If supplied, it must be a known value.
@@ -116,7 +125,8 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
         fileName: fileNames.file,
         backFile: backBuffer,
         backFileName: fileNames.backFile,
-        projectId,
+        projectId: partner.projectId,
+        tenantId: partner.tenantId,
         cardType: resolvedCardType,
         slackDelivery,
         reference: sanitizeReference(reference),
@@ -156,7 +166,7 @@ function parseMultipart(request, { requireProjectId = true } = {}) {
 async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
   const {
     file, fileName, backFile, backFileName,
-    projectId, cardType, slackDelivery, reference, callbackUrl, declaredProduct,
+    projectId, tenantId, cardType, slackDelivery, reference, callbackUrl, declaredProduct,
   } = parsed;
 
   const trigger = {
@@ -164,7 +174,7 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
     ...(reference ? { reference } : {}),
   };
   // From here the caller is waiting on a result, even if the run is killed.
-  oweResult({ runId: runLog.runId, cardType, projectId: projectId || null, fileName, source, trigger, callbackUrl });
+  oweResult({ runId: runLog.runId, cardType, projectId, tenantId, fileName, source, trigger, callbackUrl });
 
   try {
     let projectName = null;
@@ -190,11 +200,11 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
     });
 
     send('progress', { step: 'blob_upload', message: 'Storing report...', status: 'pending' });
-    // Without a projectId the report still needs a stable path segment; the
-    // caller's reference is the natural one, and 'external' is the last resort.
+    // Reports are filed under the partner: the Rocketlane project when there
+    // is one, otherwise the Rain tenant.
     const { pdfUrl } = await storeReport({
       pdfBuffer,
-      projectId: projectId || reference || 'external',
+      projectId: projectId || tenantId,
     });
     send('progress', { step: 'blob_upload', message: 'Report stored', status: 'done' });
 
@@ -202,7 +212,7 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       runId: runLog.runId,
       results, techJson,
       cardType: resolvedCardType,
-      projectId: projectId || null,
+      projectId, tenantId,
       projectName, fileName, pdfUrl,
       source,
       trigger,
@@ -230,7 +240,7 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       // delivery signed here (lib/internal-auth.js). Unsigned when no secret
       // is configured, and card-deliver refuses it.
       delivery: (() => {
-        const delivery = { runId: runLog.runId, projectId, projectName, pdfUrl, status, summary, cardType, slackDelivery };
+        const delivery = { runId: runLog.runId, projectId, tenantId, projectName, pdfUrl, status, summary, cardType, slackDelivery };
         return signDelivery(delivery) ?? delivery;
       })(),
     });
@@ -257,6 +267,9 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       errorCode,
       message: String(err?.message || err),
       step: err?.step || null,
+      projectId,
+      tenantId,
+      fileName,
       source,
       trigger,
       callbackUrl,
@@ -278,7 +291,7 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
 async function mockResponse(request) {
   let parsed;
   try {
-    parsed = await parseMultipart(request, { requireProjectId: false });
+    parsed = await parseMultipart(request);
   } catch (err) {
     return new Response(String(err?.message || err), { status: 400 });
   }
@@ -353,7 +366,8 @@ async function mockResponse(request) {
         outcome: mockOutcome,
         status,
         summary,
-        project: { id: parsed.projectId || null, name: 'Mock Project' },
+        project: { id: parsed.projectId, name: parsed.projectId ? 'Mock Project' : null },
+        tenant: { id: parsed.tenantId },
         submission: { file_name: parsed.fileName },
         report: { pdf_url: pdfUrl },
         counts: mockChecks.reduce((acc, c) => { acc[c.status] = (acc[c.status] || 0) + 1; return acc; }, {}),
@@ -379,8 +393,9 @@ async function mockResponse(request) {
         resultUrl: null,
         result: mockResult,
         delivery: {
-          projectId: parsed.projectId || 'mock-project',
-          projectName: 'Mock Project',
+          projectId: parsed.projectId,
+          tenantId: parsed.tenantId,
+          projectName: parsed.projectId ? 'Mock Project' : null,
           pdfUrl,
           status,
           summary,
@@ -442,7 +457,7 @@ export async function POST(request) {
   if (asyncMode) {
     let parsed;
     try {
-      parsed = await parseMultipart(request, { requireProjectId: false });
+      parsed = await parseMultipart(request);
     } catch (err) {
       await runLog.fail(err);
       return Response.json(
@@ -453,6 +468,7 @@ export async function POST(request) {
 
     runLog.set({
       projectId: parsed.projectId || undefined,
+      tenantId: parsed.tenantId || undefined,
       cardType: parsed.cardType,
       file: parsed.fileName,
       ...(parsed.reference ? { reference: parsed.reference } : {}),
@@ -473,7 +489,8 @@ export async function POST(request) {
       ok: true,
       queued: true,
       runId: runLog.runId,
-      projectId: parsed.projectId || null,
+      projectId: parsed.projectId,
+      tenantId: parsed.tenantId,
       reference: parsed.reference || null,
       cardType: parsed.cardType,
     });
@@ -499,10 +516,11 @@ export async function POST(request) {
       try {
         send('progress', { step: 'upload', message: 'Receiving file...', status: 'pending' });
 
-        const parsed = await parseMultipart(request, { requireProjectId: !authenticated });
+        const parsed = await parseMultipart(request);
         send('progress', { step: 'upload', message: 'File received', status: 'done' });
         runLog.set({
-          projectId: parsed.projectId,
+          projectId: parsed.projectId || undefined,
+          tenantId: parsed.tenantId || undefined,
           cardType: parsed.cardType,
           file: parsed.fileName,
           ...(parsed.reference ? { reference: parsed.reference } : {}),

@@ -72,6 +72,8 @@ legend { padding: 0; }
   border-color: var(--cc-blue-deep);
   box-shadow: var(--cc-ring-blue);
 }
+.text-input[aria-invalid="true"] { border-color: var(--cc-error); }
+.field-hint.invalid { color: var(--cc-error-text); }
 
 /* ── Segmented radio toggle ──────────────────────────────── */
 

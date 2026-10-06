@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/assets/tokens.css?v=2">
-  <link rel="stylesheet" href="/assets/components.css?v=3">
+  <link rel="stylesheet" href="/assets/components.css?v=4">
   <style>
     /* Page layout only — tokens.css + components.css carry the design system. */
 
@@ -344,11 +344,11 @@
         </fieldset>
 
         <div class="field">
-          <label class="field-label" for="project-id">
-            projectId <span class="required">*</span>
+          <label class="field-label" for="partner-id">
+            projectId or tenantId <span class="required">*</span>
           </label>
-          <input type="text" id="project-id" class="text-input" placeholder="e.g. 12345678" autocomplete="off">
-          <div class="field-hint">Rocketlane project ID. The API will look up the project name during analysis.</div>
+          <input type="text" id="partner-id" class="text-input" placeholder="e.g. 12345678 or 9eef553e-4dd3-4e70-b86a-0edc969f447c" autocomplete="off" spellcheck="false" aria-describedby="partner-id-hint">
+          <div class="field-hint" id="partner-id-hint" aria-live="polite"></div>
         </div>
 
         <div class="field">
@@ -443,9 +443,10 @@
     </div>
   </div>
 
-  <script src="/assets/form-engine.js"></script>
+  <script src="/assets/form-engine.js?v=2"></script>
   <script>
-    const projectIdInput = document.getElementById('project-id');
+    const partnerIdInput = document.getElementById('partner-id');
+    const partnerIdHint = document.getElementById('partner-id-hint');
     const slackDeliveryInput = document.getElementById('slack-delivery');
     const resultSection = document.getElementById('result-section');
     const rawLogHeader = document.getElementById('raw-log-header');
@@ -458,9 +459,10 @@
 
     let eventCount = 0;
 
-    // Prefill projectId from URL
+    // Prefill the partner id from the URL: a Rocketlane project or a Rain tenant.
     const urlParams = new URLSearchParams(window.location.search);
-    projectIdInput.value = urlParams.get('projectId') || urlParams.get('project_id') || '';
+    partnerIdInput.value = urlParams.get('projectId') || urlParams.get('project_id')
+      || urlParams.get('tenantId') || urlParams.get('tenant_id') || '';
 
     // The raw event log is a debugging aid, not part of the playground:
     // ?debug=1 shows it and records the stream into it.
@@ -473,8 +475,8 @@
         virtual: 'Drag &amp; drop a card art PNG (1536 &times; 969)<br>or <strong>click to browse</strong>',
         physical: 'Drag &amp; drop front card art (.ai, .eps, or .png)<br>or <strong>click to browse</strong>',
       },
-      getProjectId: () => projectIdInput.value,
-      isReady: () => projectIdInput.value.trim().length > 0,
+      getPartnerId: () => partnerIdInput.value,
+      isReady: () => Boolean(CardCheckForm.classifyPartnerId(partnerIdInput.value)),
       formatError: (msg) => `error: ${msg}`,
       appendFields: (fd) => fd.append('slackDelivery', String(slackDeliveryInput.checked)),
       // slackDelivery rides the delivery payload either way — the API is the
@@ -506,7 +508,8 @@
     // ── Curl preview ──
     function updateCurl() {
       const s = checker.state;
-      const pid = projectIdInput.value.trim() || '<projectId>';
+      const partner = CardCheckForm.classifyPartnerId(partnerIdInput.value);
+      const idField = partner ? `${partner.field}=${partner.value}` : 'projectId=<projectId>';
       const defaultName = s.cardType === 'physical' ? 'front.ai' : 'card-art.png';
       const filename = s.selectedFile ? s.selectedFile.name : defaultName;
       const origin = window.location.origin;
@@ -514,7 +517,7 @@
         `curl <span class="flag">-N</span> <span class="flag">-X</span> POST <span class="url">${origin}/api/card-check</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"cardType=${s.cardType}"</span> \\\n` +
         `  <span class="flag">-F</span> <span class="str">"file=@${esc(filename)}"</span> \\\n` +
-        `  <span class="flag">-F</span> <span class="str">"projectId=${esc(pid)}"</span>`;
+        `  <span class="flag">-F</span> <span class="str">"${esc(idField)}"</span>`;
       if (s.cardType === 'physical' && s.selectedBackFile) {
         html += ` \\\n  <span class="flag">-F</span> <span class="str">"backFile=@${esc(s.selectedBackFile.name)}"</span>`;
       }
@@ -523,7 +526,26 @@
       }
       curlText.innerHTML = html;
     }
-    projectIdInput.addEventListener('input', () => checker.refresh());
+    // Say which kind of id was recognised — or that it is neither — as it is typed.
+    function updatePartnerHint() {
+      const raw = partnerIdInput.value.trim();
+      const partner = CardCheckForm.classifyPartnerId(raw);
+      const invalid = Boolean(raw) && !partner;
+      partnerIdInput.setAttribute('aria-invalid', String(invalid));
+      partnerIdHint.classList.toggle('invalid', invalid);
+      partnerIdHint.textContent = !raw
+        ? 'A Rocketlane project ID (numeric) or a Rain prod tenant ID (UUID, as in Weatherstation). Checks need one.'
+        : invalid
+          ? 'Not a Rocketlane project ID (digits only) or a Rain tenant ID (UUID).'
+          : partner.field === 'projectId'
+            ? 'Rocketlane project — the API looks up the project name during analysis.'
+            : 'Rain tenant — Slack delivery needs a Rocketlane project, so this run returns the PDF report only.';
+    }
+    partnerIdInput.addEventListener('input', () => {
+      updatePartnerHint();
+      checker.refresh();
+    });
+    updatePartnerHint();
     slackDeliveryInput.addEventListener('change', updateCurl);
     updateCurl();
 

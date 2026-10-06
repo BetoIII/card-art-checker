@@ -201,6 +201,23 @@ test('failure results carry a closed error code and the pipeline step', () => {
   assert.equal(result.error.step, 'agent_run');
 });
 
+test('the partner is carried as a Rocketlane project, a Rain tenant, or both', () => {
+  const tenantId = '9eef553e-4dd3-4e70-b86a-0edc969f447c';
+  const tenantOnly = buildResult({ runId: 'r', cardType: 'virtual', results: { status: 'APPROVED' }, tenantId });
+  assert.deepEqual(tenantOnly.project, { id: null, name: null });
+  assert.deepEqual(tenantOnly.tenant, { id: tenantId });
+
+  const both = buildResult({
+    runId: 'r', cardType: 'virtual', results: { status: 'APPROVED' },
+    projectId: '1318663', projectName: 'Braza Bank', tenantId,
+  });
+  assert.deepEqual(both.project, { id: '1318663', name: 'Braza Bank' });
+  assert.deepEqual(both.tenant, { id: tenantId });
+
+  const failure = buildFailureResult({ runId: 'r', errorCode: 'internal_error', tenantId });
+  assert.deepEqual(failure.tenant, { id: tenantId });
+});
+
 // ── Golden file: the one real visual_results artifact in existence ──
 
 const GOLDEN = join(homedir(), 'Desktop', 'Rain Scratch', '_visual_results.json');

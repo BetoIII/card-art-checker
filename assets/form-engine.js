@@ -1,5 +1,5 @@
 /* Shared engine for the two card-check forms: / (playground) and /upload
- * (partner form embedded in Rocketlane).
+ * (partner form, embedded in Rocketlane or linked by Rain).
  *
  * Both pages run the same flow — pick a card type, drop a file, POST it to
  * /api/card-check and stream the analysis back over SSE — and this file owns
@@ -9,9 +9,11 @@
  *
  *   labels                 { idle, busy } — submit-button text states
  *   dropText               { virtual, physical } — dropzone captions (HTML)
- *   getProjectId()         the projectId to submit (input field or URL param)
+ *   getPartnerId()         the Rocketlane project id or Rain tenant id to
+ *                          submit (input field or URL param); its shape picks
+ *                          the field it is sent as
  *   isReady()              extra submit gate beyond file validity (optional)
- *   missingProjectMessage  error shown if submit happens with no projectId
+ *   missingPartnerMessage  error shown if submit happens without a usable id
  *   formatError(msg)       page-specific error phrasing (optional)
  *   appendFields(formData) extra multipart fields (optional)
  *   decorateDelivery(d)    tweak the delivery payload before /api/card-deliver
@@ -33,6 +35,19 @@
   const PHYSICAL_EXT_RE = /\.(ai|eps|png)$/i;
   const VIRTUAL_MAX_BYTES = 10 * 1024 * 1024;
   const PHYSICAL_MAX_BYTES = 25 * 1024 * 1024;
+
+  // Every check names its partner by a Rocketlane project id (numeric) or a
+  // Rain tenant id (a UUID). Mirrors lib/partner-id.js — keep them in step.
+  const PROJECT_ID_RE = /^\d{1,12}$/;
+  const TENANT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // { field: 'projectId' | 'tenantId', value } or null when it is neither.
+  const classifyPartnerId = (raw) => {
+    const value = String(raw || '').trim();
+    if (PROJECT_ID_RE.test(value)) return { field: 'projectId', value };
+    if (TENANT_ID_RE.test(value)) return { field: 'tenantId', value: value.toLowerCase() };
+    return null;
+  };
 
   const VIRTUAL_ACCEPT = 'image/png';
   const PHYSICAL_ACCEPT = '.ai,.eps,.png,application/postscript,application/illustrator,image/png';
@@ -317,7 +332,7 @@
     };
 
     const triggerDelivery = async (delivery) => {
-      const label = delivery.slackDelivery === false ? 'Delivering (Slack off)...' : 'Posting to Slack...';
+      const label = delivery.slackDelivery === false || !delivery.projectId ? 'Delivering...' : 'Posting to Slack...';
       upsertStep('slack_deliver', label, 'pending');
       try {
         const res = await fetch('/api/card-deliver', {
@@ -333,6 +348,8 @@
           upsertStep('slack_deliver', 'Posted to Slack', 'done');
         } else if (slack === 'skipped: slack delivery disabled by request') {
           upsertStep('slack_deliver', 'Slack delivery off — PDF report only', 'done');
+        } else if (slack === 'skipped: no Rocketlane project') {
+          upsertStep('slack_deliver', 'Slack delivery needs a Rocketlane project — PDF report only', 'done');
         } else if (slack === 'skipped') {
           upsertStep('slack_deliver', 'Slack not configured — skipping', 'done');
         } else {
@@ -592,9 +609,9 @@
       e.preventDefault();
       if (submitBtn.disabled) return;
 
-      const projectId = String(opts.getProjectId() || '').trim();
-      if (!projectId) {
-        showError(opts.missingProjectMessage || 'Missing projectId.');
+      const partner = classifyPartnerId(opts.getPartnerId());
+      if (!partner) {
+        showError(opts.missingPartnerMessage || 'Enter a Rocketlane project ID or a Rain tenant ID.');
         return;
       }
 
@@ -617,7 +634,7 @@
       const formData = new FormData();
       formData.append('cardType', state.cardType);
       formData.append('file', state.selectedFile);
-      formData.append('projectId', projectId);
+      formData.append(partner.field, partner.value);
       if (state.cardType === 'physical' && state.selectedBackFile) {
         formData.append('backFile', state.selectedBackFile);
       }
@@ -681,5 +698,5 @@
     return { state, refresh: notify, upsertStep, showError };
   };
 
-  window.CardCheckForm = { create, escapeHtml };
+  window.CardCheckForm = { create, escapeHtml, classifyPartnerId };
 })();

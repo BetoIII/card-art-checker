@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sanitizeReference } from '../api/card-check.js';
 
-// The reference stands in for projectId as a Blob path segment when a
-// server-to-server caller has no Rocketlane project. It is caller-controlled,
-// so it must never be able to leave its segment.
+// The reference is a caller-controlled correlation id, echoed back on
+// trigger.reference. It is sanitized to a single path segment, and must
+// never be able to leave it.
 
 test('a reference keeps the characters a path segment can safely hold', () => {
   assert.equal(sanitizeReference('cardArtForm_01HX9'), 'cardArtForm_01HX9');
@@ -25,8 +25,7 @@ test('separators and traversal collapse instead of escaping the segment', () => 
 });
 
 test('an empty or junk-only reference resolves to nothing, not a stray segment', () => {
-  // Falsy is what lets the caller fall back to 'external' rather than
-  // creating reports/---/ or similar.
+  // Falsy means no trigger.reference is echoed, rather than a stray '---'.
   assert.equal(sanitizeReference(''), '');
   assert.equal(sanitizeReference('   '), '');
   assert.equal(sanitizeReference('///'), '');

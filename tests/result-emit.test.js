@@ -74,6 +74,15 @@ test('a run about to be killed publishes function_timeout for what it still owes
   assert.equal((await completed(runId, 'stuck')).result, null);
 });
 
+test('a tenant-only run keeps its tenant on the result it is owed', async () => {
+  const runId = freshRun();
+  const tenantId = '9eef553e-4dd3-4e70-b86a-0edc969f447c';
+  oweResult({ runId, source: 'upload', tenantId, fileName: 'card.png', cardType: 'virtual' });
+  const [{ result }] = await settleOwedResults(runId, { message: 'Timed out' });
+  assert.deepEqual(result.tenant, { id: tenantId });
+  assert.deepEqual(result.project, { id: null, name: null });
+});
+
 test('settling one run leaves another run alone', async () => {
   const mine = freshRun();
   const other = freshRun();
@@ -95,6 +104,11 @@ test('a project id Rocketlane does not know is the caller\'s to fix', () => {
   assert.equal(classifyError(new Error('Rocketlane project lookup failed: 404')), 'missing_project_id');
   assert.equal(classifyError(new Error('Rocketlane project lookup failed: 400')), 'missing_project_id');
   assert.equal(classifyError(new Error('Missing projectId')), 'missing_project_id');
+  // The same code covers a request that names no partner, or names one in the
+  // wrong shape — Rocketlane project and Rain tenant alike.
+  assert.equal(classifyError(new Error('Missing projectId or tenantId')), 'missing_project_id');
+  assert.equal(classifyError(new Error('Invalid projectId "abc" — expected a numeric Rocketlane project id')), 'missing_project_id');
+  assert.equal(classifyError(new Error('Invalid tenantId "x" — expected a Rain tenant UUID')), 'missing_project_id');
   // Our own credential failing is not the caller's problem.
   assert.equal(classifyError(new Error('Rocketlane project lookup failed: 401')), 'internal_error');
 });

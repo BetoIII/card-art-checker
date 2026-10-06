@@ -70,6 +70,7 @@ test('changing any signed field breaks the delivery', () => {
     ['summary', 'Click https://evil.example to fix your card.'],
     ['pdfUrl', 'https://evil.example/report.pdf'],
     ['projectId', '99999'],
+    ['tenantId', '9eef553e-4dd3-4e70-b86a-0edc969f447c'],
     ['projectName', 'Someone else'],
     ['status', 'pass'],
     ['runId', 'other-run'],

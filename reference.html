@@ -726,14 +726,16 @@ tbody tr:hover td { background: var(--paper-2); }
   -H "Authorization: Bearer $CARD_ART_CHECKER_SECRET" \
   -F "file=@card.png" \
   -F "cardType=virtual" \
+  -F "tenantId=9eef553e-4dd3-4e70-b86a-0edc969f447c" \
   -F "reference=cardArtForm_01HX9"
 
 # → { "ok": true, "queued": true, "runId": "msqz4i4j-6fa7c9",
-#     "projectId": null, "reference": "cardArtForm_01HX9",
-#     "cardType": "virtual" }</pre></div>
+#     "projectId": null, "tenantId": "9eef553e-4dd3-4e70-b86a-0edc969f447c",
+#     "reference": "cardArtForm_01HX9", "cardType": "virtual" }</pre></div>
         <div class="panel" data-tab="ts"><pre data-hl="ts">const form = new FormData()
 form.append("file", new Blob([artBuffer], { type: "image/png" }), "card.png")
 form.append("cardType", "virtual")
+form.append("tenantId", tenant.id)
 form.append("reference", cardArtForm.id)
 
 const res = await fetch(`${CARD_ART_CHECKER_URL}/api/card-check?async=1`, {
@@ -802,10 +804,10 @@ x-webhook-secret: &lt;secret&gt;</pre>
         <span class="note-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2l6.2 11.1H1.8z"/><path d="M8 6.4v3.1M8 11.6v.1"/></svg></span>
         <div>
           <p><span class="note-title">Authentication does more than gate access.</span> It is what separates a
-          server-to-server caller from the browser upload page. Authenticated callers may omit
-          <code>projectId</code> and use <code>?async=1</code>; anonymous ones may not.</p>
-          <p>If your calls behave like the browser path — streaming back an event stream, demanding a
-          <code>projectId</code> — the secret is not arriving.</p>
+          server-to-server caller from the browser upload page. Authenticated callers may use
+          <code>?async=1</code>; anonymous ones may not.</p>
+          <p>If your calls behave like the browser path — streaming back an event stream instead of
+          JSON — the secret is not arriving.</p>
         </div>
       </div>
     </section>
@@ -854,10 +856,16 @@ x-webhook-secret: &lt;secret&gt;</pre>
               <td>Your own correlation id, e.g. a <code>cardArtForm.id</code>. Comes back on <code>trigger.reference</code>. Sanitized to <code>[A-Za-z0-9._-]</code>, 64 chars max.</td>
             </tr>
             <tr>
+              <td><code>tenantId</code></td>
+              <td class="type">string (UUID)</td>
+              <td><span class="req">One of</span></td>
+              <td>Your Rain tenant id, e.g. <code>9eef553e-4dd3-4e70-b86a-0edc969f447c</code>. Send this, or <code>projectId</code>, or both — a request with neither is refused. Checked for shape only.</td>
+            </tr>
+            <tr>
               <td><code>projectId</code></td>
-              <td class="type">string</td>
-              <td><span class="opt">Optional</span></td>
-              <td>Rocketlane project id. Omit it unless you have one — when present it must resolve in Rocketlane or the run fails (<code>missing_project_id</code>).</td>
+              <td class="type">string (digits)</td>
+              <td><span class="req">One of</span></td>
+              <td>Your Rocketlane project id, if you have one; the result carries the project name we look up. When present it must resolve in Rocketlane or the run fails (<code>missing_project_id</code>).</td>
             </tr>
             <tr>
               <td><code>callbackUrl</code></td>
@@ -895,6 +903,7 @@ x-webhook-secret: &lt;secret&gt;</pre>
   "queued": true,
   "runId": "msqz4i4j-6fa7c9",
   "projectId": null,
+  "tenantId": "9eef553e-4dd3-4e70-b86a-0edc969f447c",
   "reference": "cardArtForm_01HX9",
   "cardType": "virtual"
 }</pre>
@@ -911,6 +920,9 @@ x-webhook-secret: &lt;secret&gt;</pre>
       </div>
       <p>Other <code>error</code> values:</p>
       <ul>
+        <li><code>Missing projectId or tenantId</code></li>
+        <li><code>Invalid tenantId "…" — expected a Rain tenant UUID</code></li>
+        <li><code>Invalid projectId "…" — expected a numeric Rocketlane project id</code></li>
         <li><code>Invalid cardType "foo" — must be "virtual" or "physical"</code></li>
         <li><code>Could not infer card type from "art.bin" — pass cardType=virtual|physical explicitly</code></li>
         <li><code>Multipart parse timed out</code> — the body took longer than 30s.</li>
@@ -1136,6 +1148,7 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
   "summary": "The art is clean, full-color, and legible, but the Visa Brand Mark is placed in the lower-right corner.",
 
   "project":    { "id": null, "name": null },
+  "tenant":     { "id": "9eef553e-4dd3-4e70-b86a-0edc969f447c" },
   "submission": { "file_name": "BRAZA_CARTAO-2026_VIRTUAL.png", "declared_product": "Signature" },
   "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" },
   "report":     { "pdf_url": "https://….public.blob.vercel-storage.com/reports/….pdf" },
@@ -1197,7 +1210,7 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
     }
     // …21 more
   ]
-  // project, submission, trigger, report, tech_checks, colors as in the other tab
+  // project, tenant, submission, trigger, report, tech_checks, colors as in the other tab
 }</pre></div>
       </div>
 
@@ -1253,6 +1266,10 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
             <tr>
               <td><code>counts</code></td>
               <td>Checks per status. Only non-zero statuses appear as keys.</td>
+            </tr>
+            <tr>
+              <td><code>project</code> · <code>tenant</code></td>
+              <td>The partner ids you sent: <code>project.id</code> with the Rocketlane <code>name</code> we looked up, and <code>tenant.id</code>. An id you didn't send is <code>null</code>.</td>
             </tr>
             <tr>
               <td><code>submission</code></td>
@@ -1804,6 +1821,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     "step": "agent_run"
   },
   "project":    { "id": null, "name": null },
+  "tenant":     { "id": "9eef553e-4dd3-4e70-b86a-0edc969f447c" },
   "submission": { "file_name": "art.png" },
   "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" }
 }</pre>
@@ -1831,7 +1849,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
             <tr data-error="spec_check_failed"><td><code>spec_check_failed</code></td><td>The technical measurement pass failed.</td><td>Retry</td></tr>
             <tr data-error="card_type_indeterminate"><td><code>card_type_indeterminate</code></td><td>Card type could not be inferred and none was sent.</td><td>Send <code>cardType</code></td></tr>
             <tr data-error="attachment_download_failed"><td><code>attachment_download_failed</code></td><td>The art could not be downloaded from its source. Not emitted by <code>/api/card-check</code>.</td><td>Retry</td></tr>
-            <tr data-error="missing_project_id"><td><code>missing_project_id</code></td><td>A <code>projectId</code> was sent that Rocketlane doesn't know.</td><td>Fix the id, or omit it</td></tr>
+            <tr data-error="missing_project_id"><td><code>missing_project_id</code></td><td>Neither a <code>projectId</code> nor a <code>tenantId</code> was usable — missing or malformed — or Rocketlane doesn't know the <code>projectId</code>.</td><td>Send a valid <code>tenantId</code> or <code>projectId</code></td></tr>
             <tr data-error="card_art_missing"><td><code>card_art_missing</code></td><td>No file in the request.</td><td>Send the file</td></tr>
             <tr data-error="internal_error"><td><code>internal_error</code></td><td>Anything else.</td><td>Retry once; tell us if it recurs</td></tr>
             <tr data-error="abandoned"><td><code>abandoned</code></td><td rowspan="3">Reserved — not emitted by <code>/api/card-check</code>. Handle like <code>internal_error</code>.</td><td rowspan="3">Retry</td></tr>

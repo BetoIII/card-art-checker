@@ -120,6 +120,7 @@ In `createCardArtForm`, once the row exists and while you still hold the buffer:
 const form = new FormData()
 form.append("file", new Blob([body.cardArt.buffer], { type: "image/png" }), body.cardArt.filename)
 form.append("cardType", "virtual")
+form.append("tenantId", tenant.id)          // required — the checker refuses a check with no partner id
 form.append("reference", cardArtForm.id)   // comes back on trigger.reference
 
 const res = await fetch(`${CARD_ART_CHECKER_URL}/api/card-check?async=1`, {
@@ -203,7 +204,7 @@ a `reason_code` — the same `{field, code, message}` triple your 422 path alrea
 
 | | |
 |---|---|
-| `projectId` no longer required | Authenticated callers may omit it — you have a `tenantId`, not a Rocketlane project. Rocketlane lookup is skipped entirely rather than failing the run. |
+| `tenantId` accepted | **Send `tenantId`** (the tenant's prod id) — every check must now name its partner by a `tenantId` or a Rocketlane `projectId`, and a request with neither gets a 400. You don't need a `projectId`; without one the Rocketlane lookup is skipped. The id comes back on `tenant.id`. |
 | `?async=1` | Returns JSON with a `runId` immediately instead of a 160-second SSE stream. |
 | `reference` | Your correlation id, echoed back on `trigger.reference`. |
 | Signed push delivery | Verified end to end against a live receiver: signature verifies, tampered body/secret/timestamp all rejected, `5xx` retried 3× with backoff, `4xx` not retried, physical results never sent, lookalike hosts refused. |

@@ -47,10 +47,9 @@ x-webhook-secret: <CARD_ART_CHECKER_SECRET>
 Ask Beto for the value. It is the same secret used by `/api/result/:runId`.
 
 > **Why it matters beyond access control:** authentication is what distinguishes a
-> server-to-server caller from the browser upload page. Authenticated callers may omit
-> `projectId` and use `?async=1`; anonymous ones may not. If your calls are silently
-> behaving like the browser path (streaming, demanding a `projectId`), the secret isn't
-> arriving.
+> server-to-server caller from the browser upload page. Authenticated callers may use
+> `?async=1`; anonymous ones may not. If your calls are silently behaving like the browser
+> path (streaming back an event stream instead of JSON), the secret isn't arriving.
 
 ---
 
@@ -69,7 +68,8 @@ Content-Type: multipart/form-data
 | `file` | file | **yes** | The card art. PNG for virtual. |
 | `cardType` | `"virtual"` \| `"physical"` | no | Inferred from the filename when omitted. Send `virtual` explicitly — back-office art is always virtual. |
 | `reference` | string | no | **Your** correlation id, e.g. the `cardArtForm.id`. Comes back on `trigger.reference`. Sanitized to `[A-Za-z0-9._-]`, max 64 chars. |
-| `projectId` | string | no | Rocketlane project id. Omit it — you don't have one. When present it must resolve in Rocketlane or the run fails. |
+| `tenantId` | string (UUID) | **one of** | The Rain tenant the art is for — `tenant.id`, e.g. `9eef553e-4dd3-4e70-b86a-0edc969f447c`. Send this, or `projectId`, or both; a request with neither is refused. Checked for shape only. Echoed on `tenant.id`. |
+| `projectId` | string (digits) | **one of** | Rocketlane project id. You don't need it when you send `tenantId`. When present it must resolve in Rocketlane or the run fails. |
 | `callbackUrl` | string | no | Push the result here instead of polling. Allowlist-gated — see §5. |
 | `declaredProduct` | string | no | The Visa product the program is provisioned as, e.g. `Signature Corporate`. Lets the check fail an identifier for the wrong tier (`identifier_tier_mismatch`). Must name one of the 12 canonical products (`Debit` … `Infinite Corporate`) or `Classic`, case-insensitive with an optional `Visa ` prefix; anything else is ignored. Echoed on `submission.declared_product`. |
 | `backFile` | file | no | Physical submissions only. |
@@ -80,6 +80,7 @@ Content-Type: multipart/form-data
 const form = new FormData()
 form.append("file", new Blob([body.cardArt.buffer], { type: "image/png" }), body.cardArt.filename)
 form.append("cardType", "virtual")
+form.append("tenantId", tenant.id)
 form.append("reference", cardArtForm.id)
 
 const res = await fetch(`${CARD_ART_CHECKER_URL}/api/card-check?async=1`, {
@@ -104,6 +105,7 @@ from a server.
   "queued": true,
   "runId": "msqz4i4j-6fa7c9",
   "projectId": null,
+  "tenantId": "9eef553e-4dd3-4e70-b86a-0edc969f447c",
   "reference": "cardArtForm_01HX9",
   "cardType": "virtual"
 }
@@ -115,7 +117,9 @@ from a server.
 { "error": "No file uploaded", "runId": "msr0w4np-1eoerz" }
 ```
 
-Other `error` values: `"Missing projectId"` (only if unauthenticated),
+Other `error` values: `"Missing projectId or tenantId"`,
+`"Invalid tenantId \"…\" — expected a Rain tenant UUID"`,
+`"Invalid projectId \"…\" — expected a numeric Rocketlane project id"`,
 `"Invalid cardType \"foo\" — must be \"virtual\" or \"physical\""`,
 `"Could not infer card type from \"art.bin\" — pass cardType=virtual|physical explicitly"`,
 `"Multipart parse timed out"`.
@@ -234,6 +238,7 @@ Respond `2xx` fast and do your work afterward.
   "summary": "The art is clean, full-color, and legible… but the Visa Brand Mark is placed in the lower-right corner…",
 
   "project":    { "id": null, "name": null },
+  "tenant":     { "id": "9eef553e-4dd3-4e70-b86a-0edc969f447c" },
   "submission": { "file_name": "BRAZA_CARTAO-2026_VIRTUAL.png", "declared_product": "Platinum" },
   "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" },
   "report":     { "pdf_url": "https://…-report.pdf" },
@@ -373,6 +378,7 @@ tenant's design on a failure result** — leave the row `SUBMITTED` and retry.
   "status": "error",
   "error": { "code": "function_timeout", "message": "…", "step": "visual" },
   "project":    { "id": null, "name": null },
+  "tenant":     { "id": "9eef553e-4dd3-4e70-b86a-0edc969f447c" },
   "submission": { "file_name": "art.png" },
   "trigger":    { "source": "api", "endpoint": "/api/card-check", "reference": "cardArtForm_01HX9" }
 }

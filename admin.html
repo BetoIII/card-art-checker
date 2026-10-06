@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/assets/tokens.css?v=2">
-  <link rel="stylesheet" href="/assets/components.css?v=3">
+  <link rel="stylesheet" href="/assets/components.css?v=4">
   <style>
     /* Page layout only — tokens.css + components.css carry the design system. */
 
@@ -412,7 +412,7 @@
     <div class="filter-bar" role="search">
       <label class="search">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
-        <input type="search" id="f-q" placeholder="Search project, file or run ID" aria-label="Search runs" autocomplete="off">
+        <input type="search" id="f-q" placeholder="Search project, tenant, file or run ID" aria-label="Search runs" autocomplete="off">
       </label>
       <span class="filter-label" aria-hidden="true">Filter by</span>
       <span class="pill-select">
@@ -593,6 +593,8 @@
     function runProject(run) {
       if (run.projectName) return `${run.projectName} (${run.projectId ?? '?'})`;
       if (run.projectId) return `project ${run.projectId}`;
+      // Partners without Rocketlane are identified by their Rain tenant id.
+      if (run.tenantId) return `tenant ${run.tenantId}`;
       if (run.dock) return [run.dock.workspace, run.dock.account ? `acct ${run.dock.account}` : null].filter(Boolean).join(' — ') || '—';
       return '—';
     }
@@ -696,7 +698,7 @@
         if (filters.verdict === 'none' ? outcomes.length : !outcomes.includes(filters.verdict)) return false;
       }
       if (filters.q) {
-        const haystack = [run.runId, run.projectId, run.projectName, runFile(run), run.dock?.workspace, run.dock?.account]
+        const haystack = [run.runId, run.projectId, run.projectName, run.tenantId, runFile(run), run.dock?.workspace, run.dock?.account]
           .filter((v) => v != null).join(' ').toLowerCase();
         if (!haystack.includes(filters.q)) return false;
       }

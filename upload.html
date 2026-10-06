@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/assets/tokens.css?v=2">
-  <link rel="stylesheet" href="/assets/components.css?v=3">
+  <link rel="stylesheet" href="/assets/components.css?v=4">
   <style>
     /* Page layout only — tokens.css + components.css carry the design system.
        This page lives in a 576×324 Rocketlane iframe: the layout is a single
@@ -120,10 +120,11 @@
     </form>
 
     <div class="empty-state" id="missing-project" style="display: none;">
-      <strong>This form needs a project link.</strong><br>
-      Open it from the card art task in your Rocketlane project &mdash; that link carries your
-      project id, so your review lands in the right place. If you reached this page from a
-      bookmark or a pasted URL, head back to your Rocketlane portal and open the task there.
+      <strong>This form needs a link from Rain.</strong><br>
+      Open it from the card art task in your Rocketlane project, or from the link your Rain
+      contact sent you &mdash; that link identifies your program, so your review lands in the
+      right place. If you reached this page from a bookmark or a pasted URL, go back to that
+      task or message and open the link from there.
     </div>
 
     <div class="progress-section" id="progress-section">
@@ -143,17 +144,19 @@
     <div class="error-banner" id="error-banner" role="alert"></div>
   </div>
 
-  <script src="/assets/form-engine.js"></script>
+  <script src="/assets/form-engine.js?v=2"></script>
   <script>
     const resultSection = document.getElementById('result-section');
 
-    // projectId comes only from the URL: the Rocketlane task embeds this page
-    // with the project already attached. Without it there is nothing to
-    // submit to, so say so up front instead of erroring after the upload.
+    // The partner id comes only from the URL: the Rocketlane task embeds this
+    // page with ?projectId=, and Rain links partners who aren't on Rocketlane
+    // with ?tenantId=. Without a usable one there is nothing to submit to, so
+    // say so up front instead of erroring after the upload.
     const params = new URLSearchParams(window.location.search);
-    const projectId = (params.get('projectId') || params.get('project_id') || '').trim();
+    const partnerId = (params.get('projectId') || params.get('project_id')
+      || params.get('tenantId') || params.get('tenant_id') || '').trim();
 
-    if (!projectId) {
+    if (!CardCheckForm.classifyPartnerId(partnerId)) {
       document.getElementById('upload-form').style.display = 'none';
       document.getElementById('missing-project').style.display = '';
     }
@@ -164,8 +167,8 @@
         virtual: 'Drag & drop your card art PNG here<br>or <strong>click to browse</strong>',
         physical: 'Drag &amp; drop front card art (.ai, .eps, or .png)<br>or <strong>click to browse</strong>',
       },
-      getProjectId: () => projectId,
-      missingProjectMessage: 'Missing projectId in URL. This page must be accessed from the Rocketlane portal.',
+      getPartnerId: () => partnerId,
+      missingPartnerMessage: 'This link is missing your program id. Open the form from your Rocketlane task or the link Rain sent you.',
       resultDetail: 'compact',
       renderResult: (payload) => {
         // Three-state outcome; older payloads without one fall back to status.

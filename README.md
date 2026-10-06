@@ -31,6 +31,11 @@ Notes:
 - `vercel.json` allows embedding via `frame-ancestors *.rocketlane.com`.
 - 576×324 matches Rocketlane's recommended dimensions. Bump `height` to 600+ if the form feels cramped.
 
+**Partners not on Rocketlane:** send them `https://card-art-checker.vercel.app/upload?tenantId=<prod tenant id>`
+(the UUID from Weatherstation's `/tenants/{id}`). The form refuses to load without a
+`projectId` or `tenantId` in the URL. Tenant-only runs return the PDF report without a
+Slack post.
+
 ## Using the service
 
 **Customer flow (iframe):**
@@ -39,7 +44,7 @@ Notes:
 3. The PDF is posted to your Slack channel and attached to the Rocketlane project.
 
 **Internal testing (playground at `/`):**
-1. Paste a real Rocketlane `projectId`.
+1. Paste a real Rocketlane `projectId` or a Rain `tenantId` — the page detects which.
 2. Toggle "Skip delivery" to test without posting to Slack/Rocketlane.
 3. Drop a file and watch the raw SSE event stream in the terminal view.
 
@@ -47,7 +52,7 @@ Notes:
 
 | Route | Purpose | Timeout |
 |-------|---------|---------|
-| `/upload` | Customer-facing upload form (embedded in Rocketlane) | — |
+| `/upload` | Customer-facing upload form (embedded in Rocketlane, or linked with `?tenantId=`) | — |
 | `/` | API playground for internal testing | — |
 | `/api/card-check` | Analysis + PDF generation. Streams SSE for the browser UI; JSON for authenticated server-to-server callers. See below. | 300s |
 | `/api/card-deliver` | Slack delivery for a run the browser watched. Posts only the delivery `/api/card-check` signed on completion, once per run. | 300s |
@@ -55,35 +60,42 @@ Notes:
 
 ## Upload API: `/api/card-check`
 
+**Every check must name the partner**: a Rocketlane `projectId` (digits), a Rain prod
+`tenantId` (the UUID Weatherstation shows at `/tenants/{id}`, for partners who never
+onboarded through Rocketlane), or both. A request with neither, or with a malformed one,
+is refused with a 400 before a run starts — authenticated or not. Ids are checked for
+shape only (`lib/partner-id.js`); a tenant id is not looked up anywhere.
+
 Two callers share this endpoint, and **authentication is what separates them**.
 
-| | Browser UI (`/upload`) | Server-to-server |
+| | Browser UI (`/upload`, playground) | Server-to-server |
 |---|---|---|
 | Auth | none | `Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET` (or `x-webhook-secret`) |
-| `projectId` | **required** | optional |
+| `projectId` / `tenantId` | one required | one required |
 | Response | SSE progress stream | SSE, or JSON with `?async=1` |
 | `runLog.source` | `upload` | `api` |
 
-Tying the relaxation to the secret is what keeps it safe: an anonymous caller can never
-reach the projectId-less path, so the UI's guarantees are unchanged.
-
-**Fields** (multipart): `file` (required), `projectId`, `cardType`, `backFile`,
-`slackDelivery`, plus two for server-to-server callers:
+**Fields** (multipart): `file` (required), `projectId` and/or `tenantId` (one required),
+`cardType`, `backFile`, `slackDelivery`, plus two for server-to-server callers:
 
 | Field | Purpose |
 |-------|---------|
-| `reference` | Caller's own correlation id (e.g. a `cardArtForm` id). Stands in for `projectId` as the report's Blob path segment, and is echoed back on `trigger.reference`. Sanitized to a single path segment. |
+| `reference` | Caller's own correlation id (e.g. a `cardArtForm` id), echoed back on `trigger.reference`. Sanitized to a single path segment. |
 | `callbackUrl` | Where to POST the result. Honored only for hosts in `RESULT_WEBHOOK_ALLOWED_HOSTS`; see Structured results. |
 
-Without a `projectId` the Rocketlane lookup is skipped entirely and the report is stored
-under `reports/{reference or "external"}/`.
+With a `projectId` the Rocketlane project name is looked up and the report is stored under
+`reports/{projectId}/`. A tenant-only run skips Rocketlane, is stored under
+`reports/{tenantId}/`, and its Slack delivery is skipped (`skipped: no Rocketlane project`)
+— the channel finder needs a Rocketlane project.
 
 ```bash
 curl -X POST "https://card-art-checker.vercel.app/api/card-check?async=1" \
   -H "Authorization: Bearer $ROCKETLANE_WEBHOOK_SECRET" \
-  -F "file=@card.png" -F "cardType=virtual" -F "reference=cardArtForm_01HX9"
+  -F "file=@card.png" -F "cardType=virtual" \
+  -F "tenantId=9eef553e-4dd3-4e70-b86a-0edc969f447c" -F "reference=cardArtForm_01HX9"
 
 # → { "ok": true, "queued": true, "runId": "…", "projectId": null,
+#     "tenantId": "9eef553e-4dd3-4e70-b86a-0edc969f447c",
 #     "reference": "cardArtForm_01HX9", "cardType": "virtual" }
 ```
 
