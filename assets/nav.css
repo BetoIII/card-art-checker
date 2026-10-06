@@ -1,9 +1,10 @@
 /* Shared top navigation for the card-art-checker front end.
  *
- * Self-contained on purpose: every page here is a standalone HTML file with
- * its own token block, so this file defines every value it uses rather than
- * inheriting one page's variables. Load it AFTER the page's own <style> so the
- * bar wins any collision on .rn-* names.
+ * Every page loads /assets/tokens.css first, so the bar reads its colors from
+ * the shared --cc-* tokens: a gradient or link change lands once, there. Each
+ * alias keeps a light-theme fallback so the bar still renders if a page ever
+ * loads it alone. Load this file AFTER the page's own <style> so the bar wins
+ * any collision on .rn-* names.
  *
  * The bar is injected by nav.js, which also injects the spacer that reserves
  * its height. Nothing here touches `body` — a page embedded in an iframe gets
@@ -11,30 +12,18 @@
 
 :root {
   --rn-nav-h: 57px;
-  --rn-nav-bg: #FFFFFF;
-  --rn-nav-ink: #262626;
-  --rn-nav-muted: #4D4D4D;
-  --rn-nav-faint: #8A8A8A;
-  --rn-nav-line: #EEF2F7;
-  --rn-nav-line-2: #D0D5DD;
-  --rn-nav-hover: #F2F4F7;
-  --rn-nav-accent: #FF2FB6;
-  --rn-nav-accent-soft: rgba(255, 47, 182, 0.09);
-  --rn-nav-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --rn-nav-mono: "Reddit Mono", "SF Mono", SFMono-Regular, Menlo, ui-monospace, monospace;
-  --rn-nav-grad: linear-gradient(45deg, #F73196 0%, #FF8CB2 100%);
-}
-
-:root[data-theme="dark"] {
-  --rn-nav-bg: #0E0E0E;
-  --rn-nav-ink: #E3E3E3;
-  --rn-nav-muted: #A3A3A3;
-  --rn-nav-faint: #6C6C6C;
-  --rn-nav-line: #262626;
-  --rn-nav-line-2: #333333;
-  --rn-nav-hover: #171717;
-  --rn-nav-accent: #FF52C2;
-  --rn-nav-accent-soft: rgba(255, 82, 194, 0.14);
+  --rn-nav-bg: var(--cc-surface, #FFFFFF);
+  --rn-nav-ink: var(--cc-text, #262626);
+  --rn-nav-muted: var(--cc-text-2, #4D4D4D);
+  --rn-nav-faint: var(--cc-text-3, #8A8A8A);
+  --rn-nav-line: var(--cc-border, #EEF2F7);
+  --rn-nav-line-2: var(--cc-border-strong, #D0D5DD);
+  --rn-nav-hover: color-mix(in srgb, var(--cc-text, #262626) 6%, var(--cc-surface, #FFFFFF));
+  --rn-nav-accent: var(--cc-link, #AA1F79);
+  --rn-nav-accent-soft: var(--cc-pink-soft, rgba(255, 47, 182, 0.09));
+  --rn-nav-font: var(--cc-font, "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif);
+  --rn-nav-mono: var(--cc-mono, "Reddit Mono", "SF Mono", SFMono-Regular, Menlo, ui-monospace, monospace);
+  --rn-nav-grad: var(--cc-grad, linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%));
 }
 
 .rn-nav {
@@ -77,28 +66,41 @@ html.rn-nav-on body { padding-top: var(--rn-nav-h); }
 
 .rn-brand {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
   text-decoration: none;
 }
 .rn-brand:hover { text-decoration: none; }
+/* The official wordmark (rain-frontend/public/images), not a type setting. */
+.rn-brand-mark {
+  display: block;
+  height: 16px;
+  width: auto;
+  flex-shrink: 0;
+}
+.rn-brand-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--rn-nav-line-2);
+  flex-shrink: 0;
+}
 .rn-brand-name {
   font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
   color: var(--rn-nav-ink);
   white-space: nowrap;
 }
 .rn-brand-tag {
-  font-family: var(--rn-nav-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.6px;
   color: var(--rn-nav-faint);
   white-space: nowrap;
 }
 @media (max-width: 720px) { .rn-brand-tag { display: none; } }
+@media (max-width: 420px) { .rn-brand-sep, .rn-brand-name { display: none; } }
 
 .rn-nav-spacer-flex { flex: 1; }
 
@@ -111,8 +113,8 @@ html.rn-nav-on body { padding-top: var(--rn-nav-h); }
 }
 .rn-link {
   padding: 6px 10px;
-  border-radius: 7px;
-  font-size: 13.5px;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--rn-nav-muted);
   text-decoration: none;
@@ -136,7 +138,7 @@ html.rn-nav-on body { padding-top: var(--rn-nav-h); }
   .rn-nav { gap: 10px; padding: 0 14px; }
   .rn-links { gap: 0; overflow-x: auto; scrollbar-width: none; }
   .rn-links::-webkit-scrollbar { display: none; }
-  .rn-link { padding: 6px 8px; font-size: 13px; }
+  .rn-link { padding: 6px 8px; }
 }
 
 /* ── Buttons (menu) ────────────────────────────────────── */

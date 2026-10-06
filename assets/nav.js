@@ -105,6 +105,8 @@
         ? `<button class="rn-btn" id="rn-menu" aria-label="Open navigation" aria-expanded="false">${menuIcon}</button>`
         : '') +
       `<a class="rn-brand" href="/">
+         <img class="rn-brand-mark" src="/assets/brand/rain-wordmark.svg" alt="Rain" width="53" height="16">
+         <span class="rn-brand-sep" aria-hidden="true"></span>
          <span class="rn-brand-name">Card Art Checker</span>
          ${cfg.tag ? `<span class="rn-brand-tag">${cfg.tag}</span>` : ''}
        </a>

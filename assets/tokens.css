@@ -1,7 +1,9 @@
-/* Design tokens for the card-art-checker front end, derived from Rain's
- * stratus design system (rain-frontend/src/stratus/theme). One definition for
- * every color, font, radius, and ring used across the standalone pages — the
- * page <style> blocks hold layout only.
+/* Design tokens for the card-art-checker front end. Neutrals and status
+ * triples come from Rain's stratus design system (rain-frontend/src/stratus/
+ * theme), which is what the live dashboard ships; gradients, the type scale,
+ * and the primary/link roles come from the Rain brand style guide. One
+ * definition for every color, font, radius, and ring used across the
+ * standalone pages — the page <style> blocks hold layout only.
  *
  * Theming contract (same as nav.css): pages that opt into the automatic theme
  * carry an explicit data-theme="light|dark" on <html>, set by nav.js from the
@@ -21,7 +23,26 @@
   --cc-blue: #A6CFFF;          /* steel blue — stratus's secondary accent */
   --cc-blue-deep: #8AACD4;     /* input focus border in stratus */
   --cc-blue-soft: rgba(138, 172, 212, 0.12);
-  --cc-grad: linear-gradient(45deg, #F73196 0%, #FF8CB2 100%);
+
+  /* Rain's signature gradients, verbatim from the brand guide. Accents only —
+     bars, rules, small marks — never a fill behind text. */
+  --cc-grad-green-cyan: linear-gradient(135deg, #EEEEEE 0%, #71FFFF 48%, #71FF7D 100%);
+  --cc-grad-purple-orange: linear-gradient(135deg, #EEDFFF 0%, #F49FFF 45%, #FF924D 100%);
+  --cc-grad-red-pink: linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%);
+  --cc-grad: var(--cc-grad-red-pink);   /* chrome accent: pairs with the pink wordmark */
+
+  /* Primary action. Black on light, pink on dark (brand web guide): white on
+     #FF2FB6 is 3.3:1, too low for 14px button text on a light page. */
+  --cc-primary: #000000;
+  --cc-primary-hover: #262626;
+  --cc-primary-pressed: #3D3D3D;
+  --cc-primary-disabled: #E4E7EC;
+  --cc-primary-disabled-text: #8A8A8A;
+  --cc-on-primary: #FFFFFF;
+
+  /* Pink as text. Hot pink is the brand's link color on dark; on light the
+     deeper pink keeps the hue at 6.6:1. Fills, dots and rings stay --cc-pink. */
+  --cc-link: #AA1F79;
 
   /* Surfaces */
   --cc-bg: #F8FAFC;
@@ -54,10 +75,32 @@
   --cc-code-border: #101828;
   --cc-code-text: #EAECF0;
   --cc-code-muted: #667085;
+  /* Syntax and HTTP-method hues from the brand accent palette. Code panes are
+     dark in both themes, so these never change. */
+  --cc-code-key: #71FFFF;
+  --cc-code-str: #71FF7D;
+  --cc-code-num: #F49FFF;
+  --cc-code-kw: #FF2FB6;
+  --cc-code-fn: #FF924D;
+  --cc-code-info: #7BC4FF;
+  --cc-method-post: #71FF7D;
+  --cc-method-get: #7BC4FF;
+  --cc-method-ink: #0A0A0A;
 
   /* Type */
   --cc-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --cc-mono: "Reddit Mono", "SF Mono", SFMono-Regular, Menlo, ui-monospace, monospace;
+
+  /* Brand type scale (px). Nothing below 12; 12 and 14 carry 0.6px tracking. */
+  --cc-fs-xs: 12px;
+  --cc-fs-sm: 14px;
+  --cc-fs-md: 16px;
+  --cc-fs-lg: 18px;
+  --cc-fs-xl: 20px;
+  --cc-fs-d-xs: 24px;
+  --cc-fs-d-sm: 30px;
+  --cc-fs-d-md: 36px;
+  --cc-track-sm: 0.6px;
 
   /* Geometry + motion */
   --cc-r-sm: 4px;
@@ -84,6 +127,12 @@
   --cc-pink-disabled: #55103D;
   --cc-pink-disabled-text: #B0648F;
   --cc-pink-soft: rgba(255, 47, 182, 0.14);
+  --cc-primary: var(--cc-pink);
+  --cc-primary-hover: var(--cc-pink-hover);
+  --cc-primary-pressed: var(--cc-pink-pressed);
+  --cc-primary-disabled: #55103D;
+  --cc-primary-disabled-text: #B0648F;
+  --cc-link: #FF2FB6;
   --cc-blue-soft: rgba(138, 172, 212, 0.16);
   --cc-success: #32D583;
   --cc-success-bg: rgba(18, 183, 106, 0.14);
@@ -118,6 +167,12 @@
     --cc-pink-disabled: #55103D;
     --cc-pink-disabled-text: #B0648F;
     --cc-pink-soft: rgba(255, 47, 182, 0.14);
+    --cc-primary: var(--cc-pink);
+    --cc-primary-hover: var(--cc-pink-hover);
+    --cc-primary-pressed: var(--cc-pink-pressed);
+    --cc-primary-disabled: #55103D;
+    --cc-primary-disabled-text: #B0648F;
+    --cc-link: #FF2FB6;
     --cc-blue-soft: rgba(138, 172, 212, 0.16);
     --cc-success: #32D583;
     --cc-success-bg: rgba(18, 183, 106, 0.14);

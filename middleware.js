@@ -53,9 +53,10 @@ function loginPage(error) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rain — Admin Sign In</title>
+  <link rel="icon" href="/favicon.ico">
   <!-- /assets is outside this middleware's matcher, so the 401 page can use
        the shared design system. Keep it that way. -->
-  <link rel="stylesheet" href="/assets/tokens.css?v=1">
+  <link rel="stylesheet" href="/assets/tokens.css?v=2">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -69,12 +70,13 @@ function loginPage(error) {
     }
     .card::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-      background: var(--cc-grad, linear-gradient(45deg, #F73196, #FF8CB2));
+      background: var(--cc-grad, linear-gradient(135deg, #EEEEEE 0%, #FF2FB6 45%, #FF262A 100%));
       border-radius: 2px;
     }
-    h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-    p.sub { font-size: 13px; color: var(--cc-text-2, #4D4D4D); margin-bottom: 20px; }
-    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    .mark { display: block; height: 20px; width: auto; margin: 12px 0 24px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+    p.sub { font-size: 14px; color: var(--cc-text-2, #4D4D4D); margin-bottom: 20px; }
+    label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
     input[type="password"] {
       width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
       background: var(--cc-surface, #FFFFFF); color: var(--cc-text, #262626);
@@ -87,19 +89,20 @@ function loginPage(error) {
     }
     button {
       margin-top: 14px; width: 100%; padding: 11px 20px; border: none; border-radius: 8px;
-      background: var(--cc-pink, #FF2FB6); color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600;
+      background: var(--cc-primary, #000000); color: var(--cc-on-primary, #FFFFFF); font-family: inherit; font-size: 14px; font-weight: 600;
       cursor: pointer; transition: background 0.15s;
     }
-    button:hover { background: var(--cc-pink-hover, #AA1F79); }
+    button:hover { background: var(--cc-primary-hover, #262626); }
     button:focus-visible { outline: none; box-shadow: var(--cc-ring, 0 0 0 4px #FFD5F0); }
     .error {
-      margin-bottom: 14px; padding: 8px 12px; font-size: 13px; color: var(--cc-error-text, #912018);
+      margin-bottom: 14px; padding: 8px 12px; font-size: 14px; color: var(--cc-error-text, #912018);
       background: var(--cc-error-bg, #FEF3F2); border: 1px solid var(--cc-error, #F04438); border-radius: 8px;
     }
   </style>
 </head>
 <body>
   <div class="card">
+    <img class="mark" src="/assets/brand/rain-wordmark.svg" alt="Rain" width="66" height="20">
     <h1>Card Art Checker — Admin</h1>
     <p class="sub">Enter the admin password to continue.</p>
     ${error ? `<div class="error">${error}</div>` : ''}

@@ -7,8 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Reddit+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/tokens.css?v=1">
-  <link rel="stylesheet" href="/assets/components.css?v=2">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/assets/tokens.css?v=2">
+  <link rel="stylesheet" href="/assets/components.css?v=3">
   <style>
     /* Page layout only — tokens.css + components.css carry the design system. */
 
@@ -41,12 +42,12 @@
       gap: 8px;
       margin-bottom: 20px;
     }
-    h1 { font-size: 20px; font-weight: 600; }
+    h1 { font-size: var(--cc-fs-d-sm); font-weight: 600; line-height: 1.25; }
     .page-head .sub {
-      font-family: var(--cc-mono);
-      font-size: 11px;
+      font-size: var(--cc-fs-xs);
+      font-variant-numeric: tabular-nums;
       color: var(--cc-text-3);
-      letter-spacing: 0.4px;
+      letter-spacing: var(--cc-track-sm);
     }
 
     /* ── Service status ─────────────────────────────────────── */
@@ -55,7 +56,7 @@
       border: 1px solid var(--cc-border);
       border-radius: var(--cc-r-xl);
       padding: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
     .status-row {
       display: flex;
@@ -72,12 +73,13 @@
     .status-dot.ok { background: var(--cc-success); box-shadow: 0 0 0 4px var(--cc-success-bg); }
     .status-dot.warn { background: var(--cc-warning); box-shadow: 0 0 0 4px var(--cc-warning-bg); }
     .status-dot.down { background: var(--cc-error); box-shadow: 0 0 0 4px var(--cc-error-bg); }
-    .status-label { font-size: 15px; font-weight: 600; }
+    .status-label { font-size: var(--cc-fs-md); font-weight: 600; }
     .status-meta {
       margin-left: auto;
-      font-size: 12px;
+      font-size: var(--cc-fs-xs);
+      font-variant-numeric: tabular-nums;
       color: var(--cc-text-3);
-      letter-spacing: 0.2px;
+      letter-spacing: var(--cc-track-sm);
       display: flex;
       gap: 16px;
       flex-wrap: wrap;
@@ -90,10 +92,9 @@
     }
     .env-chip {
       font-family: var(--cc-mono);
-      font-size: 11px;
+      font-size: var(--cc-fs-xs);
       font-weight: 500;
-      letter-spacing: 0.2px;
-      padding: 3px 10px;
+      padding: 2px 10px;
       border-radius: var(--cc-r-pill);
       border: 1px solid var(--cc-border-strong);
       color: var(--cc-text-2);
@@ -101,29 +102,133 @@
     .env-chip.ok { border-color: var(--cc-success); color: var(--cc-success-text); background: var(--cc-success-bg); }
     .env-chip.missing { border-color: var(--cc-error); color: var(--cc-error-text); background: var(--cc-error-bg); }
 
+    /* ── Overview (brand KPI cards) ─────────────────────────── */
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .kpi {
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border);
+      border-radius: var(--cc-r-lg);
+      padding: 16px 18px;
+    }
+    .kpi-value {
+      font-size: var(--cc-fs-d-sm);
+      font-weight: 600;
+      line-height: 1.1;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi-label { margin-top: 6px; font-size: var(--cc-fs-sm); color: var(--cc-text-2); }
+    .kpi-sub {
+      margin-top: 2px;
+      font-size: var(--cc-fs-xs);
+      letter-spacing: var(--cc-track-sm);
+      color: var(--cc-text-3);
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi.alert .kpi-value { color: var(--cc-error-text); }
+    .kpi-scope {
+      margin: 8px 0 28px;
+      font-size: var(--cc-fs-xs);
+      letter-spacing: var(--cc-track-sm);
+      color: var(--cc-text-3);
+    }
+
     /* ── Runs ───────────────────────────────────────────────── */
     .runs-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
-    .runs-head h2 { font-size: 15px; font-weight: 600; }
-    .refresh-btn {
+    .runs-head h2 { font-size: var(--cc-fs-lg); font-weight: 600; }
+    .refresh-btn, .clear-btn {
       appearance: none;
       border: 1px solid var(--cc-border-strong);
       background: var(--cc-surface);
       color: var(--cc-text-2);
       font-family: var(--cc-font);
-      font-size: 12px;
+      font-size: var(--cc-fs-sm);
       font-weight: 600;
       padding: 6px 14px;
-      border-radius: var(--cc-r-pill);
+      border-radius: var(--cc-r-md);
       cursor: pointer;
       transition: border-color var(--cc-transition), color var(--cc-transition);
     }
     .refresh-btn:disabled { cursor: progress; opacity: 0.6; }
-    .refresh-btn:hover { border-color: var(--cc-pink); color: var(--cc-pink); }
+    .refresh-btn:hover, .clear-btn:hover { border-color: var(--cc-text); color: var(--cc-text); }
+
+    /* ── Search + filter pills (brand Search & Filters) ─────── */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .search {
+      position: relative;
+      flex: 1 1 260px;
+      min-width: 0;
+    }
+    .search svg {
+      position: absolute;
+      left: 12px; top: 50%;
+      width: 16px; height: 16px;
+      transform: translateY(-50%);
+      color: var(--cc-text-3);
+      pointer-events: none;
+    }
+    .search input {
+      width: 100%;
+      padding: 8px 12px 8px 36px;
+      font-family: var(--cc-font);
+      font-size: var(--cc-fs-sm);
+      color: var(--cc-text);
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border-strong);
+      border-radius: var(--cc-r-md);
+      transition: border-color var(--cc-transition), box-shadow var(--cc-transition);
+    }
+    .search input::placeholder { color: var(--cc-text-3); }
+    .search input:focus { outline: none; border-color: var(--cc-blue-deep); box-shadow: var(--cc-ring-blue); }
+    .filter-label {
+      font-size: var(--cc-fs-sm);
+      color: var(--cc-text-3);
+      margin-left: 4px;
+    }
+    .pill-select { position: relative; display: inline-flex; }
+    .pill-select select {
+      appearance: none;
+      padding: 7px 30px 7px 12px;
+      font-family: var(--cc-font);
+      font-size: var(--cc-fs-sm);
+      font-weight: 500;
+      color: var(--cc-text-2);
+      background: var(--cc-surface);
+      border: 1px solid var(--cc-border-strong);
+      border-radius: var(--cc-r-md);
+      cursor: pointer;
+      transition: border-color var(--cc-transition), color var(--cc-transition);
+    }
+    .pill-select select:hover { border-color: var(--cc-text); color: var(--cc-text); }
+    .pill-select select.is-set { border-color: var(--cc-text); color: var(--cc-text); font-weight: 600; }
+    /* Chevron drawn in CSS so it follows the theme's text color. */
+    .pill-select::after {
+      content: '';
+      position: absolute;
+      right: 12px; top: 50%;
+      width: 6px; height: 6px;
+      margin-top: -5px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(45deg);
+      color: var(--cc-text-3);
+      pointer-events: none;
+    }
 
     .table-wrap {
       background: var(--cc-surface);
@@ -134,19 +239,21 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: var(--cc-fs-sm);
     }
+    /* Brand data table: small uppercase gray header over a bottom rule. */
     thead th {
       text-align: left;
-      font-size: 11px;
+      font-size: var(--cc-fs-xs);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: var(--cc-track-sm);
       color: var(--cc-text-2);
-      background: var(--cc-surface-2);
-      padding: 10px 12px;
+      padding: 12px;
+      border-bottom: 1px solid var(--cc-border-strong);
       white-space: nowrap;
     }
+    tbody tr.run-row:first-child { border-top: none; }
     tbody tr.run-row {
       border-top: 1px solid var(--cc-border);
       cursor: pointer;
@@ -162,17 +269,17 @@
     /* Row badges: stratus Tag triples, keyed by the classes the JS emits. */
     .badge {
       display: inline-block;
-      font-size: 11px;
+      font-size: var(--cc-fs-xs);
       font-weight: 600;
-      letter-spacing: 0.4px;
-      padding: 3px 10px;
-      border-radius: var(--cc-r-xl);
+      letter-spacing: 0.2px;
+      padding: 2px 10px;
+      border-radius: var(--cc-r-pill);
       white-space: nowrap;
       background: var(--cc-surface-2);
       color: var(--cc-text-2);
     }
     .badge.src-rocketlane { background: var(--cc-info-bg); color: var(--cc-info-text); }
-    .badge.src-dock { background: var(--cc-pink-soft); color: var(--cc-pink); }
+    .badge.src-dock { background: var(--cc-pink-soft); color: var(--cc-link); }
     .badge.src-upload { background: var(--cc-success-bg); color: var(--cc-success-text); }
     .badge.src-api { background: var(--cc-blue-soft); color: var(--cc-text-2); }
 
@@ -203,13 +310,13 @@
       border: none;
       color: var(--cc-text-3);
       cursor: pointer;
-      font-size: 11px;
+      font-size: var(--cc-fs-xs);
       padding: 2px 6px 2px 0;
       vertical-align: baseline;
     }
 
     .muted { color: var(--cc-text-3); }
-    a.report-link { color: var(--cc-pink); font-weight: 600; text-decoration: none; }
+    a.report-link { color: var(--cc-link); font-weight: 600; text-decoration: none; }
     a.report-link:hover { text-decoration: underline; }
 
     /* Expanded detail */
@@ -225,23 +332,23 @@
       gap: 16px;
     }
     .detail-block h3 {
-      font-size: 11px;
+      font-size: var(--cc-fs-xs);
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: var(--cc-track-sm);
       color: var(--cc-text-2);
       margin-bottom: 6px;
     }
-    .kv { font-size: 12.5px; line-height: 1.7; overflow-wrap: anywhere; }
+    .kv { font-size: var(--cc-fs-sm); line-height: 1.6; overflow-wrap: anywhere; }
     .kv b { font-weight: 600; }
-    .timeline { list-style: none; font-size: 12.5px; }
+    .timeline { list-style: none; font-size: var(--cc-fs-xs); letter-spacing: 0.2px; }
     .timeline li {
       display: flex;
       gap: 8px;
       padding: 3px 0;
       align-items: baseline;
     }
-    .timeline .t { font-family: var(--cc-mono); font-size: 11px; color: var(--cc-text-3); flex-shrink: 0; }
+    .timeline .t { font-size: var(--cc-fs-xs); font-variant-numeric: tabular-nums; color: var(--cc-text-3); flex-shrink: 0; }
     .timeline .icon { width: 14px; text-align: center; flex-shrink: 0; }
     .timeline .icon.done { color: var(--cc-success); }
     .timeline .icon.pending { color: var(--cc-warning); }
@@ -249,7 +356,7 @@
     .error-box {
       margin-top: 4px;
       font-family: var(--cc-mono);
-      font-size: 12px;
+      font-size: var(--cc-fs-xs);
       color: var(--cc-error-text);
       background: var(--cc-error-bg);
       border: 1px solid var(--cc-error);
@@ -261,10 +368,10 @@
     .empty {
       padding: 32px;
       text-align: center;
-      font-size: 13px;
+      font-size: var(--cc-fs-sm);
       color: var(--cc-text-3);
-      letter-spacing: 0.2px;
     }
+    .empty .clear-btn { margin-left: 8px; }
 
     @media (max-width: 640px) {
       body { padding: 16px 12px; }
@@ -291,10 +398,52 @@
       <div class="env-chips" id="env-chips"></div>
     </div>
 
+    <!-- Overview: figures for whatever the filters below leave in view -->
+    <section aria-label="Run overview">
+      <div class="kpis" id="kpis"></div>
+      <p class="kpi-scope" id="kpi-scope"></p>
+    </section>
+
     <!-- Run log -->
     <div class="runs-head">
       <h2>Runs</h2>
       <button type="button" class="refresh-btn" id="refresh-btn">Refresh</button>
+    </div>
+    <div class="filter-bar" role="search">
+      <label class="search">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+        <input type="search" id="f-q" placeholder="Search project, file or run ID" aria-label="Search runs" autocomplete="off">
+      </label>
+      <span class="filter-label" aria-hidden="true">Filter by</span>
+      <span class="pill-select">
+        <select id="f-source" aria-label="Filter by source">
+          <option value="">All sources</option>
+          <option value="rocketlane">Rocketlane webhook</option>
+          <option value="dock">Dock webhook</option>
+          <option value="upload">Manual upload</option>
+          <option value="api">Server-to-server</option>
+        </select>
+      </span>
+      <span class="pill-select">
+        <select id="f-verdict" aria-label="Filter by verdict">
+          <option value="">All verdicts</option>
+          <option value="approved">Approved</option>
+          <option value="approved_with_notes">With notes</option>
+          <option value="requires_changes">Requires changes</option>
+          <option value="error">Error</option>
+          <option value="none">No verdict</option>
+        </select>
+      </span>
+      <span class="pill-select">
+        <select id="f-status" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="running">Running</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+          <option value="skipped">Skipped</option>
+        </select>
+      </span>
+      <button type="button" class="clear-btn" id="f-clear" hidden>Clear</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -348,14 +497,29 @@
     const absTime = (iso) => iso ? new Date(iso).toLocaleString() : '—';
     const clockTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : '';
 
-    function fmtDuration(run) {
-      const ms = run.durationMs ?? (run.status === 'running' && run.startedAt ? Date.now() - new Date(run.startedAt).getTime() : null);
+    function fmtMs(ms) {
       if (ms == null) return '—';
       if (ms < 1000) return `${ms}ms`;
       const s = ms / 1000;
       if (s < 90) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
       return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
     }
+    const fmtDuration = (run) =>
+      fmtMs(run.durationMs ?? (run.status === 'running' && run.startedAt ? Date.now() - new Date(run.startedAt).getTime() : null));
+
+    // One result's verdict: 'error', a three-state outcome, or null when it has
+    // none. Older runs only carry pass/fail.
+    function resultOutcome(r) {
+      if (r.error) return 'error';
+      return r.outcome || (r.status === 'pass' ? 'approved' : r.status === 'fail' ? 'requires_changes' : null);
+    }
+    const VERDICT_BADGES = {
+      approved: ['v-pass', 'Approved'],
+      approved_with_notes: ['v-notes', 'With notes'],
+      requires_changes: ['v-fail', 'Requires changes'],
+      error: ['v-fail', 'Error'],
+    };
+    const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
     // ── Service status ──────────────────────────────────────
     async function loadHealth() {
@@ -404,19 +568,16 @@
     function statusBadge(run) {
       const st = ['running', 'completed', 'failed', 'skipped'].includes(run.status) ? run.status : 'running';
       const pulse = st === 'running' ? '<span class="pulse"></span>' : '';
-      return `<span class="badge st-${st}">${pulse}${esc(run.status)}</span>`;
+      return `<span class="badge st-${st}">${pulse}${esc(cap(run.status))}</span>`;
     }
 
     function verdictBadge(run) {
       if (!run.results || !run.results.length) return '<span class="muted">—</span>';
       return run.results.map((r) => {
-        if (r.error) return '<span class="badge v-fail">ERROR</span>';
-        // Prefer the three-state outcome; older runs only carry pass/fail.
-        const outcome = r.outcome || (r.status === 'pass' ? 'approved' : r.status === 'fail' ? 'requires_changes' : null);
-        if (outcome === 'approved') return '<span class="badge v-pass">APPROVED</span>';
-        if (outcome === 'approved_with_notes') return '<span class="badge v-notes">WITH NOTES</span>';
-        if (outcome === 'requires_changes') return '<span class="badge v-fail">REQUIRES CHANGES</span>';
-        return `<span class="badge">${esc(r.status || '—')}</span>`;
+        const badge = VERDICT_BADGES[resultOutcome(r)];
+        return badge
+          ? `<span class="badge ${badge[0]}">${badge[1]}</span>`
+          : `<span class="badge">${esc(cap(r.status) || '—')}</span>`;
       }).join(' ');
     }
 
@@ -494,7 +655,7 @@
           if (r.error) return `✗ ${esc(r.filename || r.attachmentId || '')}: <span style="color: var(--cc-error)">${esc(r.error)}</span>`;
           const delivery = r.delivery ? `<br><b>Delivery:</b> ${esc(typeof r.delivery === 'string' ? r.delivery : Object.entries(r.delivery).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', '))}` : '';
           const outcome = r.outcome || (r.status === 'pass' ? 'approved' : 'requires_changes');
-          const verdict = outcome === 'approved' ? 'APPROVED' : outcome === 'approved_with_notes' ? 'APPROVED WITH NOTES' : 'REQUIRES CHANGES';
+          const verdict = outcome === 'approved' ? 'Approved' : outcome === 'approved_with_notes' ? 'Approved with notes' : 'Requires changes';
           const resultUrl = r.resultUrl ? `<br><b>Result:</b> ${esc(r.resultUrl)} <span class="muted">(needs the webhook secret)</span>` : '';
           return `<b>${esc(r.filename || r.attachmentId || '')}</b> — ${verdict}<br>${esc(r.summary || '')}${r.pdfUrl ? `<br><a class="report-link" href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">Open PDF report</a>` : ''}${resultUrl}${delivery}`;
         }).join('<hr style="border:0;border-top:1px solid var(--cc-border);margin:8px 0">')}</div></div>`);
@@ -514,10 +675,90 @@
       return `<div class="detail-grid">${blocks.join('')}</div>`;
     }
 
-    function renderRuns(runs) {
+    // ── Filters ─────────────────────────────────────────────
+    // Held here, not read back from the inputs on render, and the inputs are
+    // never rebuilt — so a filter (and focus inside it) survives the refresh.
+    const filters = { q: '', source: '', verdict: '', status: '' };
+    const filterEls = {
+      q: document.getElementById('f-q'),
+      source: document.getElementById('f-source'),
+      verdict: document.getElementById('f-verdict'),
+      status: document.getElementById('f-status'),
+    };
+    const clearBtn = document.getElementById('f-clear');
+    const filtersActive = () => Object.values(filters).some(Boolean);
+
+    function matchesFilters(run) {
+      if (filters.source && run.source !== filters.source) return false;
+      if (filters.status && run.status !== filters.status) return false;
+      if (filters.verdict) {
+        const outcomes = (run.results || []).map(resultOutcome).filter(Boolean);
+        if (filters.verdict === 'none' ? outcomes.length : !outcomes.includes(filters.verdict)) return false;
+      }
+      if (filters.q) {
+        const haystack = [run.runId, run.projectId, run.projectName, runFile(run), run.dock?.workspace, run.dock?.account]
+          .filter((v) => v != null).join(' ').toLowerCase();
+        if (!haystack.includes(filters.q)) return false;
+      }
+      return true;
+    }
+
+    function syncFilterUi() {
+      filterEls.source.classList.toggle('is-set', !!filters.source);
+      filterEls.verdict.classList.toggle('is-set', !!filters.verdict);
+      filterEls.status.classList.toggle('is-set', !!filters.status);
+      clearBtn.hidden = !filtersActive();
+    }
+
+    function clearFilters() {
+      Object.keys(filters).forEach((k) => { filters[k] = ''; filterEls[k].value = ''; });
+      syncFilterUi();
+      renderRuns();
+    }
+
+    filterEls.q.addEventListener('input', () => { filters.q = filterEls.q.value.trim().toLowerCase(); syncFilterUi(); renderRuns(); });
+    ['source', 'verdict', 'status'].forEach((k) =>
+      filterEls[k].addEventListener('change', () => { filters[k] = filterEls[k].value; syncFilterUi(); renderRuns(); }));
+    clearBtn.addEventListener('click', clearFilters);
+
+    // ── Overview ────────────────────────────────────────────
+    function renderKpis(runs) {
+      const verdicts = runs.flatMap((r) => (r.results || []).map(resultOutcome)).filter((o) => o && o !== 'error');
+      const approved = verdicts.filter((o) => o === 'approved' || o === 'approved_with_notes').length;
+      const durations = runs.filter((r) => r.status === 'completed' && r.durationMs != null)
+        .map((r) => r.durationMs).sort((a, b) => a - b);
+      const median = durations.length
+        ? (durations.length % 2 ? durations[(durations.length - 1) / 2]
+          : Math.round((durations[durations.length / 2 - 1] + durations[durations.length / 2]) / 2))
+        : null;
+      const failures = runs.filter((r) => r.status === 'failed' || (r.results || []).some((x) => x.error)).length;
+      const running = runs.filter((r) => r.status === 'running').length;
+
+      const tile = (value, label, sub, cls = '') =>
+        `<div class="kpi ${cls}"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
+      document.getElementById('kpis').innerHTML = [
+        tile(runs.length, 'Runs', running ? `${running} running now` : ''),
+        tile(verdicts.length ? `${Math.round((approved / verdicts.length) * 100)}%` : '—', 'Approval rate',
+          verdicts.length ? `${approved} of ${verdicts.length} verdicts` : 'no verdicts yet'),
+        tile(esc(fmtMs(median)), 'Median duration', durations.length ? `${durations.length} completed run${durations.length === 1 ? '' : 's'}` : 'no completed runs'),
+        tile(failures, 'Failures', runs.length ? `of ${runs.length} run${runs.length === 1 ? '' : 's'}` : '', failures ? 'alert' : ''),
+      ].join('');
+      document.getElementById('kpi-scope').textContent = filtersActive()
+        ? `Across the ${runs.length} of ${lastRuns.length} loaded runs that match the filters.`
+        : `Across the ${lastRuns.length} most recent runs.`;
+    }
+
+    function renderRuns() {
       const tbody = document.getElementById('runs-body');
-      if (!runs.length) {
+      const runs = lastRuns.filter(matchesFilters);
+      renderKpis(runs);
+      if (!lastRuns.length) {
         tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs recorded yet. Runs appear here once a webhook or upload triggers the pipeline.</td></tr>';
+        return;
+      }
+      if (!runs.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs match these filters.<button type="button" class="clear-btn" data-clear>Clear filters</button></td></tr>';
+        tbody.querySelector('[data-clear]').addEventListener('click', clearFilters);
         return;
       }
       // The table is rebuilt every refresh; remember which row had keyboard
@@ -545,7 +786,7 @@
           if (e.target.closest('a')) return; // let report links click through
           const id = row.dataset.run;
           expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-          renderRuns(lastRuns);
+          renderRuns();
         });
       });
 
@@ -577,7 +818,7 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const { runs } = await res.json();
         lastRuns = runs;
-        renderRuns(runs);
+        renderRuns();
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="9" class="empty">Failed to load runs: ${esc(err.message)}</td></tr>`;
       }
