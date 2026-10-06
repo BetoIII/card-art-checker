@@ -119,6 +119,53 @@
       color: var(--cc-text-2);
     }
 
+    /* ── Partner id: two boxes, fill one ── */
+    .legend-note {
+      font-family: var(--cc-font);
+      font-weight: 500;
+      color: var(--cc-text-3);
+      margin-left: 6px;
+    }
+    .id-pair {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      grid-template-areas: "l1 . l2" "i1 or i2";
+      column-gap: 12px;
+      row-gap: 6px;
+      align-items: center;
+    }
+    .id-pair .id-label {
+      font-size: var(--cc-fs-xs);
+      font-weight: 600;
+      color: var(--cc-text-2);
+    }
+    .id-label[for="project-id"] { grid-area: l1; }
+    .id-label[for="tenant-id"] { grid-area: l2; }
+    #project-id { grid-area: i1; }
+    #tenant-id { grid-area: i2; }
+    .id-or {
+      grid-area: or;
+      font-size: var(--cc-fs-xs);
+      font-weight: 600;
+      letter-spacing: var(--cc-track-sm);
+      text-transform: uppercase;
+      color: var(--cc-text-3);
+    }
+    .id-pair .text-input:disabled {
+      background: var(--cc-surface-2);
+      border-color: var(--cc-border);
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    @media (max-width: 640px) {
+      .id-pair {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "l1" "i1" "or" "l2" "i2";
+      }
+      .id-or { text-align: center; padding: 4px 0; }
+    }
+    #partner-id-hint:empty { display: none; }
+
     /* ── Slack toggle row ── */
     .options-row {
       display: flex;
@@ -343,13 +390,17 @@
           <div class="field-hint">Virtual = 1536&times;969 PNG digital art. Physical = .ai, .eps, or 1536&times;969 PNG artwork for CR80 plastic cards.</div>
         </fieldset>
 
-        <div class="field">
-          <label class="field-label" for="partner-id">
-            projectId or tenantId <span class="required">*</span>
-          </label>
-          <input type="text" id="partner-id" class="text-input" placeholder="e.g. 12345678 or 9eef553e-4dd3-4e70-b86a-0edc969f447c" autocomplete="off" spellcheck="false" aria-describedby="partner-id-hint">
+        <fieldset class="field">
+          <legend class="field-label">Partner ID <span class="required">*</span><span class="legend-note">Enter one</span></legend>
+          <div class="id-pair">
+            <label class="id-label" for="project-id">Rocketlane Project ID</label>
+            <input type="text" id="project-id" class="text-input" inputmode="numeric" placeholder="e.g. 12345678" autocomplete="off" spellcheck="false" aria-describedby="partner-id-hint">
+            <span class="id-or" aria-hidden="true">or</span>
+            <label class="id-label" for="tenant-id">Production Tenant ID</label>
+            <input type="text" id="tenant-id" class="text-input" placeholder="e.g. 9eef553e-4dd3-…" autocomplete="off" spellcheck="false" aria-describedby="partner-id-hint">
+          </div>
           <div class="field-hint" id="partner-id-hint" aria-live="polite"></div>
-        </div>
+        </fieldset>
 
         <div class="field">
           <label class="field-label" id="front-file-label" for="file-input">file <span class="required">*</span></label>
@@ -445,7 +496,8 @@
 
   <script src="/assets/form-engine.js?v=2"></script>
   <script>
-    const partnerIdInput = document.getElementById('partner-id');
+    const projectIdInput = document.getElementById('project-id');
+    const tenantIdInput = document.getElementById('tenant-id');
     const partnerIdHint = document.getElementById('partner-id-hint');
     const slackDeliveryInput = document.getElementById('slack-delivery');
     const resultSection = document.getElementById('result-section');
@@ -461,8 +513,18 @@
 
     // Prefill the partner id from the URL: a Rocketlane project or a Rain tenant.
     const urlParams = new URLSearchParams(window.location.search);
-    partnerIdInput.value = urlParams.get('projectId') || urlParams.get('project_id')
-      || urlParams.get('tenantId') || urlParams.get('tenant_id') || '';
+    projectIdInput.value = urlParams.get('projectId') || urlParams.get('project_id') || '';
+    tenantIdInput.value = urlParams.get('tenantId') || urlParams.get('tenant_id') || '';
+
+    // Each box takes only its own kind of id: digits in the tenant box are not
+    // a project id, and a UUID in the project box is not a tenant id.
+    const idIn = (input, field) => {
+      const partner = CardCheckForm.classifyPartnerId(input.value);
+      return partner && partner.field === field ? partner.value : '';
+    };
+    const projectId = () => idIn(projectIdInput, 'projectId');
+    const tenantId = () => idIn(tenantIdInput, 'tenantId');
+    const partnerId = () => projectId() || tenantId();
 
     // The raw event log is a debugging aid, not part of the playground:
     // ?debug=1 shows it and records the stream into it.
@@ -475,8 +537,9 @@
         virtual: 'Drag &amp; drop a card art PNG (1536 &times; 969)<br>or <strong>click to browse</strong>',
         physical: 'Drag &amp; drop front card art (.ai, .eps, or .png)<br>or <strong>click to browse</strong>',
       },
-      getPartnerId: () => partnerIdInput.value,
-      isReady: () => Boolean(CardCheckForm.classifyPartnerId(partnerIdInput.value)),
+      getPartnerId: partnerId,
+      isReady: () => Boolean(partnerId()),
+      missingPartnerMessage: 'Enter a Rocketlane Project ID or a Production Tenant ID.',
       formatError: (msg) => `error: ${msg}`,
       appendFields: (fd) => fd.append('slackDelivery', String(slackDeliveryInput.checked)),
       // slackDelivery rides the delivery payload either way — the API is the
@@ -508,7 +571,7 @@
     // ── Curl preview ──
     function updateCurl() {
       const s = checker.state;
-      const partner = CardCheckForm.classifyPartnerId(partnerIdInput.value);
+      const partner = CardCheckForm.classifyPartnerId(partnerId());
       const idField = partner ? `${partner.field}=${partner.value}` : 'projectId=<projectId>';
       const defaultName = s.cardType === 'physical' ? 'front.ai' : 'card-art.png';
       const filename = s.selectedFile ? s.selectedFile.name : defaultName;
@@ -526,26 +589,30 @@
       }
       curlText.innerHTML = html;
     }
-    // Say which kind of id was recognised — or that it is neither — as it is typed.
-    function updatePartnerHint() {
-      const raw = partnerIdInput.value.trim();
-      const partner = CardCheckForm.classifyPartnerId(raw);
-      const invalid = Boolean(raw) && !partner;
-      partnerIdInput.setAttribute('aria-invalid', String(invalid));
-      partnerIdHint.classList.toggle('invalid', invalid);
-      partnerIdHint.textContent = !raw
-        ? 'A Rocketlane project ID (numeric) or a Rain prod tenant ID (UUID, as in Weatherstation). Checks need one.'
-        : invalid
-          ? 'Not a Rocketlane project ID (digits only) or a Rain tenant ID (UUID).'
-          : partner.field === 'projectId'
-            ? 'Rocketlane project — the API looks up the project name during analysis.'
-            : 'Rain tenant — Slack delivery needs a Rocketlane project, so this run returns the PDF report only.';
+    // Either/or: once one box has a value the other steps aside. The hint
+    // speaks only when there is something to fix or a consequence to know.
+    function syncPartnerFields() {
+      const project = projectIdInput.value.trim();
+      const tenant = tenantIdInput.value.trim();
+      projectIdInput.disabled = !project && Boolean(tenant);
+      tenantIdInput.disabled = !tenant && Boolean(project);
+      const badProject = Boolean(project) && !projectId();
+      const badTenant = Boolean(tenant) && !tenantId();
+      projectIdInput.setAttribute('aria-invalid', String(badProject));
+      tenantIdInput.setAttribute('aria-invalid', String(badTenant));
+      partnerIdHint.classList.toggle('invalid', badProject || badTenant);
+      partnerIdHint.textContent = badProject ? 'Rocketlane Project IDs are digits only.'
+        : badTenant ? 'Production Tenant IDs are UUIDs.'
+        : tenantId() ? 'Tenant-only runs skip Slack and return the PDF.'
+        : '';
     }
-    partnerIdInput.addEventListener('input', () => {
-      updatePartnerHint();
-      checker.refresh();
-    });
-    updatePartnerHint();
+    for (const input of [projectIdInput, tenantIdInput]) {
+      input.addEventListener('input', () => {
+        syncPartnerFields();
+        checker.refresh();
+      });
+    }
+    syncPartnerFields();
     slackDeliveryInput.addEventListener('change', updateCurl);
     updateCurl();
 
