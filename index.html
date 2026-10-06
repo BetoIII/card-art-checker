@@ -209,11 +209,18 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      width: 100%;
       padding: 14px 18px;
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      background: none;
+      border: none;
       cursor: pointer;
       user-select: none;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
+    .raw-log-header:focus-visible { outline: 2px solid var(--cc-pink); outline-offset: -2px; }
     .raw-log-header.collapsed { border-bottom: none; }
     .raw-log-title {
       display: flex;
@@ -352,7 +359,7 @@
         <div class="field">
           <label class="field-label" id="front-file-label" for="file-input">file <span class="required">*</span></label>
           <div class="drop-zone" id="drop-zone">
-            <input type="file" id="file-input" accept="image/png">
+            <input type="file" id="file-input" accept="image/png" aria-label="Card art file">
             <img class="drop-zone-icon" src="/assets/visa-corporate-card.png" alt="Visa card">
 
             <div class="drop-zone-text" id="drop-zone-text">
@@ -371,7 +378,7 @@
         <div class="field" id="back-file-field" style="display: none;">
           <label class="field-label" for="back-file-input">backFile <span class="field-hint" style="display:inline; margin:0;">(optional)</span></label>
           <div class="drop-zone" id="back-drop-zone">
-            <input type="file" id="back-file-input" accept=".ai,.eps,.png,application/postscript,application/illustrator,image/png">
+            <input type="file" id="back-file-input" aria-label="Card back file" accept=".ai,.eps,.png,application/postscript,application/illustrator,image/png">
             <div class="drop-zone-text" id="back-drop-zone-text">
               Drag &amp; drop back-of-card .ai, .eps, or .png<br>
               or <strong>click to browse</strong>
@@ -408,16 +415,16 @@
     <div class="error-banner" id="error-banner" role="alert"></div>
 
     <div class="raw-log-panel">
-      <div class="raw-log-header collapsed" id="raw-log-header">
-        <div class="raw-log-title">
+      <button type="button" class="raw-log-header collapsed" id="raw-log-header" aria-expanded="false" aria-controls="raw-log-body">
+        <span class="raw-log-title">
           <span class="dot" id="raw-log-dot"></span>
           <span>Raw SSE Stream</span>
-        </div>
-        <div class="raw-log-meta">
+        </span>
+        <span class="raw-log-meta">
           <span id="raw-log-count">0 events</span>
-          <span class="chevron">&#9662;</span>
-        </div>
-      </div>
+          <span class="chevron" aria-hidden="true">&#9662;</span>
+        </span>
+      </button>
       <div class="raw-log-body collapsed" id="raw-log-body"></div>
     </div>
 
@@ -538,8 +545,9 @@
 
     // ── Raw SSE log ──
     rawLogHeader.addEventListener('click', () => {
-      rawLogHeader.classList.toggle('collapsed');
-      rawLogBody.classList.toggle('collapsed');
+      const open = rawLogHeader.classList.toggle('collapsed') === false;
+      rawLogBody.classList.toggle('collapsed', !open);
+      rawLogHeader.setAttribute('aria-expanded', String(open));
     });
 
     function logRawEvent(type, payload) {

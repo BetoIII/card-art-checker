@@ -122,6 +122,7 @@
       cursor: pointer;
       transition: border-color var(--cc-transition), color var(--cc-transition);
     }
+    .refresh-btn:disabled { cursor: progress; opacity: 0.6; }
     .refresh-btn:hover { border-color: var(--cc-pink); color: var(--cc-pink); }
 
     .table-wrap {
@@ -178,6 +179,7 @@
     .badge.st-running { background: var(--cc-info-bg); color: var(--cc-info-text); }
     .badge.st-completed { background: var(--cc-success-bg); color: var(--cc-success-text); }
     .badge.st-failed { background: var(--cc-error-bg); color: var(--cc-error-text); }
+    .badge.st-skipped { background: var(--cc-surface-2); color: var(--cc-text-3); }
 
     .badge.v-pass { background: var(--cc-success-bg); color: var(--cc-success-text); }
     .badge.v-fail { background: var(--cc-error-bg); color: var(--cc-error-text); }
@@ -292,7 +294,7 @@
     <!-- Run log -->
     <div class="runs-head">
       <h2>Runs</h2>
-      <button class="refresh-btn" id="refresh-btn">Refresh</button>
+      <button type="button" class="refresh-btn" id="refresh-btn">Refresh</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -304,7 +306,7 @@
             <th>File</th>
             <th>Type</th>
             <th>Verdict</th>
-            <th>Run</th>
+            <th>Status</th>
             <th>Duration</th>
             <th>Report</th>
           </tr>
@@ -518,6 +520,9 @@
         tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs recorded yet. Runs appear here once a webhook or upload triggers the pipeline.</td></tr>';
         return;
       }
+      // The table is rebuilt every refresh; remember which row had keyboard
+      // focus so the 30s auto-refresh doesn't throw it back to the page.
+      const focusedRun = document.activeElement?.closest?.('#runs-body tr.run-row')?.dataset.run;
       tbody.innerHTML = runs.map((run) => {
         const isOpen = expanded.has(run.runId);
         return `
@@ -543,6 +548,11 @@
           renderRuns(lastRuns);
         });
       });
+
+      if (focusedRun) {
+        const row = [...tbody.querySelectorAll('tr.run-row')].find((r) => r.dataset.run === focusedRun);
+        row?.querySelector('.expand-btn')?.focus({ preventScroll: true });
+      }
     }
 
     let lastRuns = [];
@@ -575,9 +585,17 @@
 
     // ── Refresh loop ────────────────────────────────────────
     let countdown = REFRESH_SECS;
+    const refreshBtn = document.getElementById('refresh-btn');
     async function refreshAll() {
       countdown = REFRESH_SECS;
-      await Promise.all([loadHealth(), loadRuns()]);
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Refreshing…';
+      try {
+        await Promise.all([loadHealth(), loadRuns()]);
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Refresh';
+      }
     }
     setInterval(() => {
       if (sessionExpired) return;
@@ -585,7 +603,7 @@
       document.getElementById('refresh-note').textContent = `auto-refresh in ${countdown}s`;
       if (countdown <= 0) refreshAll();
     }, 1000);
-    document.getElementById('refresh-btn').addEventListener('click', refreshAll);
+    refreshBtn.addEventListener('click', refreshAll);
     refreshAll();
   </script>
 </body>
