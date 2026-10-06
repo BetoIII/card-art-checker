@@ -44,7 +44,7 @@
   --mono:  "Reddit Mono", "SF Mono", SFMono-Regular, Menlo, ui-monospace, monospace;
 
   --sidebar-w: 264px;
-  --toc-w:     212px;
+  --content-w: 860px;
   /* The bar's height is owned by nav.css; track it so the sticky columns and
      the scroll offsets stay pinned to the real thing. */
   --topbar-h:  var(--rn-nav-h, 57px);
@@ -110,15 +110,11 @@ a:hover { text-decoration: underline; }
 
 .shell {
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   gap: 48px;
-  max-width: 1360px;
+  max-width: calc(var(--sidebar-w) + 48px + var(--content-w) + 48px);
   margin: 0 auto;
   padding: 0 24px;
-}
-@media (max-width: 1200px) {
-  .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
-  .toc { display: none; }
 }
 @media (max-width: 1000px) {
   .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
@@ -212,7 +208,7 @@ a:hover { text-decoration: underline; }
 .content {
   padding: 40px 0 120px;
   min-width: 0;
-  max-width: 780px;
+  max-width: var(--content-w);
 }
 
 .page-eyebrow {
@@ -230,20 +226,21 @@ h1 {
   max-width: 62ch;
 }
 
-section { scroll-margin-top: calc(var(--topbar-h) + 24px); }
+/* Jump offsets come from html's scroll-padding-top alone. A scroll-margin on
+   the target as well would add to it, landing every jump a bar-height low. */
 
 h2 {
   font-size: 22px; font-weight: 650; letter-spacing: -0.4px;
   margin: 56px 0 14px;
   padding-top: 20px;
   border-top: 1px solid var(--line);
-  scroll-margin-top: calc(var(--topbar-h) + 24px);
 }
-h2:first-of-type { border-top: none; padding-top: 0; }
+/* Every h2 is the first of its type inside its own section, so the rule that
+   drops the divider has to key on the section, not the heading. */
+.content > section:first-of-type h2 { border-top: none; padding-top: 0; }
 h3 {
   font-size: 16px; font-weight: 650; letter-spacing: -0.2px;
   margin: 32px 0 10px;
-  scroll-margin-top: calc(var(--topbar-h) + 24px);
 }
 h4 {
   font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
@@ -562,32 +559,6 @@ tbody tr { transition: opacity 0.18s; }
   cursor: default;
 }
 
-/* ── On this page ──────────────────────────────────────── */
-
-.toc {
-  position: sticky;
-  top: var(--topbar-h);
-  align-self: start;
-  height: calc(100vh - var(--topbar-h));
-  overflow-y: auto;
-  padding: 40px 0 64px;
-  scrollbar-width: thin;
-}
-.toc-title {
-  font-size: 11px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.8px; color: var(--faint);
-  margin-bottom: 10px;
-}
-.toc-link {
-  display: block;
-  padding: 4px 0 4px 12px;
-  border-left: 2px solid var(--line);
-  font-size: 12.5px; line-height: 1.45;
-  color: var(--muted);
-}
-.toc-link:hover { color: var(--ink); text-decoration: none; }
-.toc-link.active { color: var(--accent); border-left-color: var(--accent); font-weight: 550; }
-
 /* ── Footer ────────────────────────────────────────────── */
 
 .foot {
@@ -837,7 +808,7 @@ x-webhook-secret: &lt;secret&gt;</pre>
         browser playground; don't use it from a server.
       </p>
 
-      <h3>Body fields <a class="anchor" href="#submit" aria-label="Link to Body fields">#</a></h3>
+      <h3 id="submit-fields">Body fields <a class="anchor" href="#submit-fields" aria-label="Link to Body fields">#</a></h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead>
@@ -894,7 +865,7 @@ x-webhook-secret: &lt;secret&gt;</pre>
         </table>
       </div>
 
-      <h3>Responses <a class="anchor" href="#submit" aria-label="Link to Responses">#</a></h3>
+      <h3 id="submit-responses">Responses <a class="anchor" href="#submit-responses" aria-label="Link to Responses">#</a></h3>
 
       <h4><span class="status-code ok">200</span> &nbsp;Queued</h4>
       <p>The file was accepted. Store <code>runId</code> — it is the only handle on the run.</p>
@@ -1122,7 +1093,7 @@ x-webhook-secret: &lt;secret&gt;</pre>
         <code>RESULT_WEBHOOK_ALLOWED_HOSTS</code> so a per-request <code>callbackUrl</code> is honored.
       </p>
 
-      <h3>What arrives <a class="anchor" href="#webhooks" aria-label="Link to What arrives">#</a></h3>
+      <h3 id="webhooks-payload">What arrives <a class="anchor" href="#webhooks-payload" aria-label="Link to What arrives">#</a></h3>
       <div class="code">
         <div class="code-head">
           <span class="code-title">POST your endpoint</span>
@@ -1159,7 +1130,7 @@ X-Card-Art-Timestamp: &lt;unix seconds&gt;</pre>
         <a href="#result-object">the result object</a>.
       </p>
 
-      <h3>Verifying the signature <a class="anchor" href="#webhooks" aria-label="Link to Verifying the signature">#</a></h3>
+      <h3 id="webhooks-verify">Verifying the signature <a class="anchor" href="#webhooks-verify" aria-label="Link to Verifying the signature">#</a></h3>
       <p>
         HMAC-SHA256 over <code>{timestamp}.{rawBody}</code>. The timestamp is <em>inside</em> the
         signed material, so a captured request cannot be replayed with a fresh one.
@@ -1191,7 +1162,7 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
         <div><p>Verify against the <strong>raw</strong> body, before JSON parsing. Re-serializing changes the bytes and the signature will never match.</p></div>
       </div>
 
-      <h3>Delivery semantics <a class="anchor" href="#webhooks" aria-label="Link to Delivery semantics">#</a></h3>
+      <h3 id="webhooks-delivery">Delivery semantics <a class="anchor" href="#webhooks-delivery" aria-label="Link to Delivery semantics">#</a></h3>
       <div class="table-wrap">
         <table>
           <tbody>
@@ -1267,7 +1238,7 @@ function verify(rawBody: string, headers: Record&lt;string, string&gt;, secret: 
 }</pre>
       </div>
 
-      <h3>Field notes <a class="anchor" href="#result-object" aria-label="Link to Field notes">#</a></h3>
+      <h3 id="result-fields">Field notes <a class="anchor" href="#result-fields" aria-label="Link to Field notes">#</a></h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Field</th><th>Notes</th></tr></thead>
@@ -1334,7 +1305,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         <code>blocking_failures</code>.
       </p>
 
-      <h3>Mapping onto a card art form <a class="anchor" href="#enums" aria-label="Link to Mapping onto a card art form">#</a></h3>
+      <h3 id="enums-mapping">Mapping onto a card art form <a class="anchor" href="#enums-mapping" aria-label="Link to Mapping onto a card art form">#</a></h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Result</th><th>Row transition</th></tr></thead>
@@ -1515,7 +1486,7 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
         <code>card_type</code> is <code>null</code> when the run failed before the type was resolved.
       </p>
 
-      <h3>Error codes <a class="anchor" href="#errors" aria-label="Link to Error codes">#</a></h3>
+      <h3 id="error-codes">Error codes <a class="anchor" href="#error-codes" aria-label="Link to Error codes">#</a></h3>
       <p>A closed set. Anything unrecognized becomes <code>internal_error</code> rather than being misattributed.</p>
       <div class="table-wrap">
         <table>
@@ -1560,12 +1531,6 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
     </section>
 
   </main>
-
-  <!-- ── On this page ────────────────────────────────── -->
-  <aside class="toc" aria-label="On this page">
-    <div class="toc-title">On this page</div>
-    <div id="tocLinks"></div>
-  </aside>
 
 </div>
 
@@ -1660,39 +1625,44 @@ type Status   = "pass" | "fail" | "warning" | "not_submitted" | "unverified" | "
   const savedLang = localStorage.getItem('cac-lang');
   if (savedLang) setLang(savedLang);
 
-  /* ── Build the "on this page" list ─────────────────── */
-  const tocBox = document.getElementById('tocLinks');
-  const headings = [...document.querySelectorAll('.content h2')];
-  headings.forEach((h) => {
-    const a = document.createElement('a');
-    a.className = 'toc-link';
-    a.href = '#' + h.parentElement.id;
-    // The anchor "#" is part of the heading; take the text without it.
-    a.textContent = h.firstChild.textContent.trim();
-    tocBox.appendChild(a);
-  });
-
   /* ── Scroll spy ────────────────────────────────────── */
-  const sections = [...document.querySelectorAll('.content section')];
+  const sections = [...document.querySelectorAll('.content > section')];
   const navLinks = [...document.querySelectorAll('.nav-link')];
-  const tocLinks = [...document.querySelectorAll('.toc-link')];
+  const root = document.documentElement;
 
   const markActive = (id) => {
     navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
-    tocLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
   };
 
-  // Track visibility per section rather than reacting to individual crossings,
-  // so the topmost visible section always wins even when several intersect.
-  const visible = new Set();
-  const spy = new IntersectionObserver((entries) => {
-    entries.forEach((e) => e.isIntersecting ? visible.add(e.target) : visible.delete(e.target));
-    if (!visible.size) return;
-    const top = sections.find((s) => visible.has(s));
-    if (top) markActive(top.id);
-  }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+  // The current section is the last one whose top has reached the line a jump
+  // lands on. Asking "which section is visible" instead lets the tail of the
+  // previous section win right after a jump.
+  const spy = () => {
+    const line = (parseFloat(getComputedStyle(root).scrollPaddingTop) || 0) + 8;
+    let current = sections[0];
+    for (const s of sections) {
+      if (s.getBoundingClientRect().top > line) break;
+      current = s;
+    }
+    // Sections near the end can't scroll up to the line. Once the page
+    // bottoms out, honor the one the reader jumped to if it's on screen.
+    if (innerHeight + scrollY >= root.scrollHeight - 2) {
+      const target = location.hash && document.getElementById(location.hash.slice(1));
+      const section = target && target.closest('.content > section');
+      current = section && section.getBoundingClientRect().top < innerHeight
+        ? section : sections[sections.length - 1];
+    }
+    markActive(current.id);
+  };
 
-  sections.forEach((s) => spy.observe(s));
+  let queued = false;
+  addEventListener('scroll', () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; spy(); });
+  }, { passive: true });
+  addEventListener('hashchange', spy);
+  spy();
 
   /* ── Sidebar filter ────────────────────────────────── */
   document.getElementById('navSearch').addEventListener('input', (e) => {
