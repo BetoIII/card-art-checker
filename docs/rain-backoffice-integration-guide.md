@@ -155,9 +155,8 @@ const { event, run_id, data } = JSON.parse(raw)
 ```
 
 The timestamp is inside the signed material, so a captured request can't be replayed with
-a fresh one. Same scheme as the Dock webhook you already verify, inverted. Reply `2xx`
-quickly and do the work after — we retry `5xx` three times with backoff, and treat any
-other `4xx` as final.
+a fresh one. Reply `2xx` quickly and do the work after — we retry `5xx` three times with
+backoff, and treat any other `4xx` as final.
 
 ### 3.5 Transition
 

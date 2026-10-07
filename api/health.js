@@ -6,7 +6,6 @@ export function GET() {
       SLACK_BOT_TOKEN: !!process.env.SLACK_BOT_TOKEN,
       ROCKETLANE_API_KEY: !!process.env.ROCKETLANE_API_KEY,
       ROCKETLANE_WEBHOOK_SECRET: !!process.env.ROCKETLANE_WEBHOOK_SECRET,
-      DOCK_WEBHOOK_SECRET: !!process.env.DOCK_WEBHOOK_SECRET,
       ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
       AGENT_ID: !!process.env.AGENT_ID,
       ENV_ID: !!process.env.ENV_ID,

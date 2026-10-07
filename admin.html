@@ -279,7 +279,6 @@
       color: var(--cc-text-2);
     }
     .badge.src-rocketlane { background: var(--cc-info-bg); color: var(--cc-info-text); }
-    .badge.src-dock { background: var(--cc-pink-soft); color: var(--cc-link); }
     .badge.src-upload { background: var(--cc-success-bg); color: var(--cc-success-text); }
     .badge.src-api { background: var(--cc-blue-soft); color: var(--cc-text-2); }
 
@@ -419,7 +418,6 @@
         <select id="f-source" aria-label="Filter by source">
           <option value="">All sources</option>
           <option value="rocketlane">Rocketlane webhook</option>
-          <option value="dock">Dock webhook</option>
           <option value="upload">Manual upload</option>
           <option value="api">Server-to-server</option>
         </select>
@@ -470,13 +468,12 @@
   <script>
     const REFRESH_SECS = 30;
     // Env vars required for the pipeline to run; Slack is optional (delivery
-    // degrades to 'skipped'), Dock secret only gates the Dock webhook.
+    // degrades to 'skipped').
     const REQUIRED_ENV = ['ROCKETLANE_API_KEY', 'ROCKETLANE_WEBHOOK_SECRET', 'ANTHROPIC_API_KEY', 'AGENT_ID', 'ENV_ID', 'SPEC_SCRIPT_FILE_ID', 'BLOB_READ_WRITE_TOKEN'];
-    const OPTIONAL_ENV = ['SLACK_BOT_TOKEN', 'DOCK_WEBHOOK_SECRET'];
+    const OPTIONAL_ENV = ['SLACK_BOT_TOKEN'];
 
     const SOURCE_LABELS = {
       rocketlane: 'Rocketlane webhook',
-      dock: 'Dock webhook',
       upload: 'Manual upload',
       api: 'Server-to-server',
     };
@@ -595,7 +592,6 @@
       if (run.projectId) return `project ${run.projectId}`;
       // Partners without Rocketlane are identified by their Rain tenant id.
       if (run.tenantId) return `tenant ${run.tenantId}`;
-      if (run.dock) return [run.dock.workspace, run.dock.account ? `acct ${run.dock.account}` : null].filter(Boolean).join(' — ') || '—';
       return '—';
     }
 
@@ -619,15 +615,6 @@
         <b>Run ID:</b> ${esc(run.runId)}<br>
         <b>Started:</b> ${esc(absTime(run.startedAt))}
       </div></div>`);
-
-      if (run.dock) {
-        blocks.push(`<div class="detail-block"><h3>Dock submission</h3><div class="kv">
-          ${run.dock.workspace ? `<b>Workspace:</b> ${esc(run.dock.workspace)}<br>` : ''}
-          ${run.dock.account ? `<b>Account:</b> ${esc(run.dock.account)}<br>` : ''}
-          ${run.dock.user ? `<b>User:</b> ${esc(run.dock.user)}<br>` : ''}
-          ${run.dock.form ? `<b>Form:</b> ${esc(run.dock.form)}` : ''}
-        </div></div>`);
-      }
 
       if (run.attachmentResolution) {
         const ar = run.attachmentResolution;
@@ -698,7 +685,7 @@
         if (filters.verdict === 'none' ? outcomes.length : !outcomes.includes(filters.verdict)) return false;
       }
       if (filters.q) {
-        const haystack = [run.runId, run.projectId, run.projectName, run.tenantId, runFile(run), run.dock?.workspace, run.dock?.account]
+        const haystack = [run.runId, run.projectId, run.projectName, run.tenantId, runFile(run)]
           .filter((v) => v != null).join(' ').toLowerCase();
         if (!haystack.includes(filters.q)) return false;
       }

@@ -46,11 +46,9 @@ test('the timestamp is inside the signed material, not merely alongside it', () 
   assert.ok(!verifyPayload({ rawBody, secret: 's', timestamp: 2000, signature }));
 });
 
-test('the scheme matches the inbound verifier it was inverted from', () => {
-  // api/dock-webhook.js computes hex(HMAC-SHA256(secret, `${a}\n${b}\n${body}`))
-  // and compares with timingSafeEqual. Ours is the same primitive over
-  // `${timestamp}.${rawBody}` — recompute it independently here so a change to
-  // the construction cannot pass unnoticed.
+test('the signature is HMAC-SHA256 over timestamp.body, recomputed independently', () => {
+  // Recompute the documented construction here so a change to it cannot pass
+  // unnoticed — partners verify against exactly this.
   const rawBody = JSON.stringify({ run_id: 'abc' });
   const secret = 'shared';
   const timestamp = 1737000000;

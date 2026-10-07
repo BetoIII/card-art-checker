@@ -191,8 +191,7 @@ X-Card-Art-Timestamp: <unix seconds>
 ### Verifying
 
 HMAC-SHA256 over `` `${timestamp}.${rawBody}` `` — the timestamp is **inside** the signed
-material, so a captured request cannot be replayed with a fresh one. Same scheme as the
-Dock webhook rain already verifies, inverted.
+material, so a captured request cannot be replayed with a fresh one.
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto"
