@@ -60,7 +60,7 @@ async function main() {
     // effort=high (not the xhigh default): xhigh visual-inspection turns ran
     // 170-200s, starving the annotated-PDF step of its 90s minimum before the
     // 300s function kill. See lib/pipeline.js RESULTS_PDF_MIN_MS.
-    model: { id: 'claude-opus-4-8', effort: { type: 'high' } },
+    model: { id: 'claude-opus-5-5', effort: { type: 'high' } },
     system: systemPrompt,
     tools: [
       { type: 'agent_toolset_20260401' },
@@ -68,46 +68,27 @@ async function main() {
   });
   console.log(`  AGENT_ID=${agent.id}`);
 
-  // 3. Create environment with Python packages
+  // 3. Create environment. No packages: rendering and measurement run
+  // off-session (api/spec-check.py) and the agent only `read`s the mounted
+  // images. Listing packages here costs every session ~95s in a fresh
+  // environment, where the install runs out of time before it is cached.
   console.log('Creating environment...');
   const environment = await anthropic.beta.environments.create({
     name: 'card-art-env',
     config: {
       type: 'cloud',
-      packages: {
-        pip: ['Pillow', 'reportlab', 'numpy'],
-        // Ghostscript renders .ai/.eps physical card art; pre-installing it
-        // here (cached across sessions) saves 1-2 minutes per physical run
-        // vs. the agent apt-get installing it inside the sandbox.
-        apt: ['ghostscript'],
-      },
       networking: { type: 'limited', allowed_hosts: [], allow_package_managers: true },
     },
   });
   console.log(`  ENV_ID=${environment.id}`);
 
-  // 4. Upload spec checker script (reusable across sessions)
-  console.log('Uploading spec checker script...');
-  const scriptPath = resolve(__dirname, 'check_technical_specs.py');
-  let scriptFileId;
-  try {
-    const scriptContent = readFileSync(scriptPath);
-    const scriptFile = new File([scriptContent], 'check_technical_specs.py', { type: 'text/x-python' });
-    const uploaded = await anthropic.beta.files.upload({ file: scriptFile });
-    scriptFileId = uploaded.id;
-    console.log(`  SPEC_SCRIPT_FILE_ID=${scriptFileId}`);
-  } catch (err) {
-    console.log(`  WARNING: Could not upload spec checker script: ${err.message}`);
-    console.log('  You can upload it later and set SPEC_SCRIPT_FILE_ID manually.');
-    scriptFileId = '(upload check_technical_specs.py and set this)';
-  }
-
-  // 5. Summary
+  // 4. Summary. The spec checker no longer needs an uploaded file: it runs
+  // bundled in api/spec-check.py.
   console.log('\n══════════════════════════════════════════');
   console.log('Setup complete! Add these to Vercel env vars:\n');
   console.log(`  vercel env add AGENT_ID        # ${agent.id}`);
   console.log(`  vercel env add ENV_ID           # ${environment.id}`);
-  console.log(`  vercel env add SPEC_SCRIPT_FILE_ID  # ${scriptFileId}`);
+  console.log(`  vercel env add AGENT_VERSION    # ${agent.version} (sessions pin this version)`);
   console.log('\n══════════════════════════════════════════');
 }
 
