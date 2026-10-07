@@ -5,6 +5,7 @@ import { storeReport } from '../lib/blob-report.js';
 import { inferCardType, extOf } from '../lib/card-type.js';
 import { getProjectName } from '../lib/rocketlane.js';
 import { createRunLog } from '../lib/run-log.js';
+import { SLACK_DELIVERY_ENABLED, SLACK_DELIVERY_OFF } from '../lib/delivery.js';
 import {
   emitResult, emitFailure, classifyError, oweResult, publishOwedOnTimeout,
 } from '../lib/result-emit.js';
@@ -238,11 +239,14 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       result: emitted.result,
       // The browser hands this back to /api/card-deliver, which posts only a
       // delivery signed here (lib/internal-auth.js). Unsigned when no secret
-      // is configured, and card-deliver refuses it.
-      delivery: (() => {
-        const delivery = { runId: runLog.runId, projectId, tenantId, projectName, pdfUrl, status, summary, cardType, slackDelivery };
-        return signDelivery(delivery) ?? delivery;
-      })(),
+      // is configured, and card-deliver refuses it. Left out entirely while
+      // Slack delivery is off, so the browser never asks.
+      ...(SLACK_DELIVERY_ENABLED ? {
+        delivery: (() => {
+          const delivery = { runId: runLog.runId, projectId, tenantId, projectName, pdfUrl, status, summary, cardType, slackDelivery };
+          return signDelivery(delivery) ?? delivery;
+        })(),
+      } : {}),
     });
     runLog.addResult({
       filename: fileName,
@@ -254,7 +258,7 @@ async function processSubmission({ parsed, runLog, deadlineAt, send, source }) {
       resultUrl: emitted.resultUrl,
       webhook: emitted.webhook,
       // Slack delivery is a separate client-triggered call (/api/card-deliver).
-      delivery: { slack: 'client-triggered' },
+      delivery: { slack: SLACK_DELIVERY_ENABLED ? 'client-triggered' : SLACK_DELIVERY_OFF },
     });
     await runLog.finish();
   } catch (err) {
@@ -392,16 +396,18 @@ async function mockResponse(request) {
         outcome: mockOutcome,
         resultUrl: null,
         result: mockResult,
-        delivery: {
-          projectId: parsed.projectId,
-          tenantId: parsed.tenantId,
-          projectName: parsed.projectId ? 'Mock Project' : null,
-          pdfUrl,
-          status,
-          summary,
-          cardType: parsed.cardType,
-          slackDelivery: false,
-        },
+        ...(SLACK_DELIVERY_ENABLED ? {
+          delivery: {
+            projectId: parsed.projectId,
+            tenantId: parsed.tenantId,
+            projectName: parsed.projectId ? 'Mock Project' : null,
+            pdfUrl,
+            status,
+            summary,
+            cardType: parsed.cardType,
+            slackDelivery: false,
+          },
+        } : {}),
       });
       controller.close();
     },

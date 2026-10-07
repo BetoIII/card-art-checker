@@ -166,45 +166,6 @@
     }
     #partner-id-hint:empty { display: none; }
 
-    /* ── Slack toggle row ── */
-    .options-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px;
-      background: var(--cc-surface-2);
-      border: 1px solid var(--cc-border);
-      border-radius: var(--cc-r-md);
-      cursor: pointer;
-      user-select: none;
-    }
-    .options-row input[type="checkbox"] {
-      appearance: none;
-      width: 18px; height: 18px;
-      border: 1.5px solid var(--cc-border-strong);
-      border-radius: var(--cc-r-sm);
-      cursor: pointer;
-      position: relative;
-      flex-shrink: 0;
-      background: var(--cc-surface);
-      transition: background var(--cc-transition), border-color var(--cc-transition);
-    }
-    .options-row input[type="checkbox"]:checked {
-      background: var(--cc-pink);
-      border-color: var(--cc-pink);
-    }
-    .options-row input[type="checkbox"]:checked::after {
-      content: '\2713';
-      color: #FFFFFF;
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .options-row .opt-text { font-size: var(--cc-fs-sm); color: var(--cc-text-2); }
-    .options-row .opt-text strong { color: var(--cc-text); }
-
     /* ── Curl preview ── */
     .curl-preview {
       background: var(--cc-code-bg);
@@ -438,15 +399,6 @@
         </div>
 
         <div class="field">
-          <label class="options-row" for="slack-delivery">
-            <input type="checkbox" id="slack-delivery" checked>
-            <span class="opt-text">
-              <strong>Slack delivery</strong> &mdash; post the report to the partner's Slack channel. Uncheck to receive the PDF report only.
-            </span>
-          </label>
-        </div>
-
-        <div class="field">
           <div class="curl-preview" id="curl-preview"><button type="button" class="copy-btn" id="copy-btn">Copy</button><span id="curl-text"></span></div>
         </div>
 
@@ -499,7 +451,6 @@
     const projectIdInput = document.getElementById('project-id');
     const tenantIdInput = document.getElementById('tenant-id');
     const partnerIdHint = document.getElementById('partner-id-hint');
-    const slackDeliveryInput = document.getElementById('slack-delivery');
     const resultSection = document.getElementById('result-section');
     const rawLogHeader = document.getElementById('raw-log-header');
     const rawLogBody = document.getElementById('raw-log-body');
@@ -541,10 +492,6 @@
       isReady: () => Boolean(partnerId()),
       missingPartnerMessage: 'Enter a Rocketlane Project ID or a Production Tenant ID.',
       formatError: (msg) => `error: ${msg}`,
-      appendFields: (fd) => fd.append('slackDelivery', String(slackDeliveryInput.checked)),
-      // slackDelivery rides the delivery payload either way — the API is the
-      // arbiter, so an unchecked box still exercises /api/card-deliver.
-      decorateDelivery: (delivery) => ({ ...delivery, slackDelivery: slackDeliveryInput.checked }),
       onStateChange: updateCurl,
       onEvent: debug ? logRawEvent : undefined,
       onStreamStart: () => {
@@ -584,13 +531,10 @@
       if (s.cardType === 'physical' && s.selectedBackFile) {
         html += ` \\\n  <span class="flag">-F</span> <span class="str">"backFile=@${esc(s.selectedBackFile.name)}"</span>`;
       }
-      if (!slackDeliveryInput.checked) {
-        html += ` \\\n  <span class="flag">-F</span> <span class="str">"slackDelivery=false"</span>`;
-      }
       curlText.innerHTML = html;
     }
     // Either/or: once one box has a value the other steps aside. The hint
-    // speaks only when there is something to fix or a consequence to know.
+    // speaks only when there is something to fix.
     function syncPartnerFields() {
       const project = projectIdInput.value.trim();
       const tenant = tenantIdInput.value.trim();
@@ -603,7 +547,6 @@
       partnerIdHint.classList.toggle('invalid', badProject || badTenant);
       partnerIdHint.textContent = badProject ? 'Rocketlane Project IDs are digits only.'
         : badTenant ? 'Production Tenant IDs are UUIDs.'
-        : tenantId() ? 'Tenant-only runs skip Slack and return the PDF.'
         : '';
     }
     for (const input of [projectIdInput, tenantIdInput]) {
@@ -613,7 +556,6 @@
       });
     }
     syncPartnerFields();
-    slackDeliveryInput.addEventListener('change', updateCurl);
     updateCurl();
 
     copyBtn.addEventListener('click', async () => {

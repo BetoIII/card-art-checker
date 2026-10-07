@@ -1,5 +1,5 @@
 import { list, put } from '@vercel/blob';
-import { deliverReport } from '../lib/delivery.js';
+import { deliverReport, SLACK_DELIVERY_ENABLED, SLACK_DELIVERY_OFF } from '../lib/delivery.js';
 import { verifyDelivery } from '../lib/internal-auth.js';
 
 // Slack delivery for a run the browser watched (/upload and the playground).
@@ -42,6 +42,12 @@ export async function POST(request) {
     const problem = verifyDelivery(delivery);
     if (problem) {
       return Response.json({ error: `Delivery refused: ${problem}` }, { status: 401 });
+    }
+
+    // With Slack delivery off there is nothing to claim or post. A page that
+    // still asks (an old copy in someone's tab) gets a quiet skip.
+    if (!SLACK_DELIVERY_ENABLED) {
+      return Response.json({ ok: true, pdfUrl, results: { slack: SLACK_DELIVERY_OFF, identify: null } });
     }
 
     // Opting out posts nothing, so it needn't spend the run's one delivery —
