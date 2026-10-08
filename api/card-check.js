@@ -20,7 +20,10 @@ import { parsePartnerIds } from '../lib/partner-id.js';
 // Two callers share this endpoint, and authentication is what separates them:
 //
 //   • The browser upload UI (/upload and the playground) is unauthenticated
-//     and consumes the SSE progress stream.
+//     and consumes the SSE progress stream. The virtual-card-art-checker
+//     Claude skill (Cowork) reads the same stream with curl and relies on
+//     `progress` messages, the `complete` event's result/pdfUrl/runId, and
+//     the `error` event's code/message — keep those stable.
 //   • A server-to-server caller presents the shared secret and can ask for
 //     `?async=1` to get JSON with a runId immediately instead of holding an
 //     event stream open for the whole run.
